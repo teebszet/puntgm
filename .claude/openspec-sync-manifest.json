@@ -8,5 +8,14 @@
   "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/discussion.md": "ca452479b3b51d0c3d8aa155a63fa096ae31ba0cd8018d2b961ee5c2cd1a8c7b",
   "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/tasks.md": "b249d0debd8e3e056212b45b5eba2a3380dc69b1c36ba94a78afe17607495a53",
   "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/design.md": "946dd64cf3b93083a2edf1a333e2568d9163340cef580a2fbd863861dda14398",
-  "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/proposal.md": "e7c10d26e17bdbbdf20c3696691721d63c8cc6ac4c73e4f0be64abe5c9b6b21b"
+  "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/proposal.md": "e7c10d26e17bdbbdf20c3696691721d63c8cc6ac4c73e4f0be64abe5c9b6b21b",
+  "changes/call-feed-and-matchup-projection/proposal.md": "2c1f70a328b82d9ead0e579d87322eccdb02877fc9eb18f5f5361519360e2650",
+  "changes/call-feed-and-matchup-projection/design.md": "904fb27d6e83acf4bf92f3837e1e858b3ec92aad3d5a0d07578b907f89f357e6",
+  "changes/call-feed-and-matchup-projection/specs/matchup-projection/spec.md": "50f4f8fd5e0b07f89829c6b53d5f9d758031c791f409eb2d29229c11d6035d2b",
+  "changes/call-feed-and-matchup-projection/specs/call-feed/spec.md": "e5aa597fac0d21f6dc2092ab5dc430a46d60c75848b7a1616f373056a5bc8d29",
+  "changes/call-feed-and-matchup-projection/specs/historical-data-pipeline/spec.md": "2c827672a6b8295c94077dec85275b08b4756fc8b4bccaab4200a5371289823d",
+  "changes/call-feed-and-matchup-projection/specs/decision-engine/spec.md": "3727c055562acc1980d67afc2478a218627f7221fcb265747a4293ca6c603887",
+  "changes/call-feed-and-matchup-projection/specs/recommendation-log/spec.md": "4a071729ac9856f5dbe16bf76e566eb8116826d679c7076f528b51f1bea8f430",
+  "changes/call-feed-and-matchup-projection/tasks.md": "e26748e5dc8f3d2e6981cc3888a2fd95b15a7e390fcae51f4427feb3eff5a7a9",
+  "changes/call-feed-and-matchup-projection/discussion.md": "d3c01af0db19f65b5c7b45cae4f22439bf8045ea8d56acd4e26ba742456add4f"
 }
