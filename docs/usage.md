@@ -64,6 +64,33 @@ perspective: league=sim-2025-26-1-8x10 team=T00 period=3 opp=T03 as_of=2025-11-1
 logged 5 recommendation(s); log now holds 5 row(s)
 ```
 
+### 4. `project` — category outcome projections (the spine)
+
+```bash
+python -m fantasy_gm.cli project --as-of 2025-11-14 --league sim-2025-26-1-8x10 --team T00
+```
+
+Prints, per category, the projected end-of-period totals for both teams, the win
+probability, and a **safe / contested / gone** label. Contested cats are the ones worth
+fighting for. Variance-aware (a lead in blocks is less safe than the same lead in points)
+and availability-reactive (an OUT player re-opens categories).
+
+### 5. `feed` — live signals + end-of-day reconciliation
+
+```bash
+python -m fantasy_gm.cli feed --as-of 2025-11-14 --league sim-2025-26-1-8x10 --team T00 --all
+```
+
+Two parts, both written to the append-only call-feed log:
+
+- **Live signals** — typed observations (usage trends, role changes, availability,
+  opponent moves) graded on a soft→strong spectrum where
+  `strength = confidence × impact-on-a-contested-cat × relevance-to-your-build`. Strong,
+  relevant signals show by default; `--all` includes soft ones.
+- **End-of-day reconciliation** — candidate add/drop moves, each labeled by the category it
+  most improves ("contest REB") with the projected win-prob impact per category, and flagged
+  if it drops a player who hasn't played yet.
+
 ## Library usage
 
 Everything the CLI does is available programmatically.
@@ -159,12 +186,22 @@ pytest -q
 ruff check fantasy_gm tests
 ```
 
+## Call-feed log
+
+The reframed log (`fantasy_gm/log/reclog.py`, `FeedLog`) is append-only with two record
+types: **signal** (subject, owner class, type, evidence, strength, affected cats) and
+**reconciliation-move** (add, drop, line of play, projected per-category impact). Replay
+scoring lives in `fantasy_gm/engine/scoring.py`: `grade_move` grades a suggested move by its
+*realized* category impact vs. standing pat (a counterfactual over the actual box scores),
+and `calibration` checks whether categories called "safe" actually held. The old
+`RecommendationLog` (ranked rows) is retained as the replay baseline.
+
 ## Current limitations
 
-- Engine is a deterministic **skeleton**; percentage categories (FG%/FT%) are not
-  volume-weighted, and the matchup tilt is a small nudge, not real opponent-relative
-  optimization.
+- Projection uses a normal approximation and treats games as independent; percentage
+  categories (FG%/FT%) are summed rather than volume-weighted. Both are flagged for
+  calibration against replay.
+- Signal detection is a deterministic subset (usage trend, availability, opponent move);
+  efficiency-regression and richer role signals are future work.
 - Real NBA.com payload parsing in `nba_source.py` is stubbed for the networked machine;
   offline flows use the synthetic season.
-- The reclog shape is provisional — see the in-progress redesign around a real player's
-  weekly waiver process.

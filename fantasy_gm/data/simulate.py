@@ -108,7 +108,7 @@ def _schedule_matchups(store, league_id, team_ids, lo, hi, rng) -> None:
         period_end = (wk + timedelta(days=6)).isoformat()
         # circle-method pairing rotated by period
         rot = teams[:1] + teams[1:][period % (n - 1):] + teams[1:][: period % (n - 1)]
-        for a, b in zip(rot[: n // 2], rot[n - 1: n // 2 - 1: -1]):
+        for a, b in zip(rot[: n // 2], rot[n - 1: n // 2 - 1: -1], strict=False):
             if "BYE" in (a, b):
                 continue
             store.add_matchup(Matchup(league_id, period, period_start, period_end, a, b))

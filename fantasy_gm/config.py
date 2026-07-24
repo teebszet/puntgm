@@ -30,6 +30,34 @@ CATEGORY_DIRECTION: dict[str, int] = {
 }
 DEFAULT_CATEGORIES = list(CATEGORY_DIRECTION.keys())
 
+# --- Category variance profiles (D2) -----------------------------------------
+# Points/rebounds are low-variance (leads safer, comebacks harder); steals/blocks/
+# assists are high-variance (leads never fully safe). The multiplier inflates the
+# projection's uncertainty so an equal margin reads less safe in a high-variance cat.
+CATEGORY_VARIANCE_LEVEL: dict[str, str] = {
+    "pts": "low",
+    "reb": "low",
+    "ast": "high",
+    "stl": "high",
+    "blk": "high",
+    "fg3m": "medium",
+    "tov": "medium",
+    "fg_pct": "medium",
+    "ft_pct": "high",
+}
+VARIANCE_MULTIPLIER: dict[str, float] = {"low": 0.6, "medium": 1.0, "high": 1.6}
+
+# --- Projection / signal thresholds ------------------------------------------
+SAFE_PROB = 0.80   # win prob >= -> "safe"
+GONE_PROB = 0.20   # win prob <= -> "gone"; between -> "contested"
+STRONG_STRENGTH = 0.45  # signal strength >= (plus a sustained, causal trend) -> "strong"
+
+# --- Season stage (relevance weighting, D6) ----------------------------------
+# Fractions of the season elapsed. Early boosts usage-breakout signals; late boosts
+# pure schedule/matchup-securing signals.
+EARLY_STAGE_MAX = 0.30
+LATE_STAGE_MIN = 0.70
+
 # --- Lineup cadence ----------------------------------------------------------
 # The user's own league moved weekly-lock -> daily-change ~2 seasons ago (D9), so
 # cadence is a per-league setting and the harness must segment seasons by it.

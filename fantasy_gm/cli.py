@@ -71,6 +71,62 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_project(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.projection import Projector
+
+    config = Config()
+    store = _store(config)
+    proj = Projector(config).project(store, args.league, args.team, args.as_of)
+    if not proj.opponent_id:
+        print("no active matchup for that team/date", file=sys.stderr)
+        return 1
+    print(f"projection: league={proj.league_id} team={proj.team_id} "
+          f"period={proj.period_index} opp={proj.opponent_id} as_of={args.as_of}")
+    for c, p in proj.categories.items():
+        print(f"  {c:7} mine={p.mine_total:8.1f} opp={p.opp_total:8.1f} "
+              f"win={p.win_prob:.2f}  {p.label}")
+    print(f"contested: {', '.join(proj.contested()) or '-'}")
+    return 0
+
+
+def cmd_feed(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.reconcile import Reconciler
+    from fantasy_gm.engine.signals import SignalEngine
+    from fantasy_gm.log.reclog import FeedLog
+    from fantasy_gm.models import Perspective
+
+    config = Config()
+    store = _store(config)
+    signals = SignalEngine(config).detect(store, args.league, args.team, args.as_of)
+    moves = Reconciler(config).reconcile(store, args.league, args.team, args.as_of)
+
+    strong = [s for s in signals if s.band == "strong"]
+    shown = strong if (strong and not args.all) else signals
+    print(f"live signals (as_of {args.as_of}) — {len(strong)} strong / {len(signals)} total")
+    for s in shown[: args.top]:
+        print(f"  [{s.band:6}] {s.signal_type:15} {s.subject_name:16} "
+              f"str={s.strength:<5} — {s.evidence}")
+
+    print(f"\nend-of-day reconciliation — {len(moves)} candidate move(s)")
+    for m in moves:
+        flag = " (drops unplayed!)" if m.drops_unplayed else ""
+        deltas = ", ".join(f"{c} {b:.2f}->{a:.2f}" for c, (b, a) in m.projected_impact.items())
+        print(f"  {m.line_of_play}: drop {m.drop_name} -> add {m.add_name}"
+              f"  conf={m.confidence}{flag}")
+        print(f"      projected: {deltas}")
+
+    if moves or signals:
+        log = FeedLog(store)
+        m = store.matchup_for_team(args.league, args.team, args.as_of)
+        opp = (m.team_b if m.team_a == args.team else m.team_a) if m else ""
+        persp = Perspective(args.league, args.team, m.period_index if m else -1, opp)
+        ns = log.append_signals(signals, persp)
+        nm = log.append_moves(moves)
+        print(f"\nlogged {ns} signal(s) + {nm} move(s); "
+              f"feed log holds {log.signal_count()} / {log.move_count()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -96,6 +152,20 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--team", required=True)
     r.add_argument("--top", type=int, default=10)
     r.set_defaults(func=cmd_recommend)
+
+    pr = sub.add_parser("project", help="project category outcomes for a team's matchup")
+    pr.add_argument("--as-of", dest="as_of", required=True)
+    pr.add_argument("--league", required=True)
+    pr.add_argument("--team", required=True)
+    pr.set_defaults(func=cmd_project)
+
+    fd = sub.add_parser("feed", help="live signals + end-of-day reconciliation for a team")
+    fd.add_argument("--as-of", dest="as_of", required=True)
+    fd.add_argument("--league", required=True)
+    fd.add_argument("--team", required=True)
+    fd.add_argument("--top", type=int, default=10)
+    fd.add_argument("--all", action="store_true", help="show soft signals too")
+    fd.set_defaults(func=cmd_feed)
     return p
 
 
