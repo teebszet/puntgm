@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Local data store & caches (never commit backfilled data)
+data/
+*.sqlite
+*.db
+*.duckdb
+raw_cache/
+
+# Secrets
+.env
+*.secret
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# OpenSpec stray init test artifact
+.openspec-test-*

@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  Project: Fantasy NBA GM — an AI "Co-GM" for head-to-head category fantasy basketball.
+  Target user: serious H2H category-league grinders (the segment that already pays for Basketball Monster / Hashtag).
+  Differentiation thesis: LLM-native reasoning over live data beats static value formulas for
+  context-heavy calls (schedule-aware streaming, punt builds, playoff-week planning).
+
+  Product architecture (hybrid, to keep inference cost near zero):
+    - Chat Co-GM: BYO-LLM via an MCP server the user connects to their own Claude/ChatGPT.
+    - Proactive daily brief: a small hosted job on our tokens (bounded context, ~$4-7/user/season).
+    - One shared data layer underneath both.
+
+  Distribution strategy: "the product's track record is the content." A replay harness scores the
+  decision engine against last season's data and publishes verifiable results BEFORE the live season.
+  This inverts build order: the decision engine + evals come first; league sync (Yahoo OAuth) comes later.
+
+  Weeks 1-2 goal (this milestone): stand up the historical data pipeline for the full 2025-26 NBA
+  season and a skeleton streaming/waiver decision engine, with every recommendation logged
+  (timestamp, call, reasoning, confidence). No UI, no OAuth yet.
+
+  Tech stack: Python 3.11+. Data via nba_api (free, NBA.com endpoints) for backfill; balldontlie
+  (~$40/mo tier) as the licensed-enough live source later. Store point-in-time snapshots to avoid
+  lookahead bias — the engine must only ever see what a manager knew on the morning of a given date.
+
+  Conventions: use conventional commits; keep modules small and testable; the recommendation log is
+  the source of truth for both the eval suite and future marketing content.
+
+# Per-artifact rules (optional)
+# rules:
+#   proposal:
+#     - Always include a "Non-goals" section
