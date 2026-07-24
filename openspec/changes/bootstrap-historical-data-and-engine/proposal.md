@@ -6,7 +6,8 @@ The product's differentiation and its entire distribution strategy both rest on 
 
 - Add a **historical data pipeline** that backfills the full 2025-26 NBA season (games, box scores, schedules, player game logs, and dated injury/availability status) into local storage.
 - Store data as **point-in-time snapshots**: every record is keyed by "as-known-on date D" so downstream consumers can reconstruct exactly what a manager knew on any morning, avoiding lookahead bias.
-- Add a **skeleton decision engine** that, given a league state and a date, ranks streaming/waiver candidates for the week ahead using simple, explainable signals (schedule volume, recent per-game production, availability).
+- Model **fantasy-league state** (rosters, weekly matchups, per-category tallies, `lineup_cadence`) as point-in-time data, because H2H waiver decisions are opponent- and category-relative. Source it **simulate-first** (reproducible generated leagues) plus an optional read-only import of the user's own past leagues as a validation set.
+- Add a **skeleton decision engine** that, given a league state, a **perspective** (which team is deciding, and its weekly opponent), and a date, ranks streaming/waiver candidates for the scoring window using simple, explainable signals (schedule volume, recent per-game production, availability). The skeleton stays a deterministic baseline; it *accepts* matchup/category context but full opponent-relative optimization is deferred to the next engine.
 - Add a **recommendation log**: every engine call writes a structured record (timestamp, as-of date, inputs, the call, reasoning, confidence). This log is the shared source of truth for the future eval suite and marketing content.
 - Establish project scaffolding: Python package layout, dependency management, config, and tests.
 
@@ -29,4 +30,4 @@ Non-code setup tracked in tasks but out of scope for specs: creating the X accou
 - New Python project (`fantasy-nba-gm`): package `fantasy_gm` with `data/`, `engine/`, `log/` modules.
 - New dependency: `nba_api` (free NBA.com endpoints) for backfill; `balldontlie` deferred to a later change as the licensed live source.
 - Local data store (SQLite or parquet + DuckDB) for point-in-time snapshots and the recommendation log.
-- No external services, no OAuth, no network write actions in this milestone.
+- No *live* league sync and no network write actions this milestone. A one-time, read-only import of the user's own past Yahoo leagues (validation set) is the only OAuth touchpoint, and it is secondary to simulated leagues.

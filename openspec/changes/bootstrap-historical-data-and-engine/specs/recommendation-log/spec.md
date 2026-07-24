@@ -2,12 +2,18 @@
 
 ### Requirement: Structured recommendation logging
 
-The system SHALL persist every recommendation the engine produces as a structured record capturing creation time, as-of date, inputs reference, the candidate, rank, score, reasoning, and confidence.
+The system SHALL persist every recommendation the engine produces as a structured record capturing creation time, as-of date, inputs reference, the deciding perspective, the candidate, rank, score, reasoning, and confidence.
 
 #### Scenario: Recommendation is logged with full context
 
 - **WHEN** the engine produces a recommendation
-- **THEN** a log record is written containing created-at timestamp, as-of date, a reference to the league-state inputs, the candidate, its rank, its score, the reasoning string, and a confidence value
+- **THEN** a log record is written containing created-at timestamp, as-of date, a reference to the league-state inputs, the perspective (league, team, scoring period, opponent), the candidate, its rank, its score, the reasoning string, and a confidence value
+
+#### Scenario: Perspective identifies whose decision it was
+
+- **WHEN** a recommendation record is read
+- **THEN** it identifies which league, which team, which scoring period, and which opponent the recommendation was made for
+- **AND** two recommendations differing only in perspective are distinguishable in the log
 
 ### Requirement: Append-only integrity
 
@@ -26,4 +32,4 @@ A logged recommendation SHALL contain enough information to reproduce and later 
 #### Scenario: A record can be replayed
 
 - **WHEN** a log record is read
-- **THEN** its as-of date and inputs reference are sufficient to re-run the engine and obtain the same recommendation
+- **THEN** its as-of date, inputs reference, and perspective are sufficient to re-run the engine and obtain the same recommendation
