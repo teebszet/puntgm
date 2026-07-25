@@ -196,11 +196,30 @@ scoring lives in `fantasy_gm/engine/scoring.py`: `grade_move` grades a suggested
 and `calibration` checks whether categories called "safe" actually held. The old
 `RecommendationLog` (ranked rows) is retained as the replay baseline.
 
+## Validating assumptions
+
+The projection has parameters that were *asserted* (from a domain expert) rather than
+measured. Per the project principle, those are provisional until validated on real data
+(`openspec/changes/call-feed-and-matchup-projection/assumptions.md` is the full ledger).
+
+```bash
+# Measure per-category variance (coefficient of variation) from a backfilled season.
+python -m fantasy_gm.cli validate --season 2025-26
+```
+
+`fantasy_gm/validation/` provides `measure_category_cv` (the variance ranking), a
+`derive_variance_profile` the projector can consume via `Projector(variance_profile=…)`
+(falling back to the provisional grouping otherwise), and `bootstrap_category_winprob` — a
+Monte-Carlo win-prob to check the projector's normal approximation, which is weakest for
+low-count categories (blocks/steals). **These only mean something on real `nba_api` data**;
+the synthetic season is generated from the same assumptions, so it validates the mechanism,
+not the claim.
+
 ## Current limitations
 
-- Projection uses a normal approximation and treats games as independent; percentage
-  categories (FG%/FT%) are summed rather than volume-weighted. Both are flagged for
-  calibration against replay.
+- Projection uses a normal approximation and treats games as independent (both flagged in the
+  assumptions ledger; `bootstrap_category_winprob` is the check). Percentage categories are now
+  volume-weighted (fixed).
 - Signal detection is a deterministic subset (usage trend, availability, opponent move);
   efficiency-regression and richer role signals are future work.
 - Real NBA.com payload parsing in `nba_source.py` is stubbed for the networked machine;

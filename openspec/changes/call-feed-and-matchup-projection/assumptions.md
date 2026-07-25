@@ -119,6 +119,19 @@ week to justify the tilt.
 
 ---
 
+## Progress (2026-07-26)
+
+- **A8 — FIXED.** Percentage categories are now volume-weighted (Σmakes/Σattempts) with a
+  binomial standard error, in `store` tallies/totals and the projector. (`test_validation.py`.)
+- **A1 — measurement built.** `validation.measure_category_cv` computes per-category CV from
+  data; `derive_variance_profile` normalises it into multipliers. Not yet *run on real data*.
+- **A2 — projector now pluggable.** `Projector(variance_profile=…)` consumes a measured profile
+  and falls back to the provisional grouping when none is supplied.
+- **A3 — check built.** `validation.bootstrap_category_winprob` gives the Monte-Carlo ground
+  truth to compare the normal approximation against.
+- Still pending, gated on the real `nba_api` backfill: actually running A1/A3, deciding whether
+  to drop the multiplier (A2), and A5–A7/A9–A11.
+
 ## Proposed handling
 
 1. **Mark provisional now:** the specs and code label A1–A2, A6, A10–A11 as provisional pending

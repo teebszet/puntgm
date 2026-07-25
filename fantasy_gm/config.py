@@ -47,6 +47,13 @@ CATEGORY_VARIANCE_LEVEL: dict[str, str] = {
 }
 VARIANCE_MULTIPLIER: dict[str, float] = {"low": 0.6, "medium": 1.0, "high": 1.6}
 
+# Percentage categories are volume-weighted (A8): the value is Σmakes / Σattempts, never
+# a sum of per-game percentages. Maps the category to its (makes, attempts) component keys.
+PERCENTAGE_CATEGORIES: dict[str, tuple[str, str]] = {
+    "fg_pct": ("fgm", "fga"),
+    "ft_pct": ("ftm", "fta"),
+}
+
 # --- Projection / signal thresholds ------------------------------------------
 SAFE_PROB = 0.80   # win prob >= -> "safe"
 GONE_PROB = 0.20   # win prob <= -> "gone"; between -> "contested"

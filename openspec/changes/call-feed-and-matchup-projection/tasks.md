@@ -35,7 +35,17 @@
 - [x] 5.3 Run end-to-end offline over a simulated league; confirm signals, a reconciliation move, and log rows
 - [x] 5.4 `openspec validate call-feed-and-matchup-projection --strict` + test suite + ruff; fix issues
 
-## 6. Non-code setup (carried from the foundation; parallel, not in specs)
+## 6. Assumptions: corrections & validation harness (round 1, D10)
 
-- [ ] 6.1 Create the X account and a waitlist landing page (audience-building starts earliest)
-- [ ] 6.2 Create a US-registered Yahoo account and confirm Fantasy Sports appears under API Permissions at developer.yahoo.com/apps/create (unblocks league sync in a later change)
+- [x] 6.1 Fix A8: percentage categories (fg_pct/ft_pct) volume-weighted (Σmakes/Σattempts) in tally, projection, and totals — with a binomial SE, not a sum of per-game percentages
+- [x] 6.2 `validation/measure.py`: measure per-category coefficient of variation (A1); derive a normalised variance profile
+- [x] 6.3 Projector consumes an optional measured variance profile, falling back to the provisional grouping
+- [x] 6.4 `bootstrap_category_winprob` (A3): Monte-Carlo win prob to check the normal approximation
+- [x] 6.5 `validate` CLI + tests (mechanism on synthetic; real numbers require the nba_api backfill)
+- [ ] 6.6 (Blocked on real data) Run the harness on the nba_api backfill; replace provisional constants with measured values; decide whether to drop the variance multiplier (A2)
+- [ ] 6.7 (Future) Reliability diagram for safe/contested/gone thresholds (A7); estimator/window study (A5); z-score values (A6)
+
+## 7. Non-code setup (carried from the foundation; parallel, not in specs)
+
+- [ ] 7.1 Create the X account and a waitlist landing page (audience-building starts earliest)
+- [ ] 7.2 Create a US-registered Yahoo account and confirm Fantasy Sports appears under API Permissions at developer.yahoo.com/apps/create (unblocks league sync in a later change)

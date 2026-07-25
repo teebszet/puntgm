@@ -127,6 +127,28 @@ def cmd_feed(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_validate(args: argparse.Namespace) -> int:
+    from fantasy_gm.validation import derive_variance_profile, measure_category_cv
+
+    config = Config()
+    store = _store(config)
+    cv = measure_category_cv(store, args.season)
+    if not cv:
+        print("no data to measure (backfill a season first)", file=sys.stderr)
+        return 1
+    profile = derive_variance_profile(cv)
+    print(f"measured category variance (season {args.season})")
+    print("  NOTE: only meaningful on REAL data — synthetic is generated from the "
+          "assumptions it would 'validate'.")
+    print(f"  {'category':8} {'CV (σ/μ)':>10} {'multiplier':>11}")
+    for c in sorted(cv, key=cv.get, reverse=True):
+        print(f"  {c:8} {cv[c]:>10.3f} {profile[c]:>11.3f}")
+    hi = max(cv, key=cv.get)
+    lo = min(cv, key=cv.get)
+    print(f"highest variance: {hi}   lowest: {lo}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -166,6 +188,10 @@ def build_parser() -> argparse.ArgumentParser:
     fd.add_argument("--top", type=int, default=10)
     fd.add_argument("--all", action="store_true", help="show soft signals too")
     fd.set_defaults(func=cmd_feed)
+
+    v = sub.add_parser("validate", help="measure category variance from backfilled data (A1)")
+    v.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    v.set_defaults(func=cmd_validate)
     return p
 
 

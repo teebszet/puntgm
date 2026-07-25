@@ -20,6 +20,7 @@ from fantasy_gm.config import (
     CATEGORY_DIRECTION,
     CATEGORY_VARIANCE_LEVEL,
     GONE_PROB,
+    PERCENTAGE_CATEGORIES,
     SAFE_PROB,
     VARIANCE_MULTIPLIER,
     Config,
@@ -41,8 +42,17 @@ def _label(win_prob: float) -> str:
 
 
 class Projector:
-    def __init__(self, config: Config | None = None):
+    def __init__(self, config: Config | None = None,
+                 variance_profile: dict[str, float] | None = None):
         self.config = config or Config()
+        # Optional *measured* per-category variance multipliers (from the validation
+        # harness). When absent, fall back to the provisional grouping (D10 / A1–A2).
+        self.variance_profile = variance_profile
+
+    def _variance_mult(self, category: str) -> float:
+        if self.variance_profile and category in self.variance_profile:
+            return self.variance_profile[category]
+        return VARIANCE_MULTIPLIER[CATEGORY_VARIANCE_LEVEL[category]]
 
     def project(
         self, store, league_id: str, team_id: str, as_of: str
@@ -58,12 +68,13 @@ class Projector:
         opponent = matchup.team_b if matchup.team_a == team_id else matchup.team_a
         period_end = matchup.period_end
 
+        ps = matchup.period_start
         mine = self.team_projection(
             store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
-            as_of, period_end, categories)
+            as_of, ps, period_end, categories)
         opp = self.team_projection(
             store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
-            as_of, period_end, categories)
+            as_of, ps, period_end, categories)
 
         return self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories)
@@ -96,24 +107,37 @@ class Projector:
             return {}
         opponent = matchup.team_b if matchup.team_a == team_id else matchup.team_a
         categories = self.config.categories
+        ps = matchup.period_start
         mine = self.team_projection(store, state.category_tally.get(team_id, {}),
-                                    roster_ids, as_of, matchup.period_end, categories)
+                                    roster_ids, as_of, ps, matchup.period_end, categories)
         opp = self.team_projection(store, state.category_tally.get(opponent, {}),
-                                   state.rosters.get(opponent, []), as_of,
+                                   state.rosters.get(opponent, []), as_of, ps,
                                    matchup.period_end, categories)
         proj = self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories)
         return {c: p.win_prob for c, p in proj.categories.items()}
 
     def team_projection(
-        self, store, tally: dict, roster_ids: list[str], as_of, period_end, categories
+        self, store, tally: dict, roster_ids: list[str], as_of, period_start, period_end,
+        categories
     ) -> dict[str, tuple[float, float]]:
         """Return {cat: (projected_total, projected_std)} for a roster over the period.
-        ``tally`` is the already-accrued point-in-time total; only remaining games change
-        with the roster, which is what makes a candidate add/drop swap re-projectable."""
-        totals = {c: tally.get(c, 0.0) for c in categories}
-        variances = {c: 0.0 for c in categories}
+        Counting cats: banked tally + Σ(remaining games × expected/g), variance Σ rg·σ².
+        Percentage cats (A8): project makes and attempts separately, then the ratio, with a
+        binomial standard error — never a sum of per-game percentages. Only remaining games
+        change with the roster, which is what makes an add/drop swap re-projectable."""
+        counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
+        pct = [c for c in categories if c in PERCENTAGE_CATEGORIES]
+        comp_keys = sorted({k for c in pct for k in PERCENTAGE_CATEGORIES[c]})
+        dist_keys = counting + comp_keys
+
+        totals = {c: tally.get(c, 0.0) for c in counting}
+        variances = {c: 0.0 for c in counting}
+        # banked (already-played) makes/attempts over [period_start, as_of]
+        proj_comp = dict(store.category_totals(roster_ids, period_start, as_of, comp_keys)) \
+            if comp_keys else {}
         window = self.config.recent_games_window
+
         for pid in roster_ids:
             avail = store.availability_asof(pid, as_of)
             if avail and avail.status == "OUT":
@@ -125,13 +149,21 @@ class Projector:
             rg = store.remaining_games_for_team(nba_team, as_of, period_end)
             if rg == 0:
                 continue
-            dist = store.player_distribution(pid, as_of, categories, window=window)
-            for c in categories:
+            dist = store.player_distribution(pid, as_of, dist_keys, window=window)
+            for c in counting:
                 mu, sd = dist[c]
                 totals[c] += rg * mu * scale
                 variances[c] += rg * (sd ** 2)
+            for k in comp_keys:
+                proj_comp[k] = proj_comp.get(k, 0.0) + rg * dist[k][0] * scale
+
         out: dict[str, tuple[float, float]] = {}
-        for c in categories:
-            mult = VARIANCE_MULTIPLIER[CATEGORY_VARIANCE_LEVEL[c]]
-            out[c] = (totals[c], math.sqrt(variances[c]) * mult)
+        for c in counting:
+            out[c] = (totals[c], math.sqrt(variances[c]) * self._variance_mult(c))
+        for c in pct:
+            mk, at = PERCENTAGE_CATEGORIES[c]
+            makes, attempts = proj_comp.get(mk, 0.0), proj_comp.get(at, 0.0)
+            p = makes / attempts if attempts > 0 else 0.0
+            std = math.sqrt(p * (1 - p) / attempts) if attempts > 0 else 1.0
+            out[c] = (p, std)
         return out

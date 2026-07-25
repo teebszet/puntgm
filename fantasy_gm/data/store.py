@@ -19,6 +19,7 @@ import statistics
 from collections.abc import Iterable
 from pathlib import Path
 
+from fantasy_gm.config import PERCENTAGE_CATEGORIES
 from fantasy_gm.models import (
     Availability,
     Game,
@@ -411,9 +412,12 @@ class Store:
     def _team_category_tally(
         self, player_ids: list[str], period_start: str, as_of: str, categories: list[str]
     ) -> dict[str, float]:
-        """Per-category totals for a roster over the current period, using only games
-        completed on or before ``as_of`` — point-in-time by construction."""
+        """Per-category totals for a roster over the current period, using only games in
+        [period_start, as_of]. Counting cats are summed; percentage cats (A8) are
+        volume-weighted (Σmakes / Σattempts), never a sum of per-game percentages."""
         tally = {c: 0.0 for c in categories}
+        # component accumulators for percentage categories: {cat: [makes, attempts]}
+        comps = {c: [0.0, 0.0] for c in categories if c in PERCENTAGE_CATEGORIES}
         if not player_ids:
             return tally
         placeholders = ",".join("?" for _ in player_ids)
@@ -426,7 +430,14 @@ class Store:
         for r in rows:
             stats = json.loads(r["stats_json"])
             for c in categories:
-                tally[c] += float(stats.get(c, 0.0))
+                if c in PERCENTAGE_CATEGORIES:
+                    mk, at = PERCENTAGE_CATEGORIES[c]
+                    comps[c][0] += float(stats.get(mk, 0.0))
+                    comps[c][1] += float(stats.get(at, 0.0))
+                else:
+                    tally[c] += float(stats.get(c, 0.0))
+        for c, (makes, attempts) in comps.items():
+            tally[c] = (makes / attempts) if attempts > 0 else 0.0
         return tally
 
     def category_totals(

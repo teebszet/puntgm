@@ -1,0 +1,111 @@
+"""Validation harness: measured variance profile (A1), bootstrap win-prob (A3), A8 fix.
+
+These run on synthetic data, so they check the *mechanism*, not the domain claim — the
+synthetic season is generated from the very assumptions real data would validate.
+"""
+
+from __future__ import annotations
+
+from fantasy_gm.data.store import Store
+from fantasy_gm.engine.projection import Projector
+from fantasy_gm.models import Game, Matchup, PlayerGameLog
+from fantasy_gm.validation import (
+    bootstrap_category_winprob,
+    derive_variance_profile,
+    measure_category_cv,
+)
+
+SEASON = "2025-26"
+
+
+def _line(**c):
+    base = {k: 0.0 for k in ("pts", "reb", "ast", "stl", "blk", "fg3m", "tov",
+                             "fgm", "fga", "ftm", "fta", "fg_pct", "ft_pct")}
+    base.update(c)
+    return base
+
+
+# --- A1: measurement mechanism ----------------------------------------------
+
+def _cv_store():
+    """Players with a low-variance category (pts) and a high-variance one (stl)."""
+    s = Store(":memory:")
+    for pi in range(4):
+        for gi, (pts, stl) in enumerate([(20, 0), (20, 4), (20, 0), (20, 4), (20, 0), (20, 4)]):
+            gid = f"g{pi}-{gi}"
+            s.upsert_games([Game(gid, SEASON, f"2025-10-{10 + gi:02d}", "X", "Y")])
+            s.upsert_player_logs([
+                PlayerGameLog(gid, SEASON, f"2025-10-{10 + gi:02d}", f"P{pi}", f"P{pi}", "X",
+                              _line(pts=pts, stl=stl))
+            ])
+    return s
+
+
+def test_cv_measured_and_high_variance_cat_ranks_higher():
+    cv = measure_category_cv(_cv_store(), SEASON, min_games=3)
+    assert "pts" in cv and "stl" in cv
+    assert cv["stl"] > cv["pts"]  # constant pts (CV 0) vs swinging stl
+
+
+def test_derive_profile_is_normalised_to_median():
+    cv = {"pts": 0.2, "reb": 0.4, "stl": 0.8}
+    prof = derive_variance_profile(cv)
+    assert prof["reb"] == 1.0  # median category maps to 1.0
+    assert prof["stl"] > prof["pts"]
+
+
+# --- A3: bootstrap win-prob --------------------------------------------------
+
+def test_bootstrap_returns_probability(fx):
+    m = fx.store.matchup_for_team(fx.league_id, "T00", "2025-11-14")
+    opp = m.team_b if m.team_a == "T00" else m.team_a
+    mine = fx.store.roster_asof(fx.league_id, "T00", "2025-11-14")
+    theirs = fx.store.roster_asof(fx.league_id, opp, "2025-11-14")
+    p = bootstrap_category_winprob(fx.store, mine, theirs, "pts",
+                                   m.period_start, "2025-11-14", m.period_end, n=300)
+    assert 0.0 <= p <= 1.0
+
+
+# --- projector consumes a measured profile -----------------------------------
+
+def test_projector_consumes_variance_profile():
+    s = Store(":memory:")
+    cats = ["pts", "reb", "ast", "stl", "blk", "fg3m", "tov", "fg_pct", "ft_pct"]
+    s.create_league("L", "L", SEASON, "weekly-lock", cats)
+    s.add_team("L", "T0", "T0")
+    s.add_team("L", "T1", "T1")
+    s.add_roster_event("L", "T0", "P0", "add", "2025-10-01")
+    s.add_roster_event("L", "T1", "P1", "add", "2025-10-01")
+    s.add_matchup(Matchup("L", 0, "2025-10-20", "2025-10-26", "T0", "T1"))
+    s.upsert_games([Game("h1", SEASON, "2025-10-16", "X", "Y"),
+                    Game("h2", SEASON, "2025-10-18", "X", "Y"),
+                    Game("fX", SEASON, "2025-10-24", "X", "Z"),
+                    Game("fY", SEASON, "2025-10-24", "Y", "Z")])
+    s.upsert_player_logs([
+        PlayerGameLog("h1", SEASON, "2025-10-16", "P0", "P0", "X", _line(pts=10)),
+        PlayerGameLog("h2", SEASON, "2025-10-18", "P0", "P0", "X", _line(pts=20)),
+        PlayerGameLog("h1", SEASON, "2025-10-16", "P1", "P1", "Y", _line(pts=8)),
+        PlayerGameLog("h2", SEASON, "2025-10-18", "P1", "P1", "Y", _line(pts=18)),
+    ])
+    base = Projector().project(s, "L", "T0", "2025-10-20").categories["pts"].win_prob
+    inflated = Projector(variance_profile={"pts": 8.0}).project(
+        s, "L", "T0", "2025-10-20").categories["pts"].win_prob
+    # a much larger variance multiplier pulls the win prob toward 0.5 (less certain)
+    assert abs(inflated - 0.5) < abs(base - 0.5)
+
+
+# --- A8: percentage categories are volume-weighted ---------------------------
+
+def test_percentage_category_is_volume_weighted():
+    s = Store(":memory:")
+    s.upsert_games([Game("g1", SEASON, "2025-10-16", "X", "Y"),
+                    Game("g2", SEASON, "2025-10-18", "X", "Y")])
+    # 3/10 one night, 7/10 the next -> volume-weighted FG% = 10/20 = 0.50, not (0.3+0.7)=1.0
+    s.upsert_player_logs([
+        PlayerGameLog("g1", SEASON, "2025-10-16", "P0", "P0", "X",
+                      _line(fgm=3, fga=10, fg_pct=0.3)),
+        PlayerGameLog("g2", SEASON, "2025-10-18", "P0", "P0", "X",
+                      _line(fgm=7, fga=10, fg_pct=0.7)),
+    ])
+    totals = s.category_totals(["P0"], "2025-10-01", "2025-10-31", ["fg_pct"])
+    assert abs(totals["fg_pct"] - 0.5) < 1e-9
