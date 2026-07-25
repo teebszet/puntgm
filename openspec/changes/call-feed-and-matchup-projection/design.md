@@ -94,6 +94,17 @@ richer, more defensible record than a ranked list ever was.
 detection are deterministic and testable this change, so the harness can measure calibration
 and the future LLM engine has a baseline to beat.
 
+**D10. Validate assertions before baking them in.** Any domain claim that can be checked against
+real data (e.g. the category-variance grouping in D2) is treated as **provisional** and must be
+*measured*, not asserted, before it hardens into a system parameter. Asserted constants are
+labeled provisional; the projector should consume a data-derived profile from a validation/
+calibration harness rather than hand-set values. Real validation needs the `nba_api` backfill —
+the synthetic season is generated from these same assumptions and so cannot validate them. The
+full inventory (what to measure, with which statistic and data) is in `assumptions.md`. This is
+not incidental: the product's "track record is the content" thesis depends on measured, not
+asserted, parameters. Known-wrong maths (percentage categories summed instead of volume-weighted)
+is fixed regardless of validation.
+
 ## Risks / Trade-offs
 
 - Projection overconfidence early in a period → Mitigation: show distributions/uncertainty,

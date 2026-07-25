@@ -50,3 +50,29 @@ scoreable call-feed log; `decision-engine` (ranker) removed. See proposal.md / d
 
 **Open for review:** the D-level decisions, the safe/contested/gone model choice (normal approx
 first), and whether opponent pre-emption is in-scope now or a later refinement.
+
+---
+
+## 2026-07-25 — round 1 (validate assumptions before baking in)
+
+**Raised:** "I'd like to review the maths in the assumptions — e.g. my claim about which cats are
+higher variance should be validated before it's built in. In general, anything I say that can be
+validated with real data should be validated first."
+
+**Resolved:** Adopted as a standing principle (design D10). Wrote `assumptions.md` — an inventory
+of every empirically-checkable assumption (A1 category-variance grouping, A2 variance multiplier,
+A3 normal-approx weakness for low-count cats, A4 game independence, A5 trailing-window estimator,
+A6 fantasy-value weights, A7 safe/contested/gone thresholds, A8 percentage cats summed = KNOWN-
+WRONG, A9 replacement availability, A10 signal-strength bar, A11 season-stage) with the exact
+statistic + data to validate each. Key finding: the projector already measures per-player per-game
+variance, so the hand-set variance *multiplier* (A2) likely double-counts A1 — validating A1 may
+mean deleting the multiplier, not tuning it. Real validation needs the nba_api backfill (synthetic
+data is generated from these assumptions, so it can't validate them).
+
+**Spec impact:** `matchup-projection` "Variance-aware projection" softened from asserting the
+pts/reb-low, stl/blk/ast-high grouping to requiring an **empirically-measured** profile (defaults
+labeled provisional); design D10 added.
+
+**Open for review:** the ledger itself (which assumptions to validate first), and whether to build
+the validation/calibration harness now (ready to run on real data) or after you've reviewed the
+ledger. Code is unchanged and stays provisional; percentage-category fix (A8) is queued regardless.

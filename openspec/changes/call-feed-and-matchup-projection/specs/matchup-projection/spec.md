@@ -38,14 +38,21 @@ a win probability for the deciding team and a label of safe, contested, or gone.
 
 ### Requirement: Variance-aware projection
 
-The projection SHALL account for per-category variance profiles, treating points and rebounds
-as lower-variance and steals, blocks, and assists as higher-variance, so that a numeric lead
-in a high-variance category is not called safe as readily as the same lead in a low-variance one.
+The projection SHALL account for per-category production variance so that a numeric lead in a
+higher-variance category is not called safe as readily as the same lead in a lower-variance one.
+The relative variance of each category SHALL be **empirically measured from data**, not asserted;
+any default grouping used before measurement is provisional and MUST be labeled as such (see
+`assumptions.md`, A1–A2).
 
-#### Scenario: High-variance lead is less safe than an equal low-variance lead
+#### Scenario: A higher-variance lead is less safe than an equal lower-variance lead
 
-- **WHEN** the deciding team leads two categories by comparable projected margins, one low-variance and one high-variance
-- **THEN** the high-variance category is assigned a lower win probability (closer to contested) than the low-variance category
+- **WHEN** the deciding team leads two categories by comparable projected margins, one measured as lower-variance and one as higher-variance
+- **THEN** the higher-variance category is assigned a lower win probability (closer to contested) than the lower-variance category
+
+#### Scenario: Variance profile is derived from data where available
+
+- **WHEN** a per-category variance profile has been measured from real production data
+- **THEN** the projection uses the measured profile rather than a hard-coded grouping
 
 ### Requirement: Availability-reactive projection
 
