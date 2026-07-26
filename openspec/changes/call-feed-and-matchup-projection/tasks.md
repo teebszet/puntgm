@@ -44,7 +44,7 @@
 - [x] 6.5 `validate` CLI + tests (mechanism on synthetic; real numbers require the nba_api backfill)
 - [x] 6.6 Ran the harness on the real nba_api backfill; validated A1/A4 and **removed the variance multiplier** (measured σ suffices); A8 fixed
 - [x] 6.7 A3 + A12 calibration on real data: binomial (pct) well-calibrated; normal (counting) usable but ~0.12 rough with mild blk over-confidence
-- [ ] 6.8 (Deferred — build later) Optional **bootstrap-backed win-prob** projection mode (`Projector(method="bootstrap")`) — ~2× better calibrated than the normal approx for the counting-cat labels that underpin the track record; keep normal as the fast deterministic default
+- [x] 6.8 Optional **bootstrap-backed win-prob** projection mode (`Projector(method="bootstrap")`, `project --method bootstrap`) — Monte-Carlo over real per-game lines, deterministic given seed; keeps normal as the fast default. On real data it flips labels the normal approx got wrong (e.g. fg_pct contested→safe)
 - [x] 6.9 A6: replaced the ad-hoc `_fantasy_points` weights with data-derived per-category **z-score** valuation (`valuation.py`; percentage impact volume-weighted); wired into ADP draft + drop ranking; `values` CLI. On real data it reorders 8 of the top 12 vs the ad-hoc formula (which ignored FG%/FT%)
 - [ ] 6.10 (Future) A5 estimator/window study; A7 reliability diagram for safe/contested/gone thresholds; A9–A11
 

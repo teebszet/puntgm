@@ -79,7 +79,7 @@ def cmd_project(args: argparse.Namespace) -> int:
 
     config = Config()
     store = _store(config)
-    proj = Projector(config).project(store, args.league, args.team, args.as_of)
+    proj = Projector(config, method=args.method).project(store, args.league, args.team, args.as_of)
     if not proj.opponent_id:
         print("no active matchup for that team/date", file=sys.stderr)
         return 1
@@ -204,6 +204,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--as-of", dest="as_of", required=True)
     pr.add_argument("--league", required=True)
     pr.add_argument("--team", required=True)
+    pr.add_argument("--method", default="normal", choices=["normal", "bootstrap"],
+                    help="win-prob method: normal (fast Φ) or bootstrap (more accurate, A3)")
     pr.set_defaults(func=cmd_project)
 
     fd = sub.add_parser("feed", help="live signals + end-of-day reconciliation for a team")

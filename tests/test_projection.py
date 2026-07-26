@@ -66,6 +66,18 @@ def test_injury_reopens_category():
     assert after < before  # losing my only contributor moves pts toward gone
 
 
+def test_bootstrap_method_produces_valid_labels():
+    s = _tiny_store()
+    proj = Projector(method="bootstrap", n_boot=300).project(s, "L", "T0", AS_OF)
+    for p in proj.categories.values():
+        assert 0.0 <= p.win_prob <= 1.0
+        assert p.label in ("safe", "contested", "gone")
+    # bootstrap is deterministic given the seed
+    again = Projector(method="bootstrap", n_boot=300).project(s, "L", "T0", AS_OF)
+    assert [c.win_prob for c in proj.categories.values()] == \
+           [c.win_prob for c in again.categories.values()]
+
+
 def test_projection_excludes_future_results():
     s = _tiny_store()
     before = Projector().project(s, "L", "T0", AS_OF).categories["pts"]

@@ -81,6 +81,10 @@ probability, and a **safe / contested / gone** label. Contested cats are the one
 fighting for. Variance-aware (a lead in blocks is less safe than the same lead in points)
 and availability-reactive (an OUT player re-opens categories).
 
+`--method bootstrap` swaps the fast normal approximation for a Monte-Carlo win-prob over real
+per-game lines — ~2× better calibrated for counting categories (A3), at a speed cost. Normal is
+the default; bootstrap is deterministic given its seed.
+
 ### 5. `feed` — live signals + end-of-day reconciliation
 
 ```bash

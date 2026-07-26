@@ -42,8 +42,14 @@ def _label(win_prob: float) -> str:
 
 
 class Projector:
-    def __init__(self, config: Config | None = None):
+    def __init__(self, config: Config | None = None, method: str = "normal",
+                 n_boot: int = 600, seed: int = 0):
         self.config = config or Config()
+        # win-prob method: "normal" (fast Φ, default) or "bootstrap" (Monte-Carlo over real
+        # per-game lines — ~2× better calibrated for counting cats, A3, at a speed cost).
+        self.method = method
+        self.n_boot = n_boot
+        self.seed = seed
 
     def project(
         self, store, league_id: str, team_id: str, as_of: str
@@ -67,25 +73,93 @@ class Projector:
             store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
             as_of, ps, period_end, categories)
 
+        win_probs = None
+        if self.method == "bootstrap":
+            win_probs = self._bootstrap_winprobs(
+                store, state.rosters.get(team_id, []), state.rosters.get(opponent, []),
+                as_of, ps, period_end)
         return self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
-                              mine, opp, categories)
+                              mine, opp, categories, win_probs)
 
     def _assemble(self, as_of, league_id, team_id, opponent, period_index, mine, opp,
-                  categories) -> MatchupProjection:
+                  categories, win_probs=None) -> MatchupProjection:
         cats: dict[str, CategoryProjection] = {}
         for c in categories:
             mt, ms = mine[c]
             ot, os = opp[c]
-            direction = CATEGORY_DIRECTION[c]
-            combined = math.hypot(ms, os)
-            diff = direction * (mt - ot)
-            if combined == 0.0:
-                win_prob = 1.0 if diff > 0 else (0.5 if diff == 0 else 0.0)
+            if win_probs is not None:
+                win_prob = win_probs[c]
             else:
-                win_prob = _phi(diff / combined)
+                direction = CATEGORY_DIRECTION[c]
+                combined = math.hypot(ms, os)
+                diff = direction * (mt - ot)
+                if combined == 0.0:
+                    win_prob = 1.0 if diff > 0 else (0.5 if diff == 0 else 0.0)
+                else:
+                    win_prob = _phi(diff / combined)
             cats[c] = CategoryProjection(c, round(mt, 2), round(ot, 2), round(ms, 2),
                                          round(os, 2), round(win_prob, 4), _label(win_prob))
         return MatchupProjection(as_of, league_id, team_id, opponent, period_index, cats)
+
+    def _bootstrap_winprobs(self, store, my_roster, opp_roster, as_of, period_start,
+                            period_end) -> dict[str, float]:
+        """Per-category win prob by Monte-Carlo: resample each player's recent real per-game
+        lines over their remaining games (whole lines, so within-game category structure is
+        preserved) and compare team totals. Windowed to the projector's recent-games window."""
+        import random
+
+        cats = self.config.categories
+        counting = [c for c in cats if c not in PERCENTAGE_CATEGORIES]
+        comp_keys = sorted({k for c in cats if c in PERCENTAGE_CATEGORIES
+                            for k in PERCENTAGE_CATEGORIES[c]})
+        window = self.config.recent_games_window
+
+        def _side(roster):
+            bt = store.category_totals(roster, period_start, as_of, counting + comp_keys)
+            banked = {k: bt.get(k, 0.0) for k in counting + comp_keys}
+            draws = []
+            for pid in roster:
+                avail = store.availability_asof(pid, as_of)
+                if avail and avail.status == "OUT":
+                    continue
+                nba_team = store.player_team(pid, as_of)
+                if not nba_team:
+                    continue
+                rg = store.remaining_games_for_team(nba_team, as_of, period_end)
+                if rg == 0:
+                    continue
+                lines = [lg.stats for lg in store.player_logs_asof(as_of, player_id=pid)][-window:]
+                if lines:
+                    draws.append((rg, lines))
+            return banked, draws
+
+        my_banked, my_draws = _side(my_roster)
+        op_banked, op_draws = _side(opp_roster)
+        rng = random.Random(self.seed)
+        keys = counting + comp_keys
+        wins = {c: 0.0 for c in cats}
+
+        def _totals(banked, draws):
+            t = dict(banked)
+            for rg, lines in draws:
+                for _ in range(rg):
+                    g = rng.choice(lines)
+                    for k in keys:
+                        t[k] += g.get(k, 0.0)
+            return t
+
+        for _ in range(self.n_boot):
+            my, op = _totals(my_banked, my_draws), _totals(op_banked, op_draws)
+            for c in counting:
+                d = CATEGORY_DIRECTION[c] * (my[c] - op[c])
+                wins[c] += 1.0 if d > 0 else (0.5 if d == 0 else 0.0)
+            for c in cats:
+                if c in PERCENTAGE_CATEGORIES:
+                    mk, at = PERCENTAGE_CATEGORIES[c]
+                    mp = my[mk] / my[at] if my[at] > 0 else 0.0
+                    op_p = op[mk] / op[at] if op[at] > 0 else 0.0
+                    wins[c] += 1.0 if mp > op_p else (0.5 if mp == op_p else 0.0)
+        return {c: wins[c] / self.n_boot for c in cats}
 
     def win_probs_for_roster(
         self, store, league_id: str, team_id: str, as_of: str, roster_ids: list[str]
