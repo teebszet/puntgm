@@ -72,6 +72,15 @@ def test_bootstrap_returns_probability(fx):
 
 # --- A4: autocorrelation measurement -----------------------------------------
 
+def test_category_correlations_matrix(fx):
+    from fantasy_gm.validation import measure_category_correlations
+    m = measure_category_correlations(fx.store, fx.season, pool_size=100)
+    assert "pts" in m and "reb" in m["pts"]
+    assert abs(m["pts"]["pts"] - 1.0) < 1e-6       # diagonal is 1
+    assert abs(m["pts"]["reb"] - m["reb"]["pts"]) < 1e-6  # symmetric
+    assert all(-1.0 <= v <= 1.0 for row in m.values() for v in row.values())
+
+
 def test_autocorrelation_measured_for_counting_cats():
     from fantasy_gm.validation import measure_autocorrelation
     s = Store(":memory:")

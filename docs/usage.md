@@ -81,6 +81,10 @@ probability, and a **safe / contested / gone** label. Contested cats are the one
 fighting for. Variance-aware (a lead in blocks is less safe than the same lead in points)
 and availability-reactive (an OUT player re-opens categories).
 
+`--method bootstrap` swaps the fast normal approximation for a Monte-Carlo win-prob over real
+per-game lines — ~2× better calibrated for counting categories (A3), at a speed cost. Normal is
+the default; bootstrap is deterministic given its seed.
+
 ### 5. `feed` — live signals + end-of-day reconciliation
 
 ```bash
@@ -96,6 +100,19 @@ Two parts, both written to the append-only call-feed log:
 - **End-of-day reconciliation** — candidate add/drop moves, each labeled by the category it
   most improves ("contest REB") with the projected win-prob impact per category, and flagged
   if it drops a player who hasn't played yet.
+
+### 6. `wire` — availability by bundle + marginal trade-off (A9)
+
+```bash
+python -m fantasy_gm.cli wire --as-of 2026-01-15 --league sim-2025-26-3-8x10 --team T02
+```
+
+Because players come in correlated positional bundles (measured: big = reb·blk·fg_pct, guard =
+ast·stl·fg3m·ft_pct), you never swap one category cleanly. This shows **bundle depth** on the wire
+(how many available players lean big vs guard) and, per contested category, the best available add's
+**gain and concede vector** with a verdict — *chase* (nets ahead), *trade-off* (helps the cat but
+concedes more), or *infeasible* (nothing available improves it). It reproduces the correlation
+structure as real costs — e.g. a FG% add concedes 3PM; a steals add concedes rebounds/blocks.
 
 ## Library usage
 

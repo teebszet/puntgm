@@ -98,14 +98,25 @@ count — extend it to a full reliability diagram.
 (ΣFGM/ΣFGA). A 90% FT shooter on 2 attempts ≠ on 10. This is not an assumption to validate; it's
 a correctness bug. Fix: track makes+attempts and compute the ratio; project attempts too.
 
-## A9. Replacement availability by category — ASSERTED (your "backup PG for assists" point)
+## A9. Replacement availability — REFRAMED as a bundle problem (2026-07-27)
 
-**Claim:** some contested cats are more *actionable* because the wire is deep in them (assists via
-backup PGs).
-**Validate:** for each category, measure the distribution of the best-available (unrostered)
-per-game production across the season — e.g. the Nth-best FA's per-game in that cat. Deeper supply
-= more actionable. Feeds whether a contested cat is worth chasing.
-**Data:** real logs + realistic roster/availability (simulated leagues, then your imported leagues).
+**Original claim:** some contested cats are more *actionable* because the wire is deep in them
+(assists via backup PGs).
+**Reframing (user):** you never swap one category cleanly — players come in **correlated positional
+bundles**, so "availability of category X" must account for which cats you *concede* to get it.
+**Measured** (`measure_category_correlations`, real 2025-26, 156-player pool): the bundles are strong —
+reb↔blk **+0.60** and both ↔fg_pct (the big bundle); ast↔pts **+0.70**, ast↔stl **+0.51**, 3PM↔FT%
+**+0.55** (the guard bundle); fg_pct↔ft_pct **−0.35** (the canonical 9-cat tension); tov↔ast **+0.82**
+(turnovers are a usage tax); 3PM↔FG% **−0.49**. So trading a C for a PG buys ast/stl/3PM/FT% and sells
+reb/blk/FG% (plus turnovers).
+**Built (`engine/wire.py`, `wire` CLI):** the full model — (a) **bundle scarcity**: classify each
+available player into the measured big/guard bundle and count depth; (b) **marginal trade-off**: for
+each contested category, the best available mover's full gain/concede vector via re-projection, with a
+verdict — *chase* (net ahead), *trade-off* (helps the cat but concedes more), *infeasible* (no add
+improves it). On real data it reproduces the correlation structure as concrete costs: a FG% add
+(R. Williams) concedes 3PM; a steals add (Thybulle) concedes reb/blk; chasing TOV nets −3. Wire depth
+came out guard-heavy (guard 291 / big 124).
+**Data:** real logs + realistic roster/availability (simulated leagues, then imported real leagues).
 
 ## A10. Signal strength formula & thresholds — HEURISTIC
 
@@ -163,11 +174,11 @@ Backfilled the full real 2025-26 season (26,651 player-game lines) and measured:
   deleted; the projector now uses measured σ only. `measure_category_cv` /
   `measure_autocorrelation` stay as validation/reporting, not projector inputs.
 - **A8 — FIXED** (percentage cats volume-weighted).
-- **A3 — checked (2026-07-26): normal approx is usable but rough.** Windowed bootstrap vs the
-  projector's normal win-prob over 24 real matchups: mean |Δ| ≈ **0.124** for counting cats, with
-  a mild over-confidence bias on **blk (+0.04)** — the low-count cat, as theory predicts. Usable as
-  a fast deterministic default, but a bootstrap-backed win-prob (now available) is materially more
-  accurate; worth an optional projection mode where label trustworthiness matters (the track record).
+- **A3 — RESOLVED (bootstrap mode built).** Checked: the normal approx is usable but rough (mean
+  |Δ| ≈ 0.124 for counting cats, mild blk over-confidence). Built `Projector(method="bootstrap")` —
+  Monte-Carlo over real per-game lines (whole lines, so within-game structure is preserved),
+  deterministic given seed. Kept normal as the fast default; bootstrap is the opt-in accurate mode
+  and flips labels the normal approx miscalls on real data.
 - **A12 — RESOLVED: the binomial percentage model is well-calibrated.** Same study: mean |Δ| ≈
   **0.056** for fg_pct/ft_pct, negligible bias. Despite ignoring streakiness, the binomial SE
   matches the empirical spread — no change needed. (Percentages are ~2× better calibrated than the

@@ -16,7 +16,7 @@
   "changes/call-feed-and-matchup-projection/specs/historical-data-pipeline/spec.md": "2c827672a6b8295c94077dec85275b08b4756fc8b4bccaab4200a5371289823d",
   "changes/call-feed-and-matchup-projection/specs/decision-engine/spec.md": "3727c055562acc1980d67afc2478a218627f7221fcb265747a4293ca6c603887",
   "changes/call-feed-and-matchup-projection/specs/recommendation-log/spec.md": "4a071729ac9856f5dbe16bf76e566eb8116826d679c7076f528b51f1bea8f430",
-  "changes/call-feed-and-matchup-projection/tasks.md": "6fe7cd08eedbf49603ea6febc5656f1069aba05c1aeba05b9625a95160b71ce1",
-  "changes/call-feed-and-matchup-projection/discussion.md": "6e0b9f846f2199a1d58d0760413ee9fe8f05b857394bc544494100e6e64151fb",
-  "changes/call-feed-and-matchup-projection/assumptions.md": "d215e9fb4bc4c90f8ea8aed3ba7e8dc9d8efadf89f125e3df34c78ea2e306fc6"
+  "changes/call-feed-and-matchup-projection/tasks.md": "a261cc8bdf588532b02939e088063e52a40e222d9a1efd8f06ec162235e46962",
+  "changes/call-feed-and-matchup-projection/discussion.md": "469c9aff23f8674f2f3d9d6f3dbff0bff9bf841d320e4133bf237fcff651d103",
+  "changes/call-feed-and-matchup-projection/assumptions.md": "b37d2835069ec44bcd93b48087f9c7571e773a7b847f8ee0337ecf87a6896aa8"
 }
