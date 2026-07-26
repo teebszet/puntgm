@@ -136,6 +136,21 @@ league_id = import_league_export(store, {
 })
 ```
 
+## Player valuation (z-scores)
+
+Player value uses data-derived **9-cat z-scores** (`fantasy_gm/valuation.py`), not ad-hoc
+weights: each counting category is standardised by the league mean/σ over a rosterable pool, and
+percentages use the volume-weighted impact form. It drives the simulated draft (ADP) and drop
+ranking.
+
+```bash
+python -m fantasy_gm.cli values --season 2025-26 --top 20
+```
+
+On real data this reorders the top sharply versus a raw-counting formula — it correctly
+penalises high-volume poor-FT% / high-turnover stars, matching real 9-cat intuition (the best NBA
+player isn't the best fantasy value).
+
 ## The point-in-time model (anti-lookahead)
 
 The core correctness property is that a recommendation for date *D* is a pure function of

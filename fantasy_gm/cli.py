@@ -153,6 +153,25 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_values(args: argparse.Namespace) -> int:
+    from fantasy_gm.valuation import player_values
+
+    config = Config()
+    store = _store(config)
+    vals = player_values(store, args.season)
+    if not vals:
+        print("no data to value (backfill a season first)", file=sys.stderr)
+        return 1
+    top = sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))[: args.top]
+    print(f"top {len(top)} players by 9-cat z-value (season {args.season})")
+    for pid, z in top:
+        row = store.conn.execute(
+            "SELECT player_name FROM player_logs WHERE player_id = ? LIMIT 1", (pid,)
+        ).fetchone()
+        print(f"  {z:>6.2f}  {row['player_name'] if row else pid}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -198,6 +217,11 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("validate", help="measure category variance from backfilled data (A1)")
     v.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
     v.set_defaults(func=cmd_validate)
+
+    vv = sub.add_parser("values", help="rank players by data-derived 9-cat z-value (A6)")
+    vv.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    vv.add_argument("--top", type=int, default=20)
+    vv.set_defaults(func=cmd_values)
     return p
 
 

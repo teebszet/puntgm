@@ -31,8 +31,10 @@ class Reconciler:
         rostered = state.rostered_player_ids()
         perspective = Perspective(league_id, team_id, proj.period_index, proj.opponent_id)
 
+        from fantasy_gm.valuation import player_values
+        values = player_values(store, season)  # data-derived z-value per player (A6)
         wire = self._wire_candidates(store, season, rostered, matchup.period_end, as_of)
-        drops = self._drop_candidates(store, my_roster, matchup.period_end, as_of, proj)
+        drops = self._drop_candidates(store, my_roster, matchup.period_end, as_of, values)
         if not wire or not drops:
             return []
 
@@ -85,16 +87,16 @@ class Reconciler:
                 out.append((pid, name, rg))
         return out
 
-    def _drop_candidates(self, store, my_roster, period_end, as_of, proj):
+    def _drop_candidates(self, store, my_roster, period_end, as_of, values):
         scored = []
         for pid in my_roster:
             name = self._name(store, pid, as_of)
             nba_team = store.player_team(pid, as_of)
             rg = store.remaining_games_for_team(nba_team, as_of, period_end) if nba_team else 0
-            prod = self._prod(store, pid, as_of)
-            scored.append((rg, prod, pid, name))
-        scored.sort()  # fewest remaining games, then lowest production -> best drop first
-        return [(pid, name) for _rg, _prod, pid, name in scored]
+            value = values.get(pid, -999.0)  # below-pool players are the first to drop
+            scored.append((rg, value, pid, name))
+        scored.sort()  # fewest remaining games, then lowest z-value -> best drop first
+        return [(pid, name) for _rg, _value, pid, name in scored]
 
     # --- small helpers -------------------------------------------------------
     def _name(self, store, pid, as_of):

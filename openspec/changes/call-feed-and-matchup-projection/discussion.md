@@ -140,3 +140,26 @@ projector's 10-game window; fixed by adding a `window` param.)
 **Open for review:** whether to add an optional bootstrap-backed win-prob projection mode for cases
 where label trustworthiness matters (the published track record), accepting the speed cost — or keep
 the fast normal approx and treat the ~0.12 gap as acceptable for now.
+
+---
+
+## 2026-07-26 — round 4 (A6: z-score valuation)
+
+**Raised:** replace the asserted `_fantasy_points` weights (pts×1, reb×1.2, … stl×3, blk×3, −tov)
+with data-derived value; deferred the A3 bootstrap-projection mode to later (task 6.8).
+
+**Built:** `fantasy_gm/valuation.py` — 9-cat z-score value: counting cats standardised by league
+mean/σ over a rosterable pool (top 156 by games played); percentages via the volume-weighted impact
+form. Wired into the simulated ADP draft (`simulate._adp_order`) and reconciliation drop ranking; added
+a `values` CLI. `_fantasy_points` remains only as the baseline engine's proxy + a recent-form pre-filter.
+
+**Finding (real 2025-26):** the ad-hoc formula **ignored FG%/FT% entirely** and over-weighted blk/stl —
+so it ranked raw-counting bigs on top (Jokić, Dončić, Wembanyama, Giannis). The category-balanced
+z-value reorders **8 of the top 12**, elevating efficient multi-cat guards (SGA, Maxey, Mitchell,
+Murray, Harden) and penalising high-volume poor-FT%/high-TOV stars — matching real 9-cat intuition
+(best player ≠ best fantasy value). Another clean win for measured-over-asserted.
+
+**Spec impact:** none (valuation is engine/data plumbing). 49 tests, ruff clean. Ledger A6 resolved.
+
+**Next:** merge this change to `main` (per user); deferred items 6.8 (bootstrap projection mode) and
+6.10 (A5/A7/A9–A11) remain future work.

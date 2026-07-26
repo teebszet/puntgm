@@ -66,14 +66,21 @@ variance of k-game sums actually scales ∝ k (vs. sub-/super-linear).
 N ∈ {5,8,10,15, full-season} and vs. exponentially-weighted; pick the minimum-error estimator.
 **Data:** real per-game logs.
 
-## A6. Fantasy-value proxy weights — ASSERTED
+## A6. Fantasy-value proxy weights — RESOLVED (2026-07-26)
 
 **Claim:** `store._fantasy_points` uses pts×1, reb×1.2, ast×1.5, stl×3, blk×3, fg3m×1, tov×−1.
 Used for ADP ordering and drop selection.
-**Validate:** replace with **per-category z-scores** (Basketball-Monster style: standardize each
-category by its league σ). The z-score *is* the measured value; validate by whether z-score
-rankings predict category-winning contribution better than the ad-hoc weights.
-**Data:** league-wide per-player per-game distributions.
+**Resolution:** replaced with **per-category z-scores** (`fantasy_gm/valuation.py`): each counting
+cat standardised by league mean/σ over a rosterable pool; percentages use the volume-weighted
+*impact* form ((player% − league%) × attempts) then standardised. Wired into the simulated-league
+ADP draft and reconciliation drop ranking. `_fantasy_points` remains only as the throwaway baseline
+engine's proxy and a recent-form pre-filter.
+**Finding on real 2025-26 data:** the ad-hoc formula **ignored FG%/FT% entirely** and over-weighted
+blk/stl, so it topped out with raw-counting bigs (Jokić, Dončić, Wembanyama, Giannis). The z-value —
+category-complete and balanced — reorders **8 of the top 12**, elevating efficient multi-cat guards
+(SGA, Maxey, Mitchell, Murray, Harden) and penalising high-volume poor-FT%/high-TOV stars. This
+matches real 9-cat intuition (best NBA player ≠ best 9-cat value) and is a clean win for measured
+over asserted.
 
 ## A7. safe / contested / gone thresholds (0.80 / 0.20) — HEURISTIC, calibrate
 

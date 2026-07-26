@@ -42,8 +42,11 @@
 - [x] 6.3 Projector consumes an optional measured variance profile, falling back to the provisional grouping
 - [x] 6.4 `bootstrap_category_winprob` (A3): Monte-Carlo win prob to check the normal approximation
 - [x] 6.5 `validate` CLI + tests (mechanism on synthetic; real numbers require the nba_api backfill)
-- [ ] 6.6 (Blocked on real data) Run the harness on the nba_api backfill; replace provisional constants with measured values; decide whether to drop the variance multiplier (A2)
-- [ ] 6.7 (Future) Reliability diagram for safe/contested/gone thresholds (A7); estimator/window study (A5); z-score values (A6)
+- [x] 6.6 Ran the harness on the real nba_api backfill; validated A1/A4 and **removed the variance multiplier** (measured σ suffices); A8 fixed
+- [x] 6.7 A3 + A12 calibration on real data: binomial (pct) well-calibrated; normal (counting) usable but ~0.12 rough with mild blk over-confidence
+- [ ] 6.8 (Deferred — build later) Optional **bootstrap-backed win-prob** projection mode (`Projector(method="bootstrap")`) — ~2× better calibrated than the normal approx for the counting-cat labels that underpin the track record; keep normal as the fast deterministic default
+- [x] 6.9 A6: replaced the ad-hoc `_fantasy_points` weights with data-derived per-category **z-score** valuation (`valuation.py`; percentage impact volume-weighted); wired into ADP draft + drop ranking; `values` CLI. On real data it reorders 8 of the top 12 vs the ad-hoc formula (which ignored FG%/FT%)
+- [ ] 6.10 (Future) A5 estimator/window study; A7 reliability diagram for safe/contested/gone thresholds; A9–A11
 
 ## 7. Non-code setup (carried from the foundation; parallel, not in specs)
 
