@@ -163,3 +163,25 @@ Murray, Harden) and penalising high-volume poor-FT%/high-TOV stars — matching 
 
 **Next:** merge this change to `main` (per user); deferred items 6.8 (bootstrap projection mode) and
 6.10 (A5/A7/A9–A11) remain future work.
+
+---
+
+## 2026-07-27 — round 5 (A3 bootstrap mode) + round 6 (A9 reframed)
+
+**A3 (built):** `Projector(method="bootstrap")` — Monte-Carlo win-prob over real per-game lines
+(whole lines, so within-game structure is preserved), windowed, deterministic given seed;
+`project --method bootstrap`. Normal Φ stays the fast default. On real data it flips labels the
+normal approx miscalls. Task 6.8 done.
+
+**A9 (investigated, reframed — user's insight):** you never swap categories one-for-one; players are
+correlated positional bundles. Measured the category correlation matrix on the real season
+(`measure_category_correlations`): reb↔blk +0.60 (+fg_pct); ast↔pts +0.70, ast↔stl +0.51, 3PM↔FT%
++0.55 (guard bundle); fg_pct↔ft_pct −0.35 (the 9-cat tension); tov↔ast +0.82; 3PM↔FG% −0.49. Trading
+a C for a PG buys ast/stl/3PM/FT% and sells reb/blk/FG%. Reframed A9 from "per-category wire depth" to
+a **bundle/positional availability** problem. Note the reconciler already captures the trade-off via
+per-candidate re-projection; the open piece is *wire scarcity by bundle* + a *marginal trade-off*
+signal.
+
+**Open decision (A9 scope):** how far to model bundle availability — (a) leave it, since reconciliation
+already re-projects full impact; (b) add a lightweight "wire scarcity by bundle" signal; or (c) a fuller
+positional/marginal-trade-off model. Design call, not yet built.

@@ -100,6 +100,46 @@ def measure_autocorrelation(
     return {c: statistics.median(v) for c, v in per_cat.items() if v}
 
 
+def measure_category_correlations(
+    store, season: str, categories: list[str] | None = None, pool_size: int = 156
+) -> dict[str, dict[str, float]]:
+    """Pearson correlation of per-player per-category production across the rosterable pool (A9).
+
+    Reveals the positional *bundles*: which categories co-occur in players and which trade off,
+    so "availability of a category" is really "which bundle is available, and at what cost" — e.g.
+    adding a PG for assists also brings steals/3PM/FT% and concedes rebounds/blocks/FG%.
+    """
+    import json
+
+    categories = categories or list(DEFAULT_CATEGORIES)
+    games: dict[str, list[dict]] = {}
+    for r in store.conn.execute(
+        "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
+    ):
+        games.setdefault(r["player_id"], []).append(json.loads(r["stats_json"]))
+    pool = sorted(games, key=lambda p: -len(games[p]))[:pool_size]
+
+    vec: dict[str, list[float]] = {c: [] for c in categories}
+    for pid in pool:
+        gs = games[pid]
+        for c in categories:
+            if c in PERCENTAGE_CATEGORIES:
+                mk, at = PERCENTAGE_CATEGORIES[c]
+                made, att = sum(g.get(mk, 0.0) for g in gs), sum(g.get(at, 0.0) for g in gs)
+                vec[c].append(made / att if att > 0 else 0.0)
+            else:
+                vec[c].append(statistics.fmean([g.get(c, 0.0) for g in gs]))
+
+    def _corr(a: list[float], b: list[float]) -> float:
+        ma, mb = statistics.fmean(a), statistics.fmean(b)
+        sa, sb = statistics.pstdev(a), statistics.pstdev(b)
+        if sa == 0 or sb == 0:
+            return 0.0
+        return sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=False)) / (len(a) * sa * sb)
+
+    return {c: {d: round(_corr(vec[c], vec[d]), 3) for d in categories} for c in categories}
+
+
 def bootstrap_category_winprob(
     store, my_players: list[str], opp_players: list[str], category: str,
     period_start: str, as_of: str, period_end: str, n: int = 1000, seed: int = 0,

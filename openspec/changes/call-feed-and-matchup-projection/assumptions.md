@@ -98,14 +98,24 @@ count — extend it to a full reliability diagram.
 (ΣFGM/ΣFGA). A 90% FT shooter on 2 attempts ≠ on 10. This is not an assumption to validate; it's
 a correctness bug. Fix: track makes+attempts and compute the ratio; project attempts too.
 
-## A9. Replacement availability by category — ASSERTED (your "backup PG for assists" point)
+## A9. Replacement availability — REFRAMED as a bundle problem (2026-07-27)
 
-**Claim:** some contested cats are more *actionable* because the wire is deep in them (assists via
-backup PGs).
-**Validate:** for each category, measure the distribution of the best-available (unrostered)
-per-game production across the season — e.g. the Nth-best FA's per-game in that cat. Deeper supply
-= more actionable. Feeds whether a contested cat is worth chasing.
-**Data:** real logs + realistic roster/availability (simulated leagues, then your imported leagues).
+**Original claim:** some contested cats are more *actionable* because the wire is deep in them
+(assists via backup PGs).
+**Reframing (user):** you never swap one category cleanly — players come in **correlated positional
+bundles**, so "availability of category X" must account for which cats you *concede* to get it.
+**Measured** (`measure_category_correlations`, real 2025-26, 156-player pool): the bundles are strong —
+reb↔blk **+0.60** and both ↔fg_pct (the big bundle); ast↔pts **+0.70**, ast↔stl **+0.51**, 3PM↔FT%
+**+0.55** (the guard bundle); fg_pct↔ft_pct **−0.35** (the canonical 9-cat tension); tov↔ast **+0.82**
+(turnovers are a usage tax); 3PM↔FG% **−0.49**. So trading a C for a PG buys ast/stl/3PM/FT% and sells
+reb/blk/FG% (plus turnovers).
+**Where the engine already handles this:** reconciliation re-projects *every* candidate add and reports
+the full per-category impact, so the bundle trade-off is already captured in the numbers it shows.
+**What's still open (the real A9):** (a) *wire scarcity by bundle* — which category bundles are deep vs
+shallow among unrostered players; (b) a *marginal trade-off* signal — for a contested cat, the best
+available mover's full gain/concede vector, surfaced to the manager. This is a multivariate design, not
+a per-category depth number — scope is a design decision (see discussion round 6).
+**Data:** real logs + realistic roster/availability (simulated leagues, then imported real leagues).
 
 ## A10. Signal strength formula & thresholds — HEURISTIC
 

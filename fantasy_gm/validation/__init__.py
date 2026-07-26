@@ -11,12 +11,14 @@ from fantasy_gm.validation.measure import (
     bootstrap_pct_winprob,
     derive_variance_profile,
     measure_autocorrelation,
+    measure_category_correlations,
     measure_category_cv,
 )
 
 __all__ = [
     "measure_category_cv",
     "measure_autocorrelation",
+    "measure_category_correlations",
     "derive_variance_profile",
     "bootstrap_category_winprob",
     "bootstrap_pct_winprob",
