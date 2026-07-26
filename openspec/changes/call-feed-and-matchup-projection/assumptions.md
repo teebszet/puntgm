@@ -109,12 +109,13 @@ reb↔blk **+0.60** and both ↔fg_pct (the big bundle); ast↔pts **+0.70**, as
 **+0.55** (the guard bundle); fg_pct↔ft_pct **−0.35** (the canonical 9-cat tension); tov↔ast **+0.82**
 (turnovers are a usage tax); 3PM↔FG% **−0.49**. So trading a C for a PG buys ast/stl/3PM/FT% and sells
 reb/blk/FG% (plus turnovers).
-**Where the engine already handles this:** reconciliation re-projects *every* candidate add and reports
-the full per-category impact, so the bundle trade-off is already captured in the numbers it shows.
-**What's still open (the real A9):** (a) *wire scarcity by bundle* — which category bundles are deep vs
-shallow among unrostered players; (b) a *marginal trade-off* signal — for a contested cat, the best
-available mover's full gain/concede vector, surfaced to the manager. This is a multivariate design, not
-a per-category depth number — scope is a design decision (see discussion round 6).
+**Built (`engine/wire.py`, `wire` CLI):** the full model — (a) **bundle scarcity**: classify each
+available player into the measured big/guard bundle and count depth; (b) **marginal trade-off**: for
+each contested category, the best available mover's full gain/concede vector via re-projection, with a
+verdict — *chase* (net ahead), *trade-off* (helps the cat but concedes more), *infeasible* (no add
+improves it). On real data it reproduces the correlation structure as concrete costs: a FG% add
+(R. Williams) concedes 3PM; a steals add (Thybulle) concedes reb/blk; chasing TOV nets −3. Wire depth
+came out guard-heavy (guard 291 / big 124).
 **Data:** real logs + realistic roster/availability (simulated leagues, then imported real leagues).
 
 ## A10. Signal strength formula & thresholds — HEURISTIC

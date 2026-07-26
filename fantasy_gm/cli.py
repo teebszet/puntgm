@@ -153,6 +153,32 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_wire(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.wire import WireAnalyzer
+
+    config = Config()
+    store = _store(config)
+    wa = WireAnalyzer(config).analyze(store, args.league, args.team, args.as_of)
+    if not wa.perspective.opponent_team_id:
+        print("no active matchup for that team/date", file=sys.stderr)
+        return 1
+    p = wa.perspective
+    print(f"wire analysis: league={p.league_id} team={p.team_id} "
+          f"opp={p.opponent_team_id} as_of={args.as_of}")
+    print("bundle depth on wire: "
+          + ", ".join(f"{b}={n}" for b, n in wa.bundle_depth.items()))
+    if not wa.options:
+        print("  no contested categories")
+    for o in wa.options:
+        if o.verdict == "infeasible":
+            print(f"  {o.category:6} INFEASIBLE — no available add improves it")
+        else:
+            conc = ", ".join(f"{c} {d:+.2f}" for c, d in o.concedes.items()) or "nothing"
+            print(f"  {o.category:6} {o.verdict:9} add {o.add_name} (+{o.gain:.2f}); "
+                  f"concedes: {conc}; net cats {o.net_categories:+d}")
+    return 0
+
+
 def cmd_values(args: argparse.Namespace) -> int:
     from fantasy_gm.valuation import player_values
 
@@ -224,6 +250,12 @@ def build_parser() -> argparse.ArgumentParser:
     vv.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
     vv.add_argument("--top", type=int, default=20)
     vv.set_defaults(func=cmd_values)
+
+    w = sub.add_parser("wire", help="wire availability by bundle + marginal trade-off per cat (A9)")
+    w.add_argument("--as-of", dest="as_of", required=True)
+    w.add_argument("--league", required=True)
+    w.add_argument("--team", required=True)
+    w.set_defaults(func=cmd_wire)
     return p
 
 

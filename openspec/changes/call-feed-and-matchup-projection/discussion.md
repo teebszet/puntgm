@@ -185,3 +185,25 @@ signal.
 **Open decision (A9 scope):** how far to model bundle availability — (a) leave it, since reconciliation
 already re-projects full impact; (b) add a lightweight "wire scarcity by bundle" signal; or (c) a fuller
 positional/marginal-trade-off model. Design call, not yet built.
+
+---
+
+## 2026-07-27 — round 7 (A9 full model built)
+
+**Decision (user):** build the **full** positional/bundle model (option c).
+
+**Built:** `engine/wire.py` — `WireAnalyzer.analyze` returns, for a deciding team: (1) **bundle depth**
+— each available player classified into the measured big (reb·blk·fg_pct) / guard (ast·stl·fg3m·ft_pct)
+bundle, counted; (2) a **`WireOption` per contested category** — the best available add's win-prob gain
+in that cat, its full **concede vector** (other cats it drops ≥0.03), a **net-categories** tally, and a
+verdict: *chase* / *trade-off* / *infeasible*. Plus a `wire` CLI.
+
+**On real data (simulated league over the real season):** the correlation structure appears as concrete
+costs — a FG% add (R. Williams) concedes 3PM (the −0.49 pair); a steals add (Thybulle) concedes reb/blk;
+a rebounds add (Sabonis) concedes turnovers; chasing TOV comes out *trade-off* (net −3). Wire depth was
+guard-heavy (guard 291 / big 124).
+
+**Spec impact:** none in this change's delta (wire is engine plumbing on top of the projection). 54
+tests, ruff clean. Ledger A9 marked built.
+
+**Next:** merge the A3 + A9 follow-up batch to `main` (per user). Remaining future work: A5, A7, A10–A11.

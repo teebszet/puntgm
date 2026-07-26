@@ -46,7 +46,8 @@
 - [x] 6.7 A3 + A12 calibration on real data: binomial (pct) well-calibrated; normal (counting) usable but ~0.12 rough with mild blk over-confidence
 - [x] 6.8 Optional **bootstrap-backed win-prob** projection mode (`Projector(method="bootstrap")`, `project --method bootstrap`) — Monte-Carlo over real per-game lines, deterministic given seed; keeps normal as the fast default. On real data it flips labels the normal approx got wrong (e.g. fg_pct contested→safe)
 - [x] 6.9 A6: replaced the ad-hoc `_fantasy_points` weights with data-derived per-category **z-score** valuation (`valuation.py`; percentage impact volume-weighted); wired into ADP draft + drop ranking; `values` CLI. On real data it reorders 8 of the top 12 vs the ad-hoc formula (which ignored FG%/FT%)
-- [ ] 6.10 (Future) A5 estimator/window study; A7 reliability diagram for safe/contested/gone thresholds; A9–A11
+- [x] 6.11 A9: full bundle/trade-off wire model (`engine/wire.py`, `wire` CLI) — bundle scarcity + per-contested-cat gain/concede vector with chase/trade-off/infeasible verdict
+- [ ] 6.10 (Future) A5 estimator/window study; A7 reliability diagram for safe/contested/gone thresholds; A10–A11
 
 ## 7. Non-code setup (carried from the foundation; parallel, not in specs)
 
