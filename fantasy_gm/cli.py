@@ -34,8 +34,11 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     from fantasy_gm.data.nba_source import backfill_season
 
     cache = RawCache(config.cache_dir)
-    n = backfill_season(store, args.season, cache)
-    print(f"[nba_api] season {args.season}: {n} player-log rows")
+    counts = backfill_season(store, args.season, cache, dry_run=args.dry_run)
+    tag = "dry-run" if args.dry_run else "stored"
+    print(f"[nba_api] season {args.season} ({tag}): "
+          f"{counts['rows']} rows -> {counts['games']} games, {counts['logs']} logs, "
+          f"{counts['usage']} usage snapshots")
     return 0
 
 
@@ -157,6 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
     b.add_argument("--synthetic", action="store_true",
                    help="generate a deterministic synthetic season (offline)")
+    b.add_argument("--dry-run", action="store_true",
+                   help="real backfill: fetch + parse but don't store (sanity check)")
     b.add_argument("--seed", type=int, default=7)
     b.set_defaults(func=cmd_backfill)
 

@@ -26,3 +26,6 @@ raw_cache/
 
 # OpenSpec stray init test artifact
 .openspec-test-*
+
+# Throwaway connectivity probe
+probe_nba.py

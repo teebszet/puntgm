@@ -26,9 +26,15 @@ Three subcommands under `python -m fantasy_gm.cli` (also installed as `fantasy-g
 # Deterministic offline season (no network) — good for dev, tests, and the harness:
 python -m fantasy_gm.cli backfill --season 2025-26 --synthetic
 
-# Real NBA.com backfill via nba_api (runs locally, once; resumable via the disk cache):
-python -m fantasy_gm.cli backfill --season 2025-26
+# Real NBA.com backfill via nba_api. Run this from a residential IP — NBA's Akamai WAF
+# blocks datacenter/VPN IPs (silent timeout). --dry-run fetches + parses without storing.
+python -m fantasy_gm.cli backfill --season 2025-26 --dry-run   # sanity check first
+python -m fantasy_gm.cli backfill --season 2025-26             # then store
 ```
+
+One `LeagueGameLog` call yields every player-game box line for the season; `nba_source.py`
+parses it into games + player logs + usage snapshots (the mapping is unit-tested in
+`tests/test_nba_source.py`). Cached to disk, so re-runs are resumable.
 
 `--season` accepts `2025-26` (primary) or the validation seasons `2024-25` / `2023-24`.
 
@@ -222,5 +228,6 @@ not the claim.
   volume-weighted (fixed).
 - Signal detection is a deterministic subset (usage trend, availability, opponent move);
   efficiency-regression and richer role signals are future work.
-- Real NBA.com payload parsing in `nba_source.py` is stubbed for the networked machine;
-  offline flows use the synthetic season.
+- The real `nba_api` backfill must run from a residential IP (NBA blocks datacenter/VPN
+  IPs); starter/depth-chart in usage snapshots are minutes-based heuristics, since
+  `LeagueGameLog` doesn't carry them.
