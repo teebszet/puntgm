@@ -67,6 +67,74 @@ class Perspective:
     opponent_team_id: str
 
 
+@dataclass(frozen=True)
+class UsageRole:
+    """Effective-dated snapshot of a player's usage/role (D5 depth-chart cause)."""
+
+    player_id: str
+    known_from: str
+    minutes: float
+    fga: float
+    is_starter: bool
+    depth_chart_pos: int  # 1 = lead at position; higher = deeper on the bench
+
+
+@dataclass(frozen=True)
+class CategoryProjection:
+    """Projected end-of-period outcome for one category, both sides, as a distribution."""
+
+    category: str
+    mine_total: float
+    opp_total: float
+    mine_std: float
+    opp_std: float
+    win_prob: float  # probability the deciding team wins this category
+    label: str  # "safe" | "contested" | "gone"
+
+
+@dataclass
+class MatchupProjection:
+    as_of: str
+    league_id: str
+    team_id: str
+    opponent_id: str
+    period_index: int
+    categories: dict[str, CategoryProjection]
+
+    def contested(self) -> list[str]:
+        return [c for c, p in self.categories.items() if p.label == "contested"]
+
+
+@dataclass(frozen=True)
+class Signal:
+    as_of: str
+    subject_player: str
+    subject_name: str
+    owner_class: str  # "mine" | "opponent" | "free_agent" | "tracked"
+    signal_type: str  # "usage_trend_up" | "availability_change" | "opponent_move" | ...
+    evidence: str
+    confidence: float
+    impact: float
+    relevance: float
+    strength: float
+    band: str  # "soft" | "strong"
+    affected_categories: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReconciliationMove:
+    as_of: str
+    perspective: Perspective
+    add_id: str
+    add_name: str
+    drop_id: str
+    drop_name: str
+    line_of_play: str
+    projected_impact: dict[str, tuple[float, float]]  # cat -> (win_prob_before, after)
+    confidence: float
+    drops_unplayed: bool = False
+
+
 @dataclass
 class LeagueState:
     """Point-in-time snapshot of a league as of a date: rosters for every team, the

@@ -26,9 +26,15 @@ Three subcommands under `python -m fantasy_gm.cli` (also installed as `fantasy-g
 # Deterministic offline season (no network) — good for dev, tests, and the harness:
 python -m fantasy_gm.cli backfill --season 2025-26 --synthetic
 
-# Real NBA.com backfill via nba_api (runs locally, once; resumable via the disk cache):
-python -m fantasy_gm.cli backfill --season 2025-26
+# Real NBA.com backfill via nba_api. Run this from a residential IP — NBA's Akamai WAF
+# blocks datacenter/VPN IPs (silent timeout). --dry-run fetches + parses without storing.
+python -m fantasy_gm.cli backfill --season 2025-26 --dry-run   # sanity check first
+python -m fantasy_gm.cli backfill --season 2025-26             # then store
 ```
+
+One `LeagueGameLog` call yields every player-game box line for the season; `nba_source.py`
+parses it into games + player logs + usage snapshots (the mapping is unit-tested in
+`tests/test_nba_source.py`). Cached to disk, so re-runs are resumable.
 
 `--season` accepts `2025-26` (primary) or the validation seasons `2024-25` / `2023-24`.
 
@@ -63,6 +69,33 @@ perspective: league=sim-2025-26-1-8x10 team=T00 period=3 opp=T03 as_of=2025-11-1
   ...
 logged 5 recommendation(s); log now holds 5 row(s)
 ```
+
+### 4. `project` — category outcome projections (the spine)
+
+```bash
+python -m fantasy_gm.cli project --as-of 2025-11-14 --league sim-2025-26-1-8x10 --team T00
+```
+
+Prints, per category, the projected end-of-period totals for both teams, the win
+probability, and a **safe / contested / gone** label. Contested cats are the ones worth
+fighting for. Variance-aware (a lead in blocks is less safe than the same lead in points)
+and availability-reactive (an OUT player re-opens categories).
+
+### 5. `feed` — live signals + end-of-day reconciliation
+
+```bash
+python -m fantasy_gm.cli feed --as-of 2025-11-14 --league sim-2025-26-1-8x10 --team T00 --all
+```
+
+Two parts, both written to the append-only call-feed log:
+
+- **Live signals** — typed observations (usage trends, role changes, availability,
+  opponent moves) graded on a soft→strong spectrum where
+  `strength = confidence × impact-on-a-contested-cat × relevance-to-your-build`. Strong,
+  relevant signals show by default; `--all` includes soft ones.
+- **End-of-day reconciliation** — candidate add/drop moves, each labeled by the category it
+  most improves ("contest REB") with the projected win-prob impact per category, and flagged
+  if it drops a player who hasn't played yet.
 
 ## Library usage
 
@@ -102,6 +135,21 @@ league_id = import_league_export(store, {
     "matchups": [...],
 })
 ```
+
+## Player valuation (z-scores)
+
+Player value uses data-derived **9-cat z-scores** (`fantasy_gm/valuation.py`), not ad-hoc
+weights: each counting category is standardised by the league mean/σ over a rosterable pool, and
+percentages use the volume-weighted impact form. It drives the simulated draft (ADP) and drop
+ranking.
+
+```bash
+python -m fantasy_gm.cli values --season 2025-26 --top 20
+```
+
+On real data this reorders the top sharply versus a raw-counting formula — it correctly
+penalises high-volume poor-FT% / high-turnover stars, matching real 9-cat intuition (the best NBA
+player isn't the best fantasy value).
 
 ## The point-in-time model (anti-lookahead)
 
@@ -159,12 +207,46 @@ pytest -q
 ruff check fantasy_gm tests
 ```
 
+## Call-feed log
+
+The reframed log (`fantasy_gm/log/reclog.py`, `FeedLog`) is append-only with two record
+types: **signal** (subject, owner class, type, evidence, strength, affected cats) and
+**reconciliation-move** (add, drop, line of play, projected per-category impact). Replay
+scoring lives in `fantasy_gm/engine/scoring.py`: `grade_move` grades a suggested move by its
+*realized* category impact vs. standing pat (a counterfactual over the actual box scores),
+and `calibration` checks whether categories called "safe" actually held. The old
+`RecommendationLog` (ranked rows) is retained as the replay baseline.
+
+## Validating assumptions
+
+The projection has parameters that were *asserted* (from a domain expert) rather than
+measured. Per the project principle, those are provisional until validated on real data
+(`openspec/changes/call-feed-and-matchup-projection/assumptions.md` is the full ledger).
+
+```bash
+# Measure per-category variance (coefficient of variation) from a backfilled season.
+python -m fantasy_gm.cli validate --season 2025-26
+```
+
+`fantasy_gm/validation/` provides `measure_category_cv` (per-category coefficient of variation),
+`measure_autocorrelation` (lag-1 autocorrelation — whether games are independent), and
+`bootstrap_category_winprob` (Monte-Carlo win-prob to check the normal approximation).
+
+Result on the real 2025-26 season: blk/stl are highest-variance and pts/reb lowest (as a domain
+expert predicted — but assists are *not* high-variance), and game-to-game production is
+~independent (autocorrelation ≈ 0). Because the projector already uses each player's measured
+per-game σ, no category variance multiplier is warranted — the earlier hand-set grouping was
+**removed**. These measurements are validation/reporting, not projector inputs. **They only mean
+something on real `nba_api` data** — the synthetic season is generated from the same assumptions,
+so it validates the mechanism, not the claim.
+
 ## Current limitations
 
-- Engine is a deterministic **skeleton**; percentage categories (FG%/FT%) are not
-  volume-weighted, and the matchup tilt is a small nudge, not real opponent-relative
-  optimization.
-- Real NBA.com payload parsing in `nba_source.py` is stubbed for the networked machine;
-  offline flows use the synthetic season.
-- The reclog shape is provisional — see the in-progress redesign around a real player's
-  weekly waiver process.
+- Projection uses a normal approximation and treats games as independent (both flagged in the
+  assumptions ledger; `bootstrap_category_winprob` is the check). Percentage categories are now
+  volume-weighted (fixed).
+- Signal detection is a deterministic subset (usage trend, availability, opponent move);
+  efficiency-regression and richer role signals are future work.
+- The real `nba_api` backfill must run from a residential IP (NBA blocks datacenter/VPN
+  IPs); starter/depth-chart in usage snapshots are minutes-based heuristics, since
+  `LeagueGameLog` doesn't carry them.

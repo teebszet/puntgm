@@ -15,15 +15,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
 from collections.abc import Iterable
 from pathlib import Path
 
+from fantasy_gm.config import PERCENTAGE_CATEGORIES
 from fantasy_gm.models import (
     Availability,
     Game,
     LeagueState,
     Matchup,
     PlayerGameLog,
+    UsageRole,
 )
 
 SCHEMA = """
@@ -106,6 +109,19 @@ CREATE TABLE IF NOT EXISTS matchups (
     team_b       TEXT NOT NULL,
     PRIMARY KEY (league_id, period_index, team_a)
 );
+
+-- Effective-dated usage/role snapshots (D5): minutes, shot attempts, starter/bench,
+-- and depth-chart position, so a role as of any date is reconstructable.
+CREATE TABLE IF NOT EXISTS usage_role (
+    player_id       TEXT NOT NULL,
+    known_from      TEXT NOT NULL,
+    minutes         REAL NOT NULL,
+    fga             REAL NOT NULL,
+    is_starter      INTEGER NOT NULL,
+    depth_chart_pos INTEGER NOT NULL,
+    PRIMARY KEY (player_id, known_from)
+);
+CREATE INDEX IF NOT EXISTS ix_usage_player ON usage_role(player_id, known_from);
 """
 
 
@@ -140,7 +156,8 @@ class Store:
     # --- writes --------------------------------------------------------------
     def upsert_games(self, games: Iterable[Game]) -> None:
         self.conn.executemany(
-            """INSERT INTO games(game_id, season, game_date, home_team, away_team, home_pts, away_pts)
+            """INSERT INTO games(
+                   game_id, season, game_date, home_team, away_team, home_pts, away_pts)
                VALUES (?,?,?,?,?,?,?)
                ON CONFLICT(game_id) DO UPDATE SET
                  home_pts=excluded.home_pts, away_pts=excluded.away_pts""",
@@ -153,7 +170,8 @@ class Store:
 
     def upsert_player_logs(self, logs: Iterable[PlayerGameLog]) -> None:
         self.conn.executemany(
-            """INSERT INTO player_logs(game_id, season, game_date, player_id, player_name, team, stats_json)
+            """INSERT INTO player_logs(
+                   game_id, season, game_date, player_id, player_name, team, stats_json)
                VALUES (?,?,?,?,?,?,?)
                ON CONFLICT(game_id, player_id) DO UPDATE SET stats_json=excluded.stats_json""",
             [
@@ -166,9 +184,11 @@ class Store:
 
     def add_availability(self, records: Iterable[Availability]) -> None:
         self.conn.executemany(
-            """INSERT OR IGNORE INTO availability(player_id, status, known_from, source, confidence, note)
+            """INSERT OR IGNORE INTO availability(
+                   player_id, status, known_from, source, confidence, note)
                VALUES (?,?,?,?,?,?)""",
-            [(a.player_id, a.status, a.known_from, a.source, a.confidence, a.note) for a in records],
+            [(a.player_id, a.status, a.known_from, a.source, a.confidence, a.note)
+             for a in records],
         )
         self.conn.commit()
 
@@ -184,7 +204,8 @@ class Store:
         categories: list[str], is_real: bool = False, seed: int | None = None,
     ) -> None:
         self.conn.execute(
-            """INSERT OR REPLACE INTO leagues(league_id, name, season, is_real, lineup_cadence, categories_json, seed)
+            """INSERT OR REPLACE INTO leagues(
+                   league_id, name, season, is_real, lineup_cadence, categories_json, seed)
                VALUES (?,?,?,?,?,?,?)""",
             (league_id, name, season, int(is_real), cadence, json.dumps(categories), seed),
         )
@@ -201,7 +222,8 @@ class Store:
         self, league_id: str, team_id: str, player_id: str, action: str, known_from: str
     ) -> None:
         self.conn.execute(
-            """INSERT OR REPLACE INTO roster_events(league_id, team_id, player_id, action, known_from)
+            """INSERT OR REPLACE INTO roster_events(
+                   league_id, team_id, player_id, action, known_from)
                VALUES (?,?,?,?,?)""",
             (league_id, team_id, player_id, action, known_from),
         )
@@ -209,7 +231,8 @@ class Store:
 
     def add_matchup(self, m: Matchup) -> None:
         self.conn.execute(
-            """INSERT OR REPLACE INTO matchups(league_id, period_index, period_start, period_end, team_a, team_b)
+            """INSERT OR REPLACE INTO matchups(
+                   league_id, period_index, period_start, period_end, team_a, team_b)
                VALUES (?,?,?,?,?,?)""",
             (m.league_id, m.period_index, m.period_start, m.period_end, m.team_a, m.team_b),
         )
@@ -274,6 +297,21 @@ class Store:
             elif r["action"] == "drop":
                 current.discard(r["player_id"])
         return sorted(current)
+
+    def roster_events_between(
+        self, league_id: str, team_id: str, start: str, as_of: str
+    ) -> list[dict]:
+        """Add/drop events for a team with known_from in [start, as_of] — used to read an
+        opponent's revealed category strategy (D6)."""
+        return [
+            {"player_id": r["player_id"], "action": r["action"], "known_from": r["known_from"]}
+            for r in self.conn.execute(
+                """SELECT player_id, action, known_from FROM roster_events
+                   WHERE league_id = ? AND team_id = ? AND known_from >= ? AND known_from <= ?
+                   ORDER BY known_from""",
+                (league_id, team_id, start, as_of),
+            )
+        ]
 
     def team_ids(self, league_id: str) -> list[str]:
         return [
@@ -374,9 +412,12 @@ class Store:
     def _team_category_tally(
         self, player_ids: list[str], period_start: str, as_of: str, categories: list[str]
     ) -> dict[str, float]:
-        """Per-category totals for a roster over the current period, using only games
-        completed on or before ``as_of`` — point-in-time by construction."""
+        """Per-category totals for a roster over the current period, using only games in
+        [period_start, as_of]. Counting cats are summed; percentage cats (A8) are
+        volume-weighted (Σmakes / Σattempts), never a sum of per-game percentages."""
         tally = {c: 0.0 for c in categories}
+        # component accumulators for percentage categories: {cat: [makes, attempts]}
+        comps = {c: [0.0, 0.0] for c in categories if c in PERCENTAGE_CATEGORIES}
         if not player_ids:
             return tally
         placeholders = ",".join("?" for _ in player_ids)
@@ -389,8 +430,104 @@ class Store:
         for r in rows:
             stats = json.loads(r["stats_json"])
             for c in categories:
-                tally[c] += float(stats.get(c, 0.0))
+                if c in PERCENTAGE_CATEGORIES:
+                    mk, at = PERCENTAGE_CATEGORIES[c]
+                    comps[c][0] += float(stats.get(mk, 0.0))
+                    comps[c][1] += float(stats.get(at, 0.0))
+                else:
+                    tally[c] += float(stats.get(c, 0.0))
+        for c, (makes, attempts) in comps.items():
+            tally[c] = (makes / attempts) if attempts > 0 else 0.0
         return tally
+
+    def category_totals(
+        self, player_ids: list[str], start: str, end: str, categories: list[str]
+    ) -> dict[str, float]:
+        """Actual per-category totals for a set of players over [start, end], using real
+        box scores (NOT gated by as-of) — for replay grading of a suggested move."""
+        return self._team_category_tally(player_ids, start, end, categories)
+
+    def matchup_by_period(self, league_id: str, period_index: int) -> Matchup | None:
+        row = self.conn.execute(
+            """SELECT * FROM matchups WHERE league_id = ? AND period_index = ?
+               ORDER BY team_a LIMIT 1""",
+            (league_id, period_index),
+        ).fetchone()
+        if not row:
+            return None
+        return Matchup(row["league_id"], row["period_index"], row["period_start"],
+                       row["period_end"], row["team_a"], row["team_b"])
 
     def fantasy_points(self, stats: dict[str, float]) -> float:
         return _fantasy_points(stats)
+
+    # --- usage / role (effective-dated) --------------------------------------
+    def add_usage_role(self, records: Iterable[UsageRole]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO usage_role(
+                   player_id, known_from, minutes, fga, is_starter, depth_chart_pos)
+               VALUES (?,?,?,?,?,?)""",
+            [(u.player_id, u.known_from, u.minutes, u.fga, int(u.is_starter),
+              u.depth_chart_pos) for u in records],
+        )
+        self.conn.commit()
+
+    def usage_role_asof(self, player_id: str, as_of: str) -> UsageRole | None:
+        row = self.conn.execute(
+            """SELECT * FROM usage_role WHERE player_id = ? AND known_from <= ?
+               ORDER BY known_from DESC LIMIT 1""",
+            (player_id, as_of),
+        ).fetchone()
+        if not row:
+            return None
+        return UsageRole(row["player_id"], row["known_from"], row["minutes"], row["fga"],
+                         bool(row["is_starter"]), row["depth_chart_pos"])
+
+    def usage_role_history(self, player_id: str, as_of: str) -> list[UsageRole]:
+        return [
+            UsageRole(r["player_id"], r["known_from"], r["minutes"], r["fga"],
+                      bool(r["is_starter"]), r["depth_chart_pos"])
+            for r in self.conn.execute(
+                """SELECT * FROM usage_role WHERE player_id = ? AND known_from <= ?
+                   ORDER BY known_from""",
+                (player_id, as_of),
+            )
+        ]
+
+    # --- production distributions (mean + consistency), as of a date ---------
+    def player_distribution(
+        self, player_id: str, as_of: str, categories: list[str], window: int | None = None
+    ) -> dict[str, tuple[float, float]]:
+        """Per-category (mean, stdev) from games known on or before ``as_of``.
+        Stdev is the consistency measure; a single game yields stdev 0."""
+        logs = self.player_logs_asof(as_of, player_id=player_id)
+        if window is not None:
+            logs = logs[-window:]
+        out: dict[str, tuple[float, float]] = {}
+        for c in categories:
+            vals = [lg.stats.get(c, 0.0) for lg in logs]
+            if not vals:
+                out[c] = (0.0, 0.0)
+            elif len(vals) == 1:
+                out[c] = (vals[0], 0.0)
+            else:
+                out[c] = (statistics.fmean(vals), statistics.pstdev(vals))
+        return out
+
+    def player_team(self, player_id: str, as_of: str) -> str | None:
+        row = self.conn.execute(
+            """SELECT team FROM player_logs WHERE player_id = ? AND game_date <= ?
+               ORDER BY game_date DESC LIMIT 1""",
+            (player_id, as_of),
+        ).fetchone()
+        return row["team"] if row else None
+
+    def remaining_games_for_team(self, team: str, after: str, end: str) -> int:
+        """Scheduled games for an NBA team strictly after ``after`` through ``end``
+        (a priori schedule — not gated by as-of)."""
+        row = self.conn.execute(
+            """SELECT COUNT(*) AS n FROM games
+               WHERE game_date > ? AND game_date <= ? AND (home_team = ? OR away_team = ?)""",
+            (after, end, team, team),
+        ).fetchone()
+        return int(row["n"])

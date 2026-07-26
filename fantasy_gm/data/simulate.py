@@ -26,18 +26,19 @@ def _season_bounds(store, season: str) -> tuple[date, date]:
 
 
 def _adp_order(store, season: str) -> list[str]:
-    """Player ids ordered by total season production (a stand-in for ADP)."""
-    rows = store.conn.execute(
-        "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
-    )
-    import json
+    """Player ids ordered by data-derived 9-cat z-value (A6) as an ADP stand-in; players
+    outside the rosterable pool fall in behind, ordered by games played."""
+    from fantasy_gm.valuation import player_values
 
-    totals: dict[str, float] = {}
-    for r in rows:
-        totals[r["player_id"]] = totals.get(r["player_id"], 0.0) + store.fantasy_points(
-            json.loads(r["stats_json"])
-        )
-    return [pid for pid, _ in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))]
+    values = player_values(store, season)
+    counts: dict[str, int] = {}
+    for r in store.conn.execute(
+        "SELECT player_id FROM player_logs WHERE season = ?", (season,)
+    ):
+        counts[r["player_id"]] = counts.get(r["player_id"], 0) + 1
+    ranked_pool = sorted(values, key=lambda p: (-values[p], p))
+    rest = sorted((p for p in counts if p not in values), key=lambda p: (-counts[p], p))
+    return ranked_pool + rest
 
 
 def simulate_league(
@@ -108,7 +109,7 @@ def _schedule_matchups(store, league_id, team_ids, lo, hi, rng) -> None:
         period_end = (wk + timedelta(days=6)).isoformat()
         # circle-method pairing rotated by period
         rot = teams[:1] + teams[1:][period % (n - 1):] + teams[1:][: period % (n - 1)]
-        for a, b in zip(rot[: n // 2], rot[n - 1: n // 2 - 1: -1]):
+        for a, b in zip(rot[: n // 2], rot[n - 1: n // 2 - 1: -1], strict=False):
             if "BYE" in (a, b):
                 continue
             store.add_matchup(Matchup(league_id, period, period_start, period_end, a, b))

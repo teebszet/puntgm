@@ -30,6 +30,31 @@ CATEGORY_DIRECTION: dict[str, int] = {
 }
 DEFAULT_CATEGORIES = list(CATEGORY_DIRECTION.keys())
 
+# --- Category variance ------------------------------------------------------
+# There is deliberately NO hard-coded per-category variance grouping. Real 2025-26 data
+# (see assumptions ledger A1/A2/A4) showed the projector's measured per-player per-game σ
+# already captures category volatility, and game-to-game production is ~independent, so a
+# category multiplier would double-count. Relative variance is *measured* for reporting via
+# fantasy_gm.validation.measure_category_cv, not asserted here.
+
+# Percentage categories are volume-weighted (A8): the value is Σmakes / Σattempts, never
+# a sum of per-game percentages. Maps the category to its (makes, attempts) component keys.
+PERCENTAGE_CATEGORIES: dict[str, tuple[str, str]] = {
+    "fg_pct": ("fgm", "fga"),
+    "ft_pct": ("ftm", "fta"),
+}
+
+# --- Projection / signal thresholds ------------------------------------------
+SAFE_PROB = 0.80   # win prob >= -> "safe"
+GONE_PROB = 0.20   # win prob <= -> "gone"; between -> "contested"
+STRONG_STRENGTH = 0.45  # signal strength >= (plus a sustained, causal trend) -> "strong"
+
+# --- Season stage (relevance weighting, D6) ----------------------------------
+# Fractions of the season elapsed. Early boosts usage-breakout signals; late boosts
+# pure schedule/matchup-securing signals.
+EARLY_STAGE_MAX = 0.30
+LATE_STAGE_MIN = 0.70
+
 # --- Lineup cadence ----------------------------------------------------------
 # The user's own league moved weekly-lock -> daily-change ~2 seasons ago (D9), so
 # cadence is a per-league setting and the harness must segment seasons by it.

@@ -12,7 +12,7 @@ league-sync change.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fantasy_gm.config import DEFAULT_CATEGORIES
@@ -67,7 +67,7 @@ def import_league_export(store, export: dict[str, Any]) -> str:
             f"league:{league_id}",
             "no point-in-time roster history in export; roster-as-of-date unavailable "
             "for this real league (Yahoo limitation) — not fabricated",
-            datetime.now(timezone.utc).date().isoformat(),
+            datetime.now(UTC).date().isoformat(),
         )
 
     for m in export.get("matchups", []):
