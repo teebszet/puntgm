@@ -148,6 +148,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"  {c:8} {cv[c]:>10.3f} {ac.get(c, float('nan')):>14.3f}")
     print(f"highest variance: {max(cv, key=cv.get)}   lowest: {min(cv, key=cv.get)}")
     print("  autocorr ≈ 0  -> games independent; measured σ suffices, no multiplier needed.")
+    print("  (fg_pct/ft_pct omitted: they use a volume-weighted binomial model, not CV — "
+          "their variance model is a separate, not-yet-validated check.)")
     return 0
 
 

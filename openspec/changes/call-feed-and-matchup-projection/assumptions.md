@@ -117,6 +117,19 @@ distributions over the season) to set "early"; measure ROS-pickup payoff vs. str
 week to justify the tilt.
 **Data:** real usage/role time series.
 
+## A12. Percentage-category variance model — ASSERTED (surfaced 2026-07-26)
+
+**Claim:** a percentage category's uncertainty is a binomial standard error `√(p(1−p)/attempts)`,
+i.e. each shot is an independent Bernoulli trial with fixed p. This is why fg_pct/ft_pct are
+absent from the CV/autocorrelation tables — CV of a per-game ratio is meaningless; their variance
+model is separate and was NOT covered by the A1/A4 validation.
+**Why suspect:** real shooting has streakiness, defense, and shot-difficulty effects, and p varies
+game to game — so the binomial SE may understate the true spread.
+**Validate:** bootstrap real makes/attempts over the remaining schedule (resample per-game
+makes/attempts) and compare the empirical spread of Σmakes/Σattempts to the binomial SE — the
+percentage-category analogue of A3.
+**Data:** real per-game makes/attempts (already backfilled: FGM/FGA/FTM/FTA).
+
 ---
 
 ## RESOLVED on real data (2026-07-26)
@@ -143,7 +156,8 @@ Backfilled the full real 2025-26 season (26,651 player-game lines) and measured:
   deleted; the projector now uses measured σ only. `measure_category_cv` /
   `measure_autocorrelation` stay as validation/reporting, not projector inputs.
 - **A8 — FIXED** (percentage cats volume-weighted).
-- Still pending: A3 (bootstrap-vs-normal check, harness built), A5–A7, A9–A11.
+- Still pending: A3 (bootstrap-vs-normal for counting cats), **A12 (percentage-category binomial
+  model — the fg_pct/ft_pct analogue)**, A5–A7, A9–A11.
 
 ## Progress (2026-07-26)
 
