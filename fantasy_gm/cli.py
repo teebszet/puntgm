@@ -131,7 +131,7 @@ def cmd_feed(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    from fantasy_gm.validation import derive_variance_profile, measure_category_cv
+    from fantasy_gm.validation import measure_autocorrelation, measure_category_cv
 
     config = Config()
     store = _store(config)
@@ -139,16 +139,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
     if not cv:
         print("no data to measure (backfill a season first)", file=sys.stderr)
         return 1
-    profile = derive_variance_profile(cv)
+    ac = measure_autocorrelation(store, args.season)
     print(f"measured category variance (season {args.season})")
     print("  NOTE: only meaningful on REAL data — synthetic is generated from the "
           "assumptions it would 'validate'.")
-    print(f"  {'category':8} {'CV (σ/μ)':>10} {'multiplier':>11}")
+    print(f"  {'category':8} {'CV (σ/μ)':>10} {'lag1-autocorr':>14}")
     for c in sorted(cv, key=cv.get, reverse=True):
-        print(f"  {c:8} {cv[c]:>10.3f} {profile[c]:>11.3f}")
-    hi = max(cv, key=cv.get)
-    lo = min(cv, key=cv.get)
-    print(f"highest variance: {hi}   lowest: {lo}")
+        print(f"  {c:8} {cv[c]:>10.3f} {ac.get(c, float('nan')):>14.3f}")
+    print(f"highest variance: {max(cv, key=cv.get)}   lowest: {min(cv, key=cv.get)}")
+    print("  autocorr ≈ 0  -> games independent; measured σ suffices, no multiplier needed.")
     return 0
 
 

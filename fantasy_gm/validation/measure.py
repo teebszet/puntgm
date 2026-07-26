@@ -2,9 +2,10 @@
 
 * ``measure_category_cv`` (A1): per-category coefficient of variation (σ/μ), league-median.
   This is the direct test of "which categories are higher variance" — measured, not asserted.
-* ``derive_variance_profile`` (A1→A2): turn measured CVs into per-category variance multipliers
-  the ``Projector`` consumes, normalised so the median category = 1.0. If the measured profile
-  reproduces observed volatility, the hand-set multiplier is redundant.
+* ``derive_variance_profile`` (A1→A2): normalise measured CVs to a median of 1.0 — a *descriptive*
+  relative-variance summary. It is NOT fed to the projector: real data showed the projector's
+  measured per-player σ already captures category volatility (games are ~independent, A4), so a
+  multiplier would double-count. Kept for reporting only.
 * ``bootstrap_category_winprob`` (A3): Monte-Carlo end-of-period win probability by resampling
   each player's real per-game lines over remaining games — the ground truth to check the
   projector's normal approximation against (it is weakest for low-count cats like blocks/steals).
@@ -57,6 +58,46 @@ def derive_variance_profile(cv: dict[str, float]) -> dict[str, float]:
     if med <= 0:
         return {c: 1.0 for c in cv}
     return {c: round(v / med, 3) for c, v in cv.items()}
+
+
+def measure_autocorrelation(
+    store, season: str, categories: list[str] | None = None, min_games: int = 20
+) -> dict[str, float]:
+    """Median lag-1 autocorrelation of per-game production per counting category (A4).
+
+    ~0 means games are independent, so Var(k-game sum) ≈ k·Var(single game) and the
+    projector's Σ rg·σ² is correct with **no** category variance multiplier — the measured
+    per-player σ already carries the spread. Positive values mean multi-game variance is
+    under-counted (a correction could be justified); negative means over-counted.
+    """
+    import json
+
+    categories = categories or list(DEFAULT_CATEGORIES)
+    counting = _counting(categories)
+    per_cat: dict[str, list[float]] = {c: [] for c in counting}
+    rows = store.conn.execute(
+        """SELECT player_id, stats_json FROM player_logs
+           WHERE season = ? ORDER BY player_id, game_date""",
+        (season,),
+    )
+    seqs: dict[str, dict[str, list[float]]] = {}
+    for r in rows:
+        stats = json.loads(r["stats_json"])
+        d = seqs.setdefault(r["player_id"], {c: [] for c in counting})
+        for c in counting:
+            d[c].append(stats.get(c, 0.0))
+    for d in seqs.values():
+        for c in counting:
+            x = d[c]
+            if len(x) < min_games:
+                continue
+            mean = statistics.fmean(x)
+            var = statistics.pvariance(x)
+            if var <= 0:
+                continue
+            num = sum((x[i] - mean) * (x[i + 1] - mean) for i in range(len(x) - 1))
+            per_cat[c].append(num / ((len(x) - 1) * var))
+    return {c: statistics.median(v) for c, v in per_cat.items() if v}
 
 
 def bootstrap_category_winprob(

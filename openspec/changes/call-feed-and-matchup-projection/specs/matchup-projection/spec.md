@@ -38,21 +38,24 @@ a win probability for the deciding team and a label of safe, contested, or gone.
 
 ### Requirement: Variance-aware projection
 
-The projection SHALL account for per-category production variance so that a numeric lead in a
-higher-variance category is not called safe as readily as the same lead in a lower-variance one.
-The relative variance of each category SHALL be **empirically measured from data**, not asserted;
-any default grouping used before measurement is provisional and MUST be labeled as such (see
-`assumptions.md`, A1–A2).
+The projection's per-category uncertainty SHALL be derived from the **measured** per-player
+per-game standard deviation (Σ over remaining games of σ²), with **no hand-set category variance
+multiplier**. A category's volatility therefore emerges from the data, so a numeric lead in a
+genuinely more volatile category is not called safe as readily as the same lead in a stable one.
+Validated on real 2025-26 data (`assumptions.md` A1/A2/A4): game-to-game production is
+approximately independent (lag-1 autocorrelation near zero), so Σ rg·σ² is the correct spread and
+a multiplier would double-count the σ already in the model.
 
 #### Scenario: A higher-variance lead is less safe than an equal lower-variance lead
 
-- **WHEN** the deciding team leads two categories by comparable projected margins, one measured as lower-variance and one as higher-variance
-- **THEN** the higher-variance category is assigned a lower win probability (closer to contested) than the lower-variance category
+- **WHEN** the deciding team leads two categories by comparable projected margins, one whose players have a larger measured per-game σ than the other
+- **THEN** the higher-σ category is assigned a lower win probability (closer to contested) than the lower-σ category
 
-#### Scenario: Variance profile is derived from data where available
+#### Scenario: No hard-coded category variance grouping is used
 
-- **WHEN** a per-category variance profile has been measured from real production data
-- **THEN** the projection uses the measured profile rather than a hard-coded grouping
+- **WHEN** the projection computes a category's uncertainty band
+- **THEN** it uses only the measured per-player σ over remaining games
+- **AND** applies no per-category multiplier or asserted variance grouping
 
 ### Requirement: Availability-reactive projection
 

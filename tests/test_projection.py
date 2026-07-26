@@ -18,7 +18,9 @@ def _line(**cats):
 
 
 def _tiny_store() -> Store:
-    """Two teams, one player each, equal margins in pts (low-var) and stl (high-var)."""
+    """Two teams, one player each. Same +2 projected margin in pts and stl, but stl has a
+    much wider *measured* per-game spread than pts — so variance-awareness must come from the
+    measured σ (no category multiplier)."""
     s = Store(":memory:")
     s.create_league("L", "L", SEASON, "weekly-lock",
                     ["pts", "reb", "ast", "stl", "blk", "fg3m", "tov", "fg_pct", "ft_pct"])
@@ -28,14 +30,14 @@ def _tiny_store() -> Store:
     s.add_roster_event("L", "T1", "P1", "add", "2025-10-01")
     s.add_matchup(Matchup("L", 0, PERIOD[0], PERIOD[1], "T0", "T1"))
 
-    # history (<= as_of) establishes mean/variance; identical spread in pts and stl
+    # pts is steady (mean 15, tiny spread); stl is swingy (mean 15, wide spread). Same means.
     s.upsert_games([Game("h1", SEASON, "2025-10-15", "X", "Y"),
                     Game("h2", SEASON, "2025-10-17", "X", "Y")])
     s.upsert_player_logs([
-        PlayerGameLog("h1", SEASON, "2025-10-15", "P0", "P0", "X", _line(pts=10, stl=10)),
-        PlayerGameLog("h2", SEASON, "2025-10-17", "P0", "P0", "X", _line(pts=20, stl=20)),
-        PlayerGameLog("h1", SEASON, "2025-10-15", "P1", "P1", "Y", _line(pts=8, stl=8)),
-        PlayerGameLog("h2", SEASON, "2025-10-17", "P1", "P1", "Y", _line(pts=18, stl=18)),
+        PlayerGameLog("h1", SEASON, "2025-10-15", "P0", "P0", "X", _line(pts=14, stl=2)),
+        PlayerGameLog("h2", SEASON, "2025-10-17", "P0", "P0", "X", _line(pts=16, stl=28)),
+        PlayerGameLog("h1", SEASON, "2025-10-15", "P1", "P1", "Y", _line(pts=12, stl=0)),
+        PlayerGameLog("h2", SEASON, "2025-10-17", "P1", "P1", "Y", _line(pts=14, stl=26)),
     ])
     # one remaining scheduled game each after as_of (schedule only)
     s.upsert_games([Game("fX", SEASON, "2025-10-21", "X", "Z"),
@@ -45,7 +47,7 @@ def _tiny_store() -> Store:
 
 def test_high_variance_lead_reads_less_safe():
     proj = Projector().project(_tiny_store(), "L", "T0", AS_OF)
-    # equal +2 margin in both, but stl is high-variance -> lower win prob than pts
+    # equal +2 margin in both, but stl's measured σ is far larger -> lower win prob than pts
     assert proj.categories["pts"].win_prob > proj.categories["stl"].win_prob
 
 

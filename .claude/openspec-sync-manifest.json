@@ -11,12 +11,12 @@
   "changes/archive/2026-07-24-bootstrap-historical-data-and-engine/proposal.md": "e7c10d26e17bdbbdf20c3696691721d63c8cc6ac4c73e4f0be64abe5c9b6b21b",
   "changes/call-feed-and-matchup-projection/proposal.md": "2c1f70a328b82d9ead0e579d87322eccdb02877fc9eb18f5f5361519360e2650",
   "changes/call-feed-and-matchup-projection/design.md": "d201e81c033d882029187f7831cf21da48cde67bc2578bfa169e1140bf50fb2e",
-  "changes/call-feed-and-matchup-projection/specs/matchup-projection/spec.md": "23942bd7d0d13d53766705b1da7afb2fccea06b798d979ac422bbd2e6c55dcf7",
+  "changes/call-feed-and-matchup-projection/specs/matchup-projection/spec.md": "5ca8cd25ace4337aebf495750aae5e44d2054924563065ddabac07779de2a1f2",
   "changes/call-feed-and-matchup-projection/specs/call-feed/spec.md": "e5aa597fac0d21f6dc2092ab5dc430a46d60c75848b7a1616f373056a5bc8d29",
   "changes/call-feed-and-matchup-projection/specs/historical-data-pipeline/spec.md": "2c827672a6b8295c94077dec85275b08b4756fc8b4bccaab4200a5371289823d",
   "changes/call-feed-and-matchup-projection/specs/decision-engine/spec.md": "3727c055562acc1980d67afc2478a218627f7221fcb265747a4293ca6c603887",
   "changes/call-feed-and-matchup-projection/specs/recommendation-log/spec.md": "4a071729ac9856f5dbe16bf76e566eb8116826d679c7076f528b51f1bea8f430",
   "changes/call-feed-and-matchup-projection/tasks.md": "554b3017e761702083ce82d9f47a2b78861c24dbe3579072b4be98a23d7232ba",
-  "changes/call-feed-and-matchup-projection/discussion.md": "acaec70b467ae68f0e8e5591f9352583979b5212570f15fcdee51c6df451da6d",
-  "changes/call-feed-and-matchup-projection/assumptions.md": "56c6125b13e21c2fc31599679df440c0643020758c5e486f9f73a614e7823185"
+  "changes/call-feed-and-matchup-projection/discussion.md": "4567f9c24dead6d30db1808c64b9a3191f0a34bf6656ddf9751fc4b2de1797a4",
+  "changes/call-feed-and-matchup-projection/assumptions.md": "a2ce271ae2c6de193f7dd6ee1814f9c684fa44aa076352f725b015809afce394"
 }

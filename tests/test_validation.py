@@ -7,8 +7,7 @@ synthetic season is generated from the very assumptions real data would validate
 from __future__ import annotations
 
 from fantasy_gm.data.store import Store
-from fantasy_gm.engine.projection import Projector
-from fantasy_gm.models import Game, Matchup, PlayerGameLog
+from fantasy_gm.models import Game, PlayerGameLog
 from fantasy_gm.validation import (
     bootstrap_category_winprob,
     derive_variance_profile,
@@ -66,32 +65,20 @@ def test_bootstrap_returns_probability(fx):
     assert 0.0 <= p <= 1.0
 
 
-# --- projector consumes a measured profile -----------------------------------
+# --- A4: autocorrelation measurement -----------------------------------------
 
-def test_projector_consumes_variance_profile():
+def test_autocorrelation_measured_for_counting_cats():
+    from fantasy_gm.validation import measure_autocorrelation
     s = Store(":memory:")
-    cats = ["pts", "reb", "ast", "stl", "blk", "fg3m", "tov", "fg_pct", "ft_pct"]
-    s.create_league("L", "L", SEASON, "weekly-lock", cats)
-    s.add_team("L", "T0", "T0")
-    s.add_team("L", "T1", "T1")
-    s.add_roster_event("L", "T0", "P0", "add", "2025-10-01")
-    s.add_roster_event("L", "T1", "P1", "add", "2025-10-01")
-    s.add_matchup(Matchup("L", 0, "2025-10-20", "2025-10-26", "T0", "T1"))
-    s.upsert_games([Game("h1", SEASON, "2025-10-16", "X", "Y"),
-                    Game("h2", SEASON, "2025-10-18", "X", "Y"),
-                    Game("fX", SEASON, "2025-10-24", "X", "Z"),
-                    Game("fY", SEASON, "2025-10-24", "Y", "Z")])
-    s.upsert_player_logs([
-        PlayerGameLog("h1", SEASON, "2025-10-16", "P0", "P0", "X", _line(pts=10)),
-        PlayerGameLog("h2", SEASON, "2025-10-18", "P0", "P0", "X", _line(pts=20)),
-        PlayerGameLog("h1", SEASON, "2025-10-16", "P1", "P1", "Y", _line(pts=8)),
-        PlayerGameLog("h2", SEASON, "2025-10-18", "P1", "P1", "Y", _line(pts=18)),
-    ])
-    base = Projector().project(s, "L", "T0", "2025-10-20").categories["pts"].win_prob
-    inflated = Projector(variance_profile={"pts": 8.0}).project(
-        s, "L", "T0", "2025-10-20").categories["pts"].win_prob
-    # a much larger variance multiplier pulls the win prob toward 0.5 (less certain)
-    assert abs(inflated - 0.5) < abs(base - 0.5)
+    for gi in range(25):
+        gid = f"g{gi}"
+        s.upsert_games([Game(gid, SEASON, f"2025-11-{(gi % 27) + 1:02d}", "X", "Y")])
+        s.upsert_player_logs([
+            PlayerGameLog(gid, SEASON, f"2025-11-{(gi % 27) + 1:02d}", "P0", "P0", "X",
+                          _line(pts=15 + (gi % 5), stl=(gi * 7) % 4))
+        ])
+    ac = measure_autocorrelation(s, SEASON, min_games=10)
+    assert "pts" in ac and -1.0 <= ac["pts"] <= 1.0
 
 
 # --- A8: percentage categories are volume-weighted ---------------------------

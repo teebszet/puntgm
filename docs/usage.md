@@ -213,13 +213,17 @@ measured. Per the project principle, those are provisional until validated on re
 python -m fantasy_gm.cli validate --season 2025-26
 ```
 
-`fantasy_gm/validation/` provides `measure_category_cv` (the variance ranking), a
-`derive_variance_profile` the projector can consume via `Projector(variance_profile=…)`
-(falling back to the provisional grouping otherwise), and `bootstrap_category_winprob` — a
-Monte-Carlo win-prob to check the projector's normal approximation, which is weakest for
-low-count categories (blocks/steals). **These only mean something on real `nba_api` data**;
-the synthetic season is generated from the same assumptions, so it validates the mechanism,
-not the claim.
+`fantasy_gm/validation/` provides `measure_category_cv` (per-category coefficient of variation),
+`measure_autocorrelation` (lag-1 autocorrelation — whether games are independent), and
+`bootstrap_category_winprob` (Monte-Carlo win-prob to check the normal approximation).
+
+Result on the real 2025-26 season: blk/stl are highest-variance and pts/reb lowest (as a domain
+expert predicted — but assists are *not* high-variance), and game-to-game production is
+~independent (autocorrelation ≈ 0). Because the projector already uses each player's measured
+per-game σ, no category variance multiplier is warranted — the earlier hand-set grouping was
+**removed**. These measurements are validation/reporting, not projector inputs. **They only mean
+something on real `nba_api` data** — the synthetic season is generated from the same assumptions,
+so it validates the mechanism, not the claim.
 
 ## Current limitations
 

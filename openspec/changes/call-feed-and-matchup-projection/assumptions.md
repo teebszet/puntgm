@@ -119,6 +119,32 @@ week to justify the tilt.
 
 ---
 
+## RESOLVED on real data (2026-07-26)
+
+Backfilled the full real 2025-26 season (26,651 player-game lines) and measured:
+
+| cat | CV (σ/μ) | lag-1 autocorr |
+|---|---|---|
+| blk | **1.78** (highest) | −0.03 |
+| stl | 1.27 | 0.01 |
+| fg3m | 1.09 | 0.04 |
+| tov | 1.04 | 0.04 |
+| ast | 0.88 | 0.06 |
+| pts | 0.67 | 0.09 |
+| reb | **0.66** (lowest) | 0.06 |
+
+- **A1 — validated, with one correction.** blk/stl are the highest-variance and pts/reb the
+  lowest, as the domain expert asserted. But **assists are NOT high-variance** (CV 0.88, below
+  median) — the "stl/blk/ast" grouping over-included assists; fg3m is more volatile than ast.
+- **A2/A4 — RESOLVED: the variance multiplier is removed.** Game-to-game production is
+  ~independent (lag-1 autocorrelation ≈ 0, strongest only ~0.09 for pts), so Var(k-game sum) ≈
+  k·σ² and the projector's Σ rg·σ² is already correct. A category multiplier would double-count
+  the measured per-player σ. The hand-set grouping (which had wrongly rated ast "high") is
+  deleted; the projector now uses measured σ only. `measure_category_cv` /
+  `measure_autocorrelation` stay as validation/reporting, not projector inputs.
+- **A8 — FIXED** (percentage cats volume-weighted).
+- Still pending: A3 (bootstrap-vs-normal check, harness built), A5–A7, A9–A11.
+
 ## Progress (2026-07-26)
 
 - **A8 — FIXED.** Percentage categories are now volume-weighted (Σmakes/Σattempts) with a

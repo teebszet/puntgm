@@ -5,11 +5,13 @@ distribution: current point-in-time tally + Σ over rostered players of (remaini
 scheduled games × expected-per-game) with a variance band. Compare the two
 distributions to get a per-category win probability and a safe/contested/gone label.
 
-Variance-aware (D2): high-variance categories (stl/blk/ast) get a wider band, so an
-equal margin reads less safe than in a low-variance category (pts/reb). Availability-
-reactive (D3): an OUT player contributes nothing to remaining games. Reads only through
-the as-of layer, so the projection uses only what was known on the morning of ``as_of``
-(the remaining schedule itself is a priori knowledge).
+Variance-aware (D2): each category's uncertainty band comes from the **measured** per-player
+per-game σ (Σ rg·σ²), so an equal margin reads less safe in a genuinely more volatile category
+(blk/stl) than in a stable one (pts/reb) — no hand-set category multiplier. Real 2025-26 data
+showed game-to-game production is ~independent (lag-1 autocorrelation ≈ 0), so Σ rg·σ² is the
+correct spread and a multiplier would double-count the σ already in the model (see assumptions
+ledger A1–A2/A4). Availability-reactive (D3): an OUT player contributes nothing to remaining
+games. Reads only through the as-of layer (the remaining schedule is a priori knowledge).
 """
 
 from __future__ import annotations
@@ -18,11 +20,9 @@ import math
 
 from fantasy_gm.config import (
     CATEGORY_DIRECTION,
-    CATEGORY_VARIANCE_LEVEL,
     GONE_PROB,
     PERCENTAGE_CATEGORIES,
     SAFE_PROB,
-    VARIANCE_MULTIPLIER,
     Config,
 )
 from fantasy_gm.models import CategoryProjection, MatchupProjection
@@ -42,17 +42,8 @@ def _label(win_prob: float) -> str:
 
 
 class Projector:
-    def __init__(self, config: Config | None = None,
-                 variance_profile: dict[str, float] | None = None):
+    def __init__(self, config: Config | None = None):
         self.config = config or Config()
-        # Optional *measured* per-category variance multipliers (from the validation
-        # harness). When absent, fall back to the provisional grouping (D10 / A1–A2).
-        self.variance_profile = variance_profile
-
-    def _variance_mult(self, category: str) -> float:
-        if self.variance_profile and category in self.variance_profile:
-            return self.variance_profile[category]
-        return VARIANCE_MULTIPLIER[CATEGORY_VARIANCE_LEVEL[category]]
 
     def project(
         self, store, league_id: str, team_id: str, as_of: str
@@ -159,7 +150,8 @@ class Projector:
 
         out: dict[str, tuple[float, float]] = {}
         for c in counting:
-            out[c] = (totals[c], math.sqrt(variances[c]) * self._variance_mult(c))
+            # measured per-player σ only; games are ~independent (A4) so no multiplier
+            out[c] = (totals[c], math.sqrt(variances[c]))
         for c in pct:
             mk, at = PERCENTAGE_CATEGORIES[c]
             makes, attempts = proj_comp.get(mk, 0.0), proj_comp.get(at, 0.0)

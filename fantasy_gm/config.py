@@ -30,22 +30,12 @@ CATEGORY_DIRECTION: dict[str, int] = {
 }
 DEFAULT_CATEGORIES = list(CATEGORY_DIRECTION.keys())
 
-# --- Category variance profiles (D2) -----------------------------------------
-# Points/rebounds are low-variance (leads safer, comebacks harder); steals/blocks/
-# assists are high-variance (leads never fully safe). The multiplier inflates the
-# projection's uncertainty so an equal margin reads less safe in a high-variance cat.
-CATEGORY_VARIANCE_LEVEL: dict[str, str] = {
-    "pts": "low",
-    "reb": "low",
-    "ast": "high",
-    "stl": "high",
-    "blk": "high",
-    "fg3m": "medium",
-    "tov": "medium",
-    "fg_pct": "medium",
-    "ft_pct": "high",
-}
-VARIANCE_MULTIPLIER: dict[str, float] = {"low": 0.6, "medium": 1.0, "high": 1.6}
+# --- Category variance ------------------------------------------------------
+# There is deliberately NO hard-coded per-category variance grouping. Real 2025-26 data
+# (see assumptions ledger A1/A2/A4) showed the projector's measured per-player per-game σ
+# already captures category volatility, and game-to-game production is ~independent, so a
+# category multiplier would double-count. Relative variance is *measured* for reporting via
+# fantasy_gm.validation.measure_category_cv, not asserted here.
 
 # Percentage categories are volume-weighted (A8): the value is Σmakes / Σattempts, never
 # a sum of per-game percentages. Maps the category to its (makes, attempts) component keys.

@@ -76,3 +76,35 @@ labeled provisional); design D10 added.
 **Open for review:** the ledger itself (which assumptions to validate first), and whether to build
 the validation/calibration harness now (ready to run on real data) or after you've reviewed the
 ledger. Code is unchanged and stays provisional; percentage-category fix (A8) is queued regardless.
+
+---
+
+## 2026-07-26 — round 2 (validated on real data; multiplier removed)
+
+**Context:** NBA's Akamai WAF blocks datacenter/VPN IPs (silent tarpit), so stats.nba.com is
+unreachable from the agent's sandbox egress — but fine from the user's residential IP. Implemented
+the real nba_api `LeagueGameLog` backfill (`parse_league_game_log`, unit-tested); the user ran it
+locally and backfilled the full real 2025-26 season (26,651 player-game lines). The resulting
+SQLite is on local disk, so the agent measured directly from it (filesystem is local; only network
+is blocked).
+
+**Findings (real data):** CV ranking blk 1.78 > stl 1.27 > fg3m 1.09 > tov 1.04 > ast 0.88 >
+pts 0.67 > reb 0.66; lag-1 autocorrelation ≈ 0 across all counting cats (max ~0.09, pts).
+
+**Resolved:**
+- **A1 validated** — blk/stl highest, pts/reb lowest (expert intuition confirmed). Correction:
+  **assists are not high-variance** (CV 0.88, below median); the asserted stl/blk/ast grouping
+  over-included ast, and fg3m is more volatile than ast.
+- **A2/A4** — since games are ~independent, Σ rg·σ² is already the correct spread; a category
+  multiplier double-counts the measured per-player σ. **Removed the hand-set variance
+  multiplier / grouping entirely**; the projector now uses measured σ only. Added
+  `measure_autocorrelation` (A4) to the harness; `measure_category_cv` is validation/reporting,
+  not a projector input.
+- **A8** already fixed (percentage cats volume-weighted).
+
+**Spec impact:** `matchup-projection` "Variance-aware projection" rewritten (measured σ, no
+multiplier; validated independence); `config` variance constants deleted; `Projector` variance-
+profile plumbing removed. assumptions.md "RESOLVED" section added. 46 tests, ruff clean.
+
+**Verification:** projection on the real season reads sensibly — e.g. a mid-January matchup labels
+close low-σ pts as *contested* and a small high-σ stl gap as *contested*, purely from measured σ.
