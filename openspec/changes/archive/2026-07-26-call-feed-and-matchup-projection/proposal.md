@@ -57,7 +57,10 @@ runs on, and the baseline engine remains as the thing the new model must beat in
 
 ### Removed Capabilities
 
-- `decision-engine`: The ranked streaming/waiver recommender is superseded.
+- `decision-engine`: The ranked streaming/waiver recommender is superseded by `matchup-projection`
+  + `call-feed`. (An entire capability can't be emptied via requirement deltas, so its baseline
+  spec `openspec/specs/decision-engine/` is deleted directly on archive rather than via a REMOVED
+  delta.)
 
 ## Impact
 
