@@ -56,13 +56,18 @@ def test_derive_profile_is_normalised_to_median():
 # --- A3: bootstrap win-prob --------------------------------------------------
 
 def test_bootstrap_returns_probability(fx):
+    from fantasy_gm.validation import bootstrap_pct_winprob
     m = fx.store.matchup_for_team(fx.league_id, "T00", "2025-11-14")
     opp = m.team_b if m.team_a == "T00" else m.team_a
     mine = fx.store.roster_asof(fx.league_id, "T00", "2025-11-14")
     theirs = fx.store.roster_asof(fx.league_id, opp, "2025-11-14")
     p = bootstrap_category_winprob(fx.store, mine, theirs, "pts",
-                                   m.period_start, "2025-11-14", m.period_end, n=300)
+                                   m.period_start, "2025-11-14", m.period_end, n=300, window=10)
     assert 0.0 <= p <= 1.0
+    # percentage-category bootstrap (A12) returns a valid probability too
+    pp = bootstrap_pct_winprob(fx.store, mine, theirs, "fg_pct",
+                               m.period_start, "2025-11-14", m.period_end, n=200, window=10)
+    assert 0.0 <= pp <= 1.0
 
 
 # --- A4: autocorrelation measurement -----------------------------------------

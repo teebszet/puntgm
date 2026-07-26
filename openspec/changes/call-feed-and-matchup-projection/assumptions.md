@@ -156,8 +156,16 @@ Backfilled the full real 2025-26 season (26,651 player-game lines) and measured:
   deleted; the projector now uses measured σ only. `measure_category_cv` /
   `measure_autocorrelation` stay as validation/reporting, not projector inputs.
 - **A8 — FIXED** (percentage cats volume-weighted).
-- Still pending: A3 (bootstrap-vs-normal for counting cats), **A12 (percentage-category binomial
-  model — the fg_pct/ft_pct analogue)**, A5–A7, A9–A11.
+- **A3 — checked (2026-07-26): normal approx is usable but rough.** Windowed bootstrap vs the
+  projector's normal win-prob over 24 real matchups: mean |Δ| ≈ **0.124** for counting cats, with
+  a mild over-confidence bias on **blk (+0.04)** — the low-count cat, as theory predicts. Usable as
+  a fast deterministic default, but a bootstrap-backed win-prob (now available) is materially more
+  accurate; worth an optional projection mode where label trustworthiness matters (the track record).
+- **A12 — RESOLVED: the binomial percentage model is well-calibrated.** Same study: mean |Δ| ≈
+  **0.056** for fg_pct/ft_pct, negligible bias. Despite ignoring streakiness, the binomial SE
+  matches the empirical spread — no change needed. (Percentages are ~2× better calibrated than the
+  counting-cat normal approx.)
+- Still pending: A5–A7, A9–A11.
 
 ## Progress (2026-07-26)
 

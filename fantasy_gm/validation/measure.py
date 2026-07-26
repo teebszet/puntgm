@@ -103,10 +103,12 @@ def measure_autocorrelation(
 def bootstrap_category_winprob(
     store, my_players: list[str], opp_players: list[str], category: str,
     period_start: str, as_of: str, period_end: str, n: int = 1000, seed: int = 0,
+    window: int | None = None,
 ) -> float:
     """Monte-Carlo win probability for a counting ``category``: resample each player's real
     per-game production over their remaining games and compare team totals. The empirical
-    check for the projector's normal approximation (A3)."""
+    check for the projector's normal approximation (A3). ``window`` limits the sampled games
+    to the last N (match the projector's ``recent_games_window`` for a fair comparison)."""
     rng = random.Random(seed)
     direction = CATEGORY_DIRECTION[category]
 
@@ -123,8 +125,10 @@ def bootstrap_category_winprob(
             rg = store.remaining_games_for_team(nba_team, as_of, period_end)
             if rg == 0:
                 continue
-            vals = [lg.stats.get(category, 0.0)
-                    for lg in store.player_logs_asof(as_of, player_id=pid)]
+            logs = store.player_logs_asof(as_of, player_id=pid)
+            if window is not None:
+                logs = logs[-window:]
+            vals = [lg.stats.get(category, 0.0) for lg in logs]
             if vals:
                 draws.append((rg, vals))
         return banked, draws
@@ -137,5 +141,56 @@ def bootstrap_category_winprob(
         my_tot = my_banked + sum(sum(rng.choice(v) for _ in range(rg)) for rg, v in my_draws)
         opp_tot = opp_banked + sum(sum(rng.choice(v) for _ in range(rg)) for rg, v in opp_draws)
         d = direction * (my_tot - opp_tot)
+        wins += 1.0 if d > 0 else (0.5 if d == 0 else 0.0)
+    return wins / n
+
+
+def bootstrap_pct_winprob(
+    store, my_players: list[str], opp_players: list[str], category: str,
+    period_start: str, as_of: str, period_end: str, n: int = 1000, seed: int = 0,
+    window: int | None = None,
+) -> float:
+    """Monte-Carlo win probability for a **percentage** category (A12): resample each player's
+    real per-game (makes, attempts) pairs over remaining games and compare volume-weighted
+    Σmakes/Σattempts. The empirical check for the projector's binomial standard error.
+    ``window`` limits sampled games to the last N (match the projector's window)."""
+    mk, at = PERCENTAGE_CATEGORIES[category]
+    rng = random.Random(seed)
+
+    def _side(players):
+        banked = store.category_totals(players, period_start, as_of, [mk, at])
+        draws = []
+        for pid in players:
+            avail = store.availability_asof(pid, as_of)
+            if avail and avail.status == "OUT":
+                continue
+            nba_team = store.player_team(pid, as_of)
+            if not nba_team:
+                continue
+            rg = store.remaining_games_for_team(nba_team, as_of, period_end)
+            if rg == 0:
+                continue
+            logs = store.player_logs_asof(as_of, player_id=pid)
+            if window is not None:
+                logs = logs[-window:]
+            pairs = [(lg.stats.get(mk, 0.0), lg.stats.get(at, 0.0)) for lg in logs]
+            if pairs:
+                draws.append((rg, pairs))
+        return banked[mk], banked[at], draws
+
+    def _pct(banked_mk, banked_at, draws):
+        m, a = banked_mk, banked_at
+        for rg, pairs in draws:
+            for _ in range(rg):
+                pm, pa = rng.choice(pairs)
+                m += pm
+                a += pa
+        return (m / a) if a > 0 else 0.0
+
+    my = _side(my_players)
+    opp = _side(opp_players)
+    wins = 0.0
+    for _ in range(n):
+        d = _pct(*my) - _pct(*opp)  # higher percentage is better
         wins += 1.0 if d > 0 else (0.5 if d == 0 else 0.0)
     return wins / n

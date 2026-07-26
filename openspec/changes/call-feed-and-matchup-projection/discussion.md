@@ -108,3 +108,35 @@ profile plumbing removed. assumptions.md "RESOLVED" section added. 46 tests, ruf
 
 **Verification:** projection on the real season reads sensibly — e.g. a mid-January matchup labels
 close low-σ pts as *contested* and a small high-σ stl gap as *contested*, purely from measured σ.
+
+---
+
+## 2026-07-26 — round 3 (A3 + A12 variance-model calibration)
+
+**Raised:** validate the two remaining variance-model assumptions on the real season — A3 (normal
+approximation for counting cats) and A12 (binomial SE for percentage cats).
+
+**Method:** added `bootstrap_pct_winprob` (A12) beside `bootstrap_category_winprob` (A3), both
+windowed to the projector's last-10-game window for a fair test. Compared the projector's *assumed*
+win prob (normal for counting, binomial for pct) to the *empirical* bootstrap across 24 real
+matchups (n_boot=400). (First pass had a confound — bootstrap used full-season games vs the
+projector's 10-game window; fixed by adding a `window` param.)
+
+**Findings (mean |Δ| assumed-vs-empirical win prob):**
+- Counting (normal): pts .18, ast .15, blk .14, tov .12, stl .12, fg3m .10, reb .08 → **avg .124**;
+  mild over-confidence bias on **blk (+.04)** (the low-count cat, as theory predicts).
+- Percentage (binomial): fg_pct .058, ft_pct .054 → **avg .056**, negligible bias.
+
+**Resolved:**
+- **A12** — the binomial percentage model is well-calibrated (~2× better than the counting normal
+  approx); streakiness is empirically negligible for win-prob. No change.
+- **A3** — the normal approx is *usable but rough* (~0.12 win-prob error, blk over-confident). Kept
+  as the fast deterministic default (D9); the windowed bootstrap is the more-accurate alternative and
+  is now in the harness. Open question below.
+
+**Spec impact:** none (both are validation/harness additions). `bootstrap_pct_winprob` +
+`window` param added; assumptions ledger updated (A3 checked, A12 resolved).
+
+**Open for review:** whether to add an optional bootstrap-backed win-prob projection mode for cases
+where label trustworthiness matters (the published track record), accepting the speed cost — or keep
+the fast normal approx and treat the ~0.12 gap as acceptable for now.
