@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fantasy_gm.data.store import Store
-from fantasy_gm.models import Game, PlayerGameLog
-from fantasy_gm.valuation import player_values
+from fantasy_gm.models import Game, PlayerGameLog, UsageRole
+from fantasy_gm.valuation import player_values, rosterable_pool
 
 SEASON = "2025-26"
+
+
+def test_rosterable_pool_ranks_by_minutes_not_games():
+    """A high-minutes star who missed games must outrank a low-minutes iron-man — the bug
+    that stranded Jokić/Cade on the wire when the pool was ranked by games played."""
+    s = Store(":memory:")
+    base = date(2025, 11, 1)
+    for gi in range(12):  # star: few games, big minutes
+        d = (base + timedelta(days=gi * 2)).isoformat()
+        s.upsert_games([Game(f"s{gi}", SEASON, d, "X", "Y")])
+        s.upsert_player_logs(
+            [PlayerGameLog(f"s{gi}", SEASON, d, "star", "Star", "X", _line(pts=25))])
+        s.add_usage_role([UsageRole("star", d, 34.0, 18.0, True, 1)])
+    for gi in range(40):  # iron-man: many games, bench minutes
+        d = (base + timedelta(days=gi)).isoformat()
+        s.upsert_games([Game(f"i{gi}", SEASON, d, "X", "Z")])
+        s.upsert_player_logs(
+            [PlayerGameLog(f"i{gi}", SEASON, d, "iron", "Iron", "Z", _line(pts=6))])
+        s.add_usage_role([UsageRole("iron", d, 14.0, 5.0, False, 3)])
+    assert rosterable_pool(s, SEASON, pool_size=1, min_games=10) == ["star"]
 
 
 def _line(**c):

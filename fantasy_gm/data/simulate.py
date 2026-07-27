@@ -62,6 +62,7 @@ def simulate_league(
     lo, _hi = _season_bounds(store, season)
     draft_date = lo.isoformat()  # rosters are known from the (pre-season-proxy) draft
 
+    store.clear_league(league_id)  # idempotent: wipe any prior draft for this league_id
     store.create_league(league_id, f"Simulated {season} (#{seed})", season, cadence,
                         categories, is_real=False, seed=seed)
     team_ids = [f"T{i:02d}" for i in range(n_teams)]

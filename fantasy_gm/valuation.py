@@ -32,18 +32,43 @@ def _player_games(store, season: str) -> dict[str, list[dict]]:
     return out
 
 
+def rosterable_pool(
+    store, season: str, pool_size: int = 156, min_games: int = 10,
+    games: dict[str, list[dict]] | None = None,
+) -> list[str]:
+    """The set of players a real league would roster, ranked by **minutes per game** — the
+    true starter/role signal. Ranking by games played (the old approach) wrongly excludes
+    stars who miss a handful of nights (Jokić at 65 games) while keeping durable role players,
+    dumping the stars onto the wire. A light ``min_games`` floor keeps tiny samples out.
+    Falls back to games played only if no usage/minutes data exists.
+    """
+    games = games if games is not None else _player_games(store, season)
+    eligible = [p for p in games if len(games[p]) >= min_games] or list(games)
+    mins = {
+        r["player_id"]: r["m"]
+        for r in store.conn.execute(
+            "SELECT player_id, AVG(minutes) m FROM usage_role GROUP BY player_id"
+        )
+    }
+    if mins:
+        eligible.sort(key=lambda p: (-(mins.get(p) or 0.0), -len(games[p]), p))
+    else:
+        eligible.sort(key=lambda p: (-len(games[p]), p))
+    return eligible[:pool_size]
+
+
 def player_values(
     store, season: str, pool_size: int = 156, categories: list[str] | None = None
 ) -> dict[str, float]:
     """Return {player_id: total 9-cat z-value} for the rosterable pool (top ``pool_size`` by
-    games played). Higher is better; turnovers count negatively."""
+    minutes per game). Higher is better; turnovers count negatively."""
     categories = categories or list(DEFAULT_CATEGORIES)
     counting = _counting(categories)
     pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
     games = _player_games(store, season)
     if not games:
         return {}
-    pool = sorted(games, key=lambda p: -len(games[p]))[:pool_size]
+    pool = rosterable_pool(store, season, pool_size=pool_size, games=games)
 
     # per-player season aggregates over the pool
     agg: dict[str, dict[str, float]] = {}
