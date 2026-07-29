@@ -8,7 +8,7 @@ making it (win-prob before → after) so the manager can compare ways to play th
 
 from __future__ import annotations
 
-from fantasy_gm.config import Config
+from fantasy_gm.config import CATEGORY_DIRECTION, PERCENTAGE_CATEGORIES, Config
 from fantasy_gm.engine.projection import Projector
 from fantasy_gm.models import Perspective, ReconciliationMove
 
@@ -41,20 +41,27 @@ class Reconciler:
         contested = set(proj.contested())
         base_wp = {c: proj.categories[c].win_prob for c in self.config.categories}
         drop = drops[0]
-        # Shortlist the best-schedule / most-productive wire adds, then re-project each and
-        # label it by the category it *actually* improves most (preferring a contested one),
-        # so a move never claims to contest a category it makes worse.
-        shortlist = sorted(wire, key=lambda w: (-w[2], -self._prod(store, w[0], as_of)))[:12]
+        if not contested:
+            return []  # nothing to swing — don't churn the roster
+        # Shortlist the best available add for EACH contested category (per-cat, so a
+        # specialist like a FG% shooter isn't missed by a global production sort). Then
+        # re-project each and keep only moves that improve a *contested* cat — never one
+        # that's already safe or gone.
+        cand: dict[str, tuple] = {}
+        for cat in contested:
+            top = sorted(wire, key=lambda w, c=cat: -self._cat_recent(store, w[0], as_of, c)
+                         * CATEGORY_DIRECTION[c])[:6]
+            for w in top:
+                cand[w[0]] = w
         evaluated = []
-        for pid, name, _rg in shortlist:
+        for pid, name, _rg in cand.values():
             new_roster = [p for p in my_roster if p != drop[0]] + [pid]
             after = self.projector.win_probs_for_roster(
                 store, league_id, team_id, as_of, new_roster)
             deltas = {c: after.get(c, base_wp[c]) - base_wp[c] for c in self.config.categories}
-            gains = {c: d for c, d in deltas.items() if c in contested and d > 0.01} \
-                or {c: d for c, d in deltas.items() if d > 0.01}
+            gains = {c: d for c, d in deltas.items() if c in contested and d > 0.01}
             if not gains:
-                continue  # this add improves nothing worth surfacing
+                continue  # doesn't improve any category still in play
             best_cat = max(gains, key=gains.get)
             evaluated.append((gains[best_cat], best_cat, pid, name, after, deltas))
 
@@ -105,11 +112,17 @@ class Reconciler:
         ).fetchone()
         return row["player_name"] if row else pid
 
-    def _prod(self, store, pid, as_of):
+    def _cat_recent(self, store, pid, as_of, cat) -> float:
+        """Recent per-game production in one category (volume-weighted for percentages)."""
         logs = store.player_logs_asof(as_of, player_id=pid)[-self.config.recent_games_window:]
         if not logs:
             return 0.0
-        return sum(store.fantasy_points(lg.stats) for lg in logs) / len(logs)
+        if cat in PERCENTAGE_CATEGORIES:
+            mk, at = PERCENTAGE_CATEGORIES[cat]
+            made = sum(lg.stats.get(mk, 0.0) for lg in logs)
+            att = sum(lg.stats.get(at, 0.0) for lg in logs)
+            return made / att if att > 0 else 0.0
+        return sum(lg.stats.get(cat, 0.0) for lg in logs) / len(logs)
 
     def _plays_on(self, store, pid, as_of) -> bool:
         nba_team = store.player_team(pid, as_of)

@@ -95,3 +95,54 @@ def calibration(store, projection: MatchupProjection, config: Config | None = No
 def _next(iso_date: str) -> str:
     from datetime import date, timedelta
     return (date.fromisoformat(iso_date) + timedelta(days=1)).isoformat()
+
+
+def replay_season(
+    store, league_id: str, config: Config | None = None, offset_days: int = 3
+) -> dict:
+    """Run the engine's actual top call at each (team, scoring period) decision point over a
+    season and grade every one against what really happened — the drift-proof track record.
+
+    The headline metric, ``target_hit_rate``, is **opponent-independent**: did the recommended
+    add out-produce the dropped player in the targeted category over the rest of the week
+    (from real box scores)? ``helped_rate`` (did the move improve the matchup vs standing pat)
+    depends on opponent strength, so it's reported with a caveat while opponents are static.
+    """
+    from datetime import date, timedelta
+
+    from fantasy_gm.engine.reconcile import Reconciler
+
+    config = config or Config()
+    rec = Reconciler(config)
+    periods = store.conn.execute(
+        """SELECT DISTINCT period_index, period_start, period_end FROM matchups
+           WHERE league_id = ? ORDER BY period_index""",
+        (league_id,),
+    ).fetchall()
+
+    grades = []
+    for p in periods:
+        as_of = (date.fromisoformat(p["period_start"]) + timedelta(days=offset_days)).isoformat()
+        if as_of > p["period_end"]:
+            continue
+        for team in store.team_ids(league_id):
+            moves = rec.reconcile(store, league_id, team, as_of, max_moves=1)
+            if not moves:
+                continue
+            grades.append(grade_move(store, moves[0], config))
+
+    n = len(grades)
+    if n == 0:
+        return {"moves": 0}
+    hit = sum(1 for g in grades if g.target_realized_delta > 0)
+    helped = sum(1 for g in grades if g.helped)
+    flips = sum(len(g.flipped_to_me) for g in grades)
+    unflips = sum(len(g.flipped_away) for g in grades)
+    return {
+        "moves": n, "hit": hit, "helped": helped, "flips": flips, "unflips": unflips,
+        "delta_sum": round(sum(g.target_realized_delta for g in grades), 2),
+        "target_hit_rate": round(hit / n, 3),
+        "avg_target_delta": round(sum(g.target_realized_delta for g in grades) / n, 2),
+        "helped_rate": round(helped / n, 3),
+        "net_cats_per_move": round((flips - unflips) / n, 3),
+    }

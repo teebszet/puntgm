@@ -57,11 +57,25 @@ def rosterable_pool(
     return eligible[:pool_size]
 
 
+_VALUE_CACHE: dict[tuple, dict[str, float]] = {}
+
+
 def player_values(
     store, season: str, pool_size: int = 156, categories: list[str] | None = None
 ) -> dict[str, float]:
     """Return {player_id: total 9-cat z-value} for the rosterable pool (top ``pool_size`` by
-    minutes per game). Higher is better; turnovers count negatively."""
+    minutes per game). Higher is better; turnovers count negatively.
+
+    Memoized per (store, season, pool_size): a season's z-values are constant, and hot loops
+    (reconcile, wire, season replay) call this repeatedly on a static store. Call
+    ``clear_value_cache()`` if the store's player data changes underneath a long-lived process."""
+    n_logs = store.conn.execute(
+        "SELECT COUNT(*) c FROM player_logs WHERE season = ?", (season,)
+    ).fetchone()["c"]
+    key = (id(store), season, pool_size, n_logs)  # row count guards against id() reuse
+    cached = _VALUE_CACHE.get(key)
+    if cached is not None:
+        return cached
     categories = categories or list(DEFAULT_CATEGORIES)
     counting = _counting(categories)
     pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
@@ -107,4 +121,10 @@ def player_values(
             imp = (agg[pid][f"{c}_pct"] - league_pct) * agg[pid][f"{c}_att"]
             z += (imp - mean_imp) / std_imp
         values[pid] = round(z, 4)
+    _VALUE_CACHE[key] = values
     return values
+
+
+def clear_value_cache() -> None:
+    """Drop the memoized z-values (call if a store's player data changed mid-process)."""
+    _VALUE_CACHE.clear()

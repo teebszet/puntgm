@@ -198,6 +198,32 @@ def cmd_values(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    from fantasy_gm.data.simulate import simulate_league
+    from fantasy_gm.engine.scoring import replay_season
+
+    config = Config()
+    store = _store(config)
+    tot = {"moves": 0, "hit": 0, "helped": 0, "flips": 0, "unflips": 0, "delta_sum": 0.0}
+    for seed in range(1, args.leagues + 1):
+        lg = simulate_league(store, season=args.season, seed=seed, n_teams=12, roster_size=13)
+        r = replay_season(store, lg, config)
+        for k in tot:
+            tot[k] += r.get(k, 0)
+    n = tot["moves"]
+    if n == 0:
+        print("no moves to grade (backfill a season first)", file=sys.stderr)
+        return 1
+    print(f"track record — season {args.season}, {args.leagues} simulated league(s), "
+          f"{n} graded calls")
+    print(f"  add out-produced the drop in the TARGET category:  {tot['hit'] / n:.0%}")
+    print(f"  avg realized target-category gain per call:        {tot['delta_sum'] / n:+.2f}")
+    print(f"  move improved the matchup vs standing pat*:        {tot['helped'] / n:.0%}")
+    print(f"  categories flipped to you / away* :                {tot['flips']} / {tot['unflips']}")
+    print("  * opponent-dependent — static opponents this pass (see deferred baseline).")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -256,6 +282,12 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--league", required=True)
     w.add_argument("--team", required=True)
     w.set_defaults(func=cmd_wire)
+
+    rp = sub.add_parser("replay", help="grade every recommended call over a season (track record)")
+    rp.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    rp.add_argument("--leagues", type=int, default=1,
+                    help="simulated leagues to average over (more = robuster but slower)")
+    rp.set_defaults(func=cmd_replay)
     return p
 
 

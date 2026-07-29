@@ -57,6 +57,16 @@ def test_move_is_graded_by_realized_impact(fx):
     assert isinstance(grade.flipped_to_me, list) and isinstance(grade.flipped_away, list)
 
 
+def test_replay_season_produces_a_track_record(fx):
+    from fantasy_gm.engine.scoring import replay_season
+    r = replay_season(fx.store, fx.league_id)
+    assert r["moves"] >= 0
+    if r["moves"]:
+        assert 0.0 <= r["target_hit_rate"] <= 1.0
+        assert 0.0 <= r["helped_rate"] <= 1.0
+        assert r["hit"] <= r["moves"]
+
+
 def test_projection_calibration_is_measurable(fx):
     proj = Projector().project(fx.store, fx.league_id, "T00", MOVE_DATE)
     cal = calibration(fx.store, proj)
