@@ -110,10 +110,13 @@ def replay_season(
     """
     from datetime import date, timedelta
 
+    from fantasy_gm.engine.projection import Projector
     from fantasy_gm.engine.reconcile import Reconciler
 
     config = config or Config()
+    cats = config.categories
     rec = Reconciler(config)
+    proj_engine = Projector(config)
     periods = store.conn.execute(
         """SELECT DISTINCT period_index, period_start, period_end FROM matchups
            WHERE league_id = ? ORDER BY period_index""",
@@ -121,11 +124,22 @@ def replay_season(
     ).fetchall()
 
     grades = []
+    cal = {"safe": [0, 0], "contested": [0, 0], "gone": [0, 0]}  # label -> [wins, total]
     for p in periods:
         as_of = (date.fromisoformat(p["period_start"]) + timedelta(days=offset_days)).isoformat()
         if as_of > p["period_end"]:
             continue
         for team in store.team_ids(league_id):
+            # calibration: did categories land where the projection said they would?
+            projection = proj_engine.project(store, league_id, team, as_of)
+            if projection.opponent_id:
+                mine = store.category_totals(store.roster_asof(league_id, team, as_of),
+                                             p["period_start"], p["period_end"], cats)
+                opp = store.category_totals(store.roster_asof(league_id, projection.opponent_id,
+                                            as_of), p["period_start"], p["period_end"], cats)
+                for c, cp in projection.categories.items():
+                    cal[cp.label][0] += 1 if _wins(mine[c], opp[c], c) else 0
+                    cal[cp.label][1] += 1
             moves = rec.reconcile(store, league_id, team, as_of, max_moves=1)
             if not moves:
                 continue
@@ -133,7 +147,7 @@ def replay_season(
 
     n = len(grades)
     if n == 0:
-        return {"moves": 0}
+        return {"moves": 0, "calibration": cal}
     hit = sum(1 for g in grades if g.target_realized_delta > 0)
     helped = sum(1 for g in grades if g.helped)
     flips = sum(len(g.flipped_to_me) for g in grades)
@@ -145,4 +159,5 @@ def replay_season(
         "avg_target_delta": round(sum(g.target_realized_delta for g in grades) / n, 2),
         "helped_rate": round(helped / n, 3),
         "net_cats_per_move": round((flips - unflips) / n, 3),
+        "calibration": cal,
     }

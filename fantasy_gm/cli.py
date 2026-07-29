@@ -205,20 +205,29 @@ def cmd_replay(args: argparse.Namespace) -> int:
     config = Config()
     store = _store(config)
     tot = {"moves": 0, "hit": 0, "helped": 0, "flips": 0, "unflips": 0, "delta_sum": 0.0}
+    cal = {"safe": [0, 0], "contested": [0, 0], "gone": [0, 0]}
     for seed in range(1, args.leagues + 1):
         lg = simulate_league(store, season=args.season, seed=seed, n_teams=12, roster_size=13)
         r = replay_season(store, lg, config)
         for k in tot:
             tot[k] += r.get(k, 0)
+        for lab, (w, t) in r.get("calibration", {}).items():
+            cal[lab][0] += w
+            cal[lab][1] += t
     n = tot["moves"]
     if n == 0:
         print("no moves to grade (backfill a season first)", file=sys.stderr)
         return 1
-    print(f"track record — season {args.season}, {args.leagues} simulated league(s), "
-          f"{n} graded calls")
+    cats_n = sum(t for _w, t in cal.values())
+    print(f"track record — season {args.season}, {args.leagues} simulated league(s)")
+    print(f"\nProjection calibration ({cats_n} category calls):")
+    for lab in ("safe", "contested", "gone"):
+        w, t = cal[lab]
+        if t:
+            print(f"  called {lab:9}: won {w / t:.0%}  (n={t})")
+    print(f"\nWaiver calls ({n} graded):")
     print(f"  add out-produced the drop in the TARGET category:  {tot['hit'] / n:.0%}")
     print(f"  avg realized target-category gain per call:        {tot['delta_sum'] / n:+.2f}")
-    print(f"  move improved the matchup vs standing pat*:        {tot['helped'] / n:.0%}")
     print(f"  categories flipped to you / away* :                {tot['flips']} / {tot['unflips']}")
     print("  * opponent-dependent — static opponents this pass (see deferred baseline).")
     return 0
