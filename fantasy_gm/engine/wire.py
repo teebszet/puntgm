@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from fantasy_gm.config import CATEGORY_DIRECTION, PERCENTAGE_CATEGORIES, Config
 from fantasy_gm.engine.projection import Projector
 from fantasy_gm.models import Perspective
-from fantasy_gm.valuation import _player_games, player_values
+from fantasy_gm.valuation import _player_games, player_values, rosterable_pool
 
 # Bundles derived from the measured category-correlation clusters (A9), not asserted.
 BUNDLES: dict[str, tuple[str, ...]] = {
@@ -126,7 +126,7 @@ class WireAnalyzer:
         """Classify each available player into the bundle their production leans toward, using
         pool-mean-normalised category values so cats on different scales are comparable."""
         games = _player_games(store, season)
-        pool = sorted(games, key=lambda p: -len(games[p]))[:156]
+        pool = rosterable_pool(store, season, games=games)
         means = self._pool_means(games, pool)
         depth = {b: 0 for b in BUNDLES}
         wire_ids = {pid for pid, _ in wire}

@@ -199,6 +199,13 @@ class Store:
         )
         self.conn.commit()
 
+    def clear_league(self, league_id: str) -> None:
+        """Remove all state for a league so it can be re-created idempotently (re-drafting the
+        same league_id must not pile new roster events on top of stale ones)."""
+        for tbl in ("roster_events", "matchups", "teams", "leagues"):
+            self.conn.execute(f"DELETE FROM {tbl} WHERE league_id = ?", (league_id,))
+        self.conn.commit()
+
     def create_league(
         self, league_id: str, name: str, season: str, cadence: str,
         categories: list[str], is_real: bool = False, seed: int | None = None,

@@ -109,15 +109,11 @@ def measure_category_correlations(
     so "availability of a category" is really "which bundle is available, and at what cost" — e.g.
     adding a PG for assists also brings steals/3PM/FT% and concedes rebounds/blocks/FG%.
     """
-    import json
+    from fantasy_gm.valuation import _player_games, rosterable_pool
 
     categories = categories or list(DEFAULT_CATEGORIES)
-    games: dict[str, list[dict]] = {}
-    for r in store.conn.execute(
-        "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
-    ):
-        games.setdefault(r["player_id"], []).append(json.loads(r["stats_json"]))
-    pool = sorted(games, key=lambda p: -len(games[p]))[:pool_size]
+    games = _player_games(store, season)
+    pool = rosterable_pool(store, season, pool_size=pool_size, games=games)
 
     vec: dict[str, list[float]] = {c: [] for c in categories}
     for pid in pool:

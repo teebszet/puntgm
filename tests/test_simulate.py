@@ -44,6 +44,16 @@ def test_tally_is_point_in_time(fx):
     assert later_pts >= early_pts > 0.0
 
 
+def test_resimulating_same_league_is_idempotent(fx):
+    """Re-drafting the same league_id must not accumulate stale roster events."""
+    before = {t: fx.store.roster_asof(fx.league_id, t, "2099-01-01")
+              for t in fx.store.team_ids(fx.league_id)}
+    simulate_league(fx.store, season=fx.season, seed=1, n_teams=8, roster_size=10)  # same params
+    for t, roster in before.items():
+        after = fx.store.roster_asof(fx.league_id, t, "2099-01-01")
+        assert len(after) == len(roster) <= 10  # not doubled
+
+
 def test_rosters_known_from_draft(fx):
     """Rosters are dated from the draft (season start), so they are populated as of the
     first game date but a matchup tally only accrues from games played."""
