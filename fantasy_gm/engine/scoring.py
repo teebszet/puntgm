@@ -129,10 +129,16 @@ def replay_season(
         as_of = (date.fromisoformat(p["period_start"]) + timedelta(days=offset_days)).isoformat()
         if as_of > p["period_end"]:
             continue
+        seen_matchups: set = set()
         for team in store.team_ids(league_id):
             # calibration: did categories land where the projection said they would?
             projection = proj_engine.project(store, league_id, team, as_of)
-            if projection.opponent_id:
+            # Count each matchup-category ONCE: category win probs are exactly complementary
+            # between the two sides (a "safe" for you is the same fact as a "gone" for them),
+            # so scoring both perspectives would double-count the identical outcome.
+            pair = frozenset((team, projection.opponent_id))
+            if projection.opponent_id and pair not in seen_matchups:
+                seen_matchups.add(pair)
                 mine = store.category_totals(store.roster_asof(league_id, team, as_of),
                                              p["period_start"], p["period_end"], cats)
                 opp = store.category_totals(store.roster_asof(league_id, projection.opponent_id,

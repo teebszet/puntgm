@@ -214,11 +214,18 @@ class Projector:
             rg = store.remaining_games_for_team(nba_team, as_of, period_end)
             if rg == 0:
                 continue
-            dist = store.player_distribution(pid, as_of, dist_keys, window=window)
+            dist, n_obs = store.player_distribution_with_n(pid, as_of, dist_keys, window=window)
             for c in counting:
                 mu, sd = dist[c]
                 totals[c] += rg * mu * scale
+                # Game-to-game spread (independent across games, validated A4) …
                 variances[c] += rg * (sd ** 2)
+                # … plus uncertainty in the *estimated* mean. We only have an N-game sample,
+                # so μ̂ carries standard error σ²/N — and that error shifts every remaining
+                # game the same way, so it scales with rg², not rg. Omitting this was making
+                # extreme win probabilities overconfident (97% predicted → 88% realized).
+                if n_obs > 1:
+                    variances[c] += (rg ** 2) * (sd ** 2) / n_obs
             for k in comp_keys:
                 proj_comp[k] = proj_comp.get(k, 0.0) + rg * dist[k][0] * scale
 

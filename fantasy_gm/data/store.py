@@ -502,6 +502,25 @@ class Store:
         ]
 
     # --- production distributions (mean + consistency), as of a date ---------
+    def player_distribution_with_n(
+        self, player_id: str, as_of: str, categories: list[str], window: int | None = None
+    ) -> tuple[dict[str, tuple[float, float]], int]:
+        """Same as ``player_distribution`` but also returns the sample size used, so callers
+        can account for uncertainty in the estimated mean (not just game-to-game spread)."""
+        logs = self.player_logs_asof(as_of, player_id=player_id)
+        if window is not None:
+            logs = logs[-window:]
+        out: dict[str, tuple[float, float]] = {}
+        for c in categories:
+            vals = [lg.stats.get(c, 0.0) for lg in logs]
+            if not vals:
+                out[c] = (0.0, 0.0)
+            elif len(vals) == 1:
+                out[c] = (vals[0], 0.0)
+            else:
+                out[c] = (statistics.fmean(vals), statistics.pstdev(vals))
+        return out, len(logs)
+
     def player_distribution(
         self, player_id: str, as_of: str, categories: list[str], window: int | None = None
     ) -> dict[str, tuple[float, float]]:
