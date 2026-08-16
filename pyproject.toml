@@ -12,6 +12,12 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
 ]
+# Read-only Yahoo league import. Optional so the core package, the replay harness, and the
+# whole test suite stay installable and runnable without OAuth credentials.
+yahoo = [
+    "yahoo_fantasy_api>=2.9",
+    "yahoo_oauth>=2.0",
+]
 
 [project.scripts]
 fantasy-gm = "fantasy_gm.cli:main"
