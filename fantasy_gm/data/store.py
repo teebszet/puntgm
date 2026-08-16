@@ -602,6 +602,46 @@ class Store:
                 out[c] = (statistics.fmean(vals), statistics.pstdev(vals))
         return out
 
+    # --- bulk as-of reads (pool-wide model fitting) --------------------------
+
+    def player_game_stream_asof(
+        self, as_of: str, since: str | None = None, season: str | None = None
+    ) -> list[dict]:
+        """Every player-game known on or before ``as_of``, with minutes attached.
+
+        The per-player readers above are the right shape for one decision; fitting a model
+        over the whole pool with them costs one query per player. This is the same as-of
+        contract in one pass: ``{player_id, game_date, team, minutes, stats}``, ordered by
+        player then date.
+
+        Minutes live in ``usage_role`` (box scores carry no MIN), joined on the game date
+        the snapshot was taken from. Players are kept even when the join misses, with
+        ``minutes`` None, so a caller can tell "did not play" from "minutes unknown".
+        """
+        q = """SELECT l.player_id, l.game_date, l.team, l.stats_json, u.minutes
+               FROM player_logs l
+               LEFT JOIN usage_role u
+                 ON u.player_id = l.player_id AND u.known_from = l.game_date
+               WHERE l.game_date <= ?"""
+        args: list = [as_of]
+        if since:
+            q += " AND l.game_date >= ?"
+            args.append(since)
+        if season:
+            q += " AND l.season = ?"
+            args.append(season)
+        q += " ORDER BY l.player_id, l.game_date"
+        return [
+            {
+                "player_id": r["player_id"],
+                "game_date": r["game_date"],
+                "team": r["team"],
+                "minutes": None if r["minutes"] is None else float(r["minutes"]),
+                "stats": json.loads(r["stats_json"]),
+            }
+            for r in self.conn.execute(q, args)
+        ]
+
     def player_team(self, player_id: str, as_of: str) -> str | None:
         row = self.conn.execute(
             """SELECT team FROM player_logs WHERE player_id = ? AND game_date <= ?

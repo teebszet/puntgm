@@ -51,6 +51,12 @@ estimated-mean uncertainty"). Apply the same treatment here.
 **Validate:** measure realized-vs-projected dispersion by preseason role certainty bucket.
 **Data:** needs a completed season projected in advance; 2025-26 backtest is the proxy.
 
+**Status (Track B, 2.8): implemented, not yet validated.** `CategoryEstimate` carries
+`mean_stderr` separately from `per_game_std`, and the derived source propagates both through
+`rate × minutes` by the delta method, so a player's band widens for a short history, a role
+change, or a team change independently of how volatile they are game to game. The *dispersion*
+check still needs a season projected in advance, so it inherits A-DRAFT-5's blocker.
+
 ---
 
 ## A-DRAFT-3. Categories are independent — INHERITED, measurably false
@@ -101,6 +107,28 @@ naive, (b) a published projection set as a reference point. **Gate: if own-built
 last-season carry-forward on minutes MAE, it is not ready and the honest move is to say so.**
 **Data:** requires 2024-25 backfill in addition to 2025-26 — *not currently held*.
 
+**Status (Track B, 2.11): STILL OPEN — the gate has not been passed, and the model must not be
+described as validated.** The harness is built (`projections/backtest.py`, `fantasy-gm
+projection-backtest`) and runs in two modes. The cross-season mode — the actual gate — is
+**blocked on the 2024-25 backfill (task 2.10)**, which needs a network that can reach
+`stats.nba.com`; it reports the blocker rather than degrading to a number that looks like a
+result.
+
+What *can* be measured today is the split-season proxy: fit through 2026-01-15, score on
+2026-01-16 → 2026-04-12, 290 players.
+
+| | minutes MAE | bias | games MAE | categories beaten |
+|---|---|---|---|---|
+| model | **2.97** | −0.36 | **5.38** | 7 of 9 |
+| naive carry-forward | 3.04 | −0.49 | 5.55 | — |
+
+That is +2.3% on minutes, but the **paired** difference is 0.7σ and the model is closer on only
+53% of players — i.e. inside the noise. The harness reports this as `INCONCLUSIVE`, not `PASS`,
+and the CLI exits non-zero. Two reasons not to read the proxy as the gate: both sides see the
+same season's team context, and the role model has no forward depth chart to react to, so the
+single mechanism the model has that carry-forward does not is inert. It understates the model's
+advantage and is not a substitute for 2.10.
+
 ---
 
 ## A-DRAFT-6. Rookie draft-position prior — ASSERTED
@@ -115,6 +143,18 @@ the resulting uncertainty band explicit in the projection. If the band is as wid
 so and let the optimizer price the uncertainty rather than hiding it.
 **Data:** multi-season rookie histories — *not currently held*.
 
+**Status (Track B, 2.9): the asserted surface is now one number per slot bucket, and it is
+labeled.** `projections/rookies.py` expresses the prior as draft slot → expected *rotation rank*,
+then runs that rank through the **measured** minutes curve and the **measured** per-minute rate
+tiers. So the only asserted link is `FALLBACK_SLOT_RANK` (1-5 → rank 6, 6-14 → 8, 15-30 → 10,
+31-60 → 12, undrafted → 13); everything downstream of it is fit from real games. `fit_rookie_prior`
+replaces those numbers with the measured median rank of a past cohort as soon as one is in the
+store, and every projection carries `prior_basis` = `fitted` or `fallback` so the two can never be
+confused. The band is the measured spread of minutes *within* that rank plus the team-change drift
+term, which makes rookie `mean_stderr` materially wider than an established player's — as intended.
+**Still open:** the out-of-sample error by slot bucket, which needs the multi-season history from
+task 2.10.
+
 ---
 
 ## A-DRAFT-7. Expected games played is separable from per-game production — ASSERTED
@@ -127,6 +167,25 @@ high-rate, low-availability player.
 
 **Validate:** measure the correlation between games played and per-game production within player-season,
 and between availability and minutes on return. **Data:** real game logs + injury designations (have).
+
+**Status (Track B, 2.7): MEASURED — the assumption is false, and by enough to matter.** From the
+real 2025-26 backfill (`measure_games_production_correlation`, 506 players):
+
+* `corr(games played, minutes/game)` = **+0.479**
+* `corr(games played, points/game)` = **+0.336**
+* minutes in the first three games back from an absence of ≥8 days = **0.907×** the player's own
+  season average (n=1,318 returns)
+
+So availability and production are positively correlated across players — the durable players
+*are* the high-minute players — while within a player, returning from an absence costs ~9% of
+their minutes. The two effects push season value in opposite directions and the factorization
+`E[games] × E[per-game]` captures neither.
+
+**v1 decision:** expected games played ships as a separate output with its own band (which is the
+part that was missing entirely), the factorization is retained, and the covariance term is
+**reported rather than modeled** — adding it would change the `ProjectionSource` contract that
+Track A is already coding against. Carried forward as the follow-up: value the covariance term and
+decide whether it is worth a contract change.
 
 ---
 
@@ -154,3 +213,52 @@ position is mis-calibrated — the error shows up as reaching or as being sniped
 **Validate:** on a subset of picks, brute-force or multi-start heavily and measure the objective gap
 against the warm-started single run. If the gap is material on early picks (where the strategy space
 is widest), raise multi-start count there only. **Data:** none external; a compute experiment.
+
+---
+
+## A-DRAFT-10. Depth-chart position means rotation rank — ASSERTED (structural)
+
+**Claim:** the `depth_chart_pos` the projection model consumes can be read as *rotation rank within
+the team* (1 = the team's biggest-minutes player).
+
+**Why it is asserted:** the store holds no player positions — not in `player_logs`, not anywhere —
+so "third-string centre" is not expressible and "seventh in the rotation" is. Every fit in
+`projections/minutes.py` is against rank derived from mean minutes within team, which is the only
+reading the data supports.
+
+**Consequence if wrong:** a positionally-scarce player (a starting centre on a team with a deep
+guard rotation) is ranked by minutes rather than by the scarcity that actually earns them minutes,
+so their projection is too low. This bites hardest exactly where the D4 positional-assignment work
+says multi-eligible players are mispriced.
+
+**Validate:** needs a position source the store does not have. When Track A's positional data lands
+for the assignment problem, refit the minutes curve on (position, depth-at-position) and compare
+minutes MAE against the rank-only curve. **Data:** player positions — *not currently held*.
+
+---
+
+## A-DRAFT-11. Minutes-model parameters — MEASURED (2025-26 backfill)
+
+Recorded here because the standing rule is that nothing asserted stays a constant. Every parameter
+below is fit by `fit_minutes` / `fit_rates` / `fit_games` from games known as of the projection
+date, and each carries a `basis` field that reads `measured` or `fallback` so a projection built on
+an unidentifiable fit is never mistaken for one built on data. As of `2026-08-17`, on the real
+2025-26 backfill (506 players), all of them read `measured`:
+
+| parameter | value | what it does |
+|---|---|---|
+| recency half-life | **10 games** | how fast a player's own minutes history decays; chosen by held-out error *inside* the training window, over a grid from flat to 6 games |
+| within-player minutes σ | 6.78 min | game-to-game noise |
+| between-player minutes σ | 8.24 min | player-to-player spread of true mean minutes |
+| shrinkage weight | 0.68 games | prior weight toward the pool mean (small: minutes are well-identified) |
+| period-to-period drift σ | 4.32 min | how far a player's *true* minutes move between halves, net of sampling noise |
+| team-change drift multiplier | **×1.45** (55 movers) | how much more uncertain a moved player's role is — mover/stayer drift ratio |
+| role curve | rank 1 → 33.7 min … rank 12 → 16.0 min | expected minutes by rotation rank; the entry point for a stated depth chart and for the rookie prior |
+| availability prior | 2.6 games, pool rate 0.645 | beta-binomial shrinkage on games played |
+
+**Note on the recency half-life:** 10 games is short, which says role is substantially
+non-stationary within a season — the reason a forward projection needs a depth chart at all.
+
+**Note on the availability prior:** at 2.6 games of prior weight, expected games played is close to
+a carry-forward of the player's own rate, and the backtest bears that out (games MAE 5.38 vs 5.55).
+The availability model is the weakest component and the one with the most headroom.

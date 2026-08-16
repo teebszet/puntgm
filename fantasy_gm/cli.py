@@ -233,6 +233,114 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_projections(args: argparse.Namespace) -> int:
+    from fantasy_gm.projections.derived import DerivedProjectionSource
+
+    config = Config()
+    store = _store(config)
+    src = DerivedProjectionSource(store)
+    projections = src.project(args.season, args.as_of)
+    if not projections:
+        print("nothing to project (is a season backfilled?)", file=sys.stderr)
+        return 1
+    fit = src.fit(args.season, args.as_of)
+    print(f"derived projections — season {args.season}, as_of {args.as_of} "
+          f"({len(projections)} players)")
+    print(f"  minutes fit: {fit.minutes.n_players} players, "
+          f"shrinkage {fit.minutes.shrinkage_games:.1f} games, "
+          f"drift σ {fit.minutes.drift_var ** 0.5:.2f} min, "
+          f"team-change drift ×{fit.minutes.team_change_drift_mult:.2f} "
+          f"({fit.minutes.n_movers} movers)")
+    print(f"  availability fit: prior {fit.games.prior_games:.1f} games, "
+          f"pool rate {fit.games.pool_rate:.3f} [{fit.games.basis}]")
+    fallbacks = sorted(k for k, v in fit.minutes.basis.items() if v == "fallback")
+    if fallbacks:
+        print(f"  UNMEASURED (fallback): {', '.join(fallbacks)}")
+
+    ranked = sorted(
+        projections.items(),
+        key=lambda kv: -(kv[1].expected_games * kv[1].estimate("pts").per_game_mean),
+    )[: args.top]
+    print(f"\n  {'player':<24} {'min':>5} {'gp':>5} {'pts':>5} {'reb':>5} {'ast':>5} "
+          f"{'fg%':>5} {'±μ':>5}  basis")
+    for pid, p in ranked:
+        row = store.conn.execute(
+            "SELECT player_name FROM player_logs WHERE player_id = ? LIMIT 1", (pid,)
+        ).fetchone()
+        name = row["player_name"] if row else pid
+        fg = p.percentage("fg_pct")
+        print(f"  {name[:24]:<24} {p.notes.get('minutes', '-'):>5} {p.expected_games:>5.1f} "
+              f"{p.estimate('pts').per_game_mean:>5.1f} {p.estimate('reb').per_game_mean:>5.1f} "
+              f"{p.estimate('ast').per_game_mean:>5.1f} "
+              f"{(f'{fg:.3f}' if fg is not None else '-'):>5} "
+              f"{p.estimate('pts').mean_stderr:>5.2f}  {p.basis}")
+    return 0
+
+
+def cmd_projection_backtest(args: argparse.Namespace) -> int:
+    from fantasy_gm.projections.availability import measure_games_production_correlation
+    from fantasy_gm.projections.backtest import backtest_projection
+
+    config = Config()
+    store = _store(config)
+    report = backtest_projection(store, args.season, as_of=args.as_of, mode=args.mode)
+    if report is None:
+        print(f"season {args.season} is not in the store", file=sys.stderr)
+        return 1
+    print(f"projection backtest — season {args.season} [{report.mode}]")
+    print(f"  fit through {report.as_of}; scored on {report.eval_start}..{report.eval_end} "
+          f"({report.n_players} players)")
+    if "blocked" in report.notes:
+        print(f"  BLOCKED: {report.notes['blocked']}", file=sys.stderr)
+        return 1
+    if "proxy" in report.notes:
+        print(f"  NOTE: {report.notes['proxy']}")
+    print(f"\n  {report.model.line()}")
+    print(f"  {report.naive.line()}")
+    print(f"\n  {'category':<8} {'model':>8} {'naive':>8} {'better?':>8}")
+    for c in sorted(report.model.category_mae):
+        m, n = report.model.category_mae[c], report.naive.category_mae.get(c, float('nan'))
+        print(f"  {c:<8} {m:>8.3f} {n:>8.3f} {'yes' if m < n else 'no':>8}")
+    beaten = report.categories_beaten()
+    print(f"\n  categories beaten: {len(beaten)}/{len(report.model.category_mae)} "
+          f"({', '.join(beaten) or 'none'})")
+    print(f"  {report.verdict()}")
+    passed = report.beats_naive_minutes and report.minutes_edge_sigmas >= 2.0
+
+    corr = measure_games_production_correlation(store, args.season)
+    if corr:
+        print(f"\n  A-DRAFT-7 (is E[games] separable from E[per-game]?), "
+              f"n={corr['n_players']:.0f}:")
+        print(f"    corr(games played, minutes/g) = {corr['corr_games_minutes']:+.3f}")
+        print(f"    corr(games played, pts/g)     = {corr['corr_games_scoring']:+.3f}")
+        if "post_absence_minutes_ratio" in corr:
+            print(f"    minutes on return from an absence = "
+                  f"{corr['post_absence_minutes_ratio']:.3f}× own average "
+                  f"(n={corr['n_returns']:.0f} returns)")
+    return 0 if passed else 2
+
+
+def cmd_adp(args: argparse.Namespace) -> int:
+    from fantasy_gm.projections.adp import adp_for_pool, ingest_adp_file
+
+    config = Config()
+    store = _store(config)
+    result = ingest_adp_file(store, args.file, args.season, args.known_from, source=args.source)
+    print(f"ADP ingest — season {args.season}, known_from {args.known_from}, "
+          f"source {args.source}")
+    print(f"  {result.rows} row(s) -> {result.stored} stored; "
+          f"{len(result.unresolved)} unresolved name(s); "
+          f"{len(result.missing_adp)} row(s) with no average pick")
+    for name in result.unresolved[:10]:
+        print(f"    unresolved: {name}")
+    pool = store.draft_pool_asof(args.season, args.known_from)
+    priced = adp_for_pool(store, args.season, args.known_from, pool, source=args.source)
+    unpriced = [p for p, a in priced.items() if a is None]
+    print(f"  draft pool {len(pool)}: {len(pool) - len(unpriced)} priced, "
+          f"{len(unpriced)} with no ADP (represented as absent, not as a default)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -297,6 +405,31 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--leagues", type=int, default=1,
                     help="simulated leagues to average over (more = robuster but slower)")
     rp.set_defaults(func=cmd_replay)
+
+    pj = sub.add_parser("projections",
+                        help="forward-season projections from the minutes/role model (2.5-2.9)")
+    pj.add_argument("--season", required=True, help="season being projected, e.g. 2026-27")
+    pj.add_argument("--as-of", dest="as_of", required=True,
+                    help="what was known on this date; nothing after it is read")
+    pj.add_argument("--top", type=int, default=25)
+    pj.set_defaults(func=cmd_projections)
+
+    pb = sub.add_parser("projection-backtest",
+                        help="score the projection method against realized production (A-DRAFT-5)")
+    pb.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    pb.add_argument("--as-of", dest="as_of", default=None,
+                    help="cut date; defaults to the day before the season (cross) or mid-season")
+    pb.add_argument("--mode", default=None, choices=["cross-season", "split-season"],
+                    help="defaults to cross-season when a prior season is backfilled")
+    pb.set_defaults(func=cmd_projection_backtest)
+
+    ad = sub.add_parser("adp", help="ingest a saved Yahoo draft_analysis payload as ADP (2.4)")
+    ad.add_argument("--file", required=True, help="saved draft_analysis JSON")
+    ad.add_argument("--season", required=True)
+    ad.add_argument("--known-from", dest="known_from", required=True,
+                    help="date the market snapshot was taken")
+    ad.add_argument("--source", default="yahoo")
+    ad.set_defaults(func=cmd_adp)
     return p
 
 
