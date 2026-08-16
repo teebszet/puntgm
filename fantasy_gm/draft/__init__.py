@@ -17,6 +17,8 @@ The existing ``fantasy_gm.valuation`` z-score is deliberately left untouched —
 labeled baseline the replay harness has to beat.
 """
 
+from fantasy_gm.draft.hscore import Candidate, DraftState, HScoreEngine
+from fantasy_gm.draft.settings import DraftSettings, Objective, RosterSlot
 from fantasy_gm.draft.xscore import (
     CategoryBasis,
     PeriodStats,
@@ -28,8 +30,14 @@ from fantasy_gm.draft.xscore import (
 )
 
 __all__ = [
+    "Candidate",
     "CategoryBasis",
+    "DraftSettings",
+    "DraftState",
+    "HScoreEngine",
+    "Objective",
     "PeriodStats",
+    "RosterSlot",
     "VarianceMode",
     "g_score_board",
     "g_scores",

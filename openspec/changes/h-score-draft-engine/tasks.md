@@ -38,12 +38,12 @@ projection behind a z-score ranker is a commodity.
 
 ## 3. H₀ optimizer and draft replay (the differentiator; needs no projections — D11)
 
-- [ ] 3.1 Category differential model over the five player groups: own drafted, candidate, own future, opponent known, opponent future — mean and variance including future-pick player-to-player spread
-- [ ] 3.2 Objective functions: each-category (`Σ P(win c)`) and most-categories (`P(win ≥ ⌈C/2⌉)` with tie handling, 256-scenario enumeration for 9 cats)
-- [ ] 3.3 Positional assignment via Jonker-Volgenant; drafted-eligible 0 / ineligible −∞ / future picks by category alignment plus flex bonus; report infeasible roster structures (D4)
-- [ ] 3.4 Gradient descent (Adam) over per-category weights and flex shares, warm-started from the previous round
-- [ ] 3.5 ADP-driven opponent bots with noise; survival probability to the deciding team's next pick (D10)
-- [ ] 3.6 League-settings parameterization: categories, roster slots, teams, rounds, objective (D12)
+- [x] 3.1 Category differential model over the five player groups: own drafted, candidate, own future, opponent known, opponent future — mean and variance including future-pick player-to-player spread. **Opponents are modelled as drafting best-available under neutral weights, not as the pool average** — the latter hands us a free edge per remaining round and inflates early-draft confidence
+- [x] 3.2 Objective functions: each-category (`Σ P(win c)`) and most-categories. Majority probability uses a Poisson-binomial DP in O(C²) rather than enumerating 2^(C−1) scenarios — same exact quantity, but it sits in the innermost loop. Optional `tie_margin` continuity correction for integer categories
+- [x] 3.3 Positional assignment via Jonker-Volgenant (implemented directly; scipy is not a dependency and a 13×13 solve does not justify one). Pinned against brute-force permutation search. Infeasible rosters surface as unplaced players rather than an exception
+- [x] 3.4 Gradient descent (Adam, numeric gradient) over per-category weights, warm-started from the previous round
+- [ ] 3.5 ADP-driven opponent bots with noise; survival probability to the deciding team's next pick (D10). **Note: Yahoo ADP is gated (see below) — use the `simulate.py` ADP proxy for replay**
+- [x] 3.6 League-settings parameterization: categories, roster slots, teams, rounds, objective (D12)
 - [ ] 3.7 **Draft replay harness** using 2025-26 realized production as the projection input — head-to-head H₀ vs G-score vs z-score vs ADP, reported across draft slots
 - [ ] 3.8 Validate against the published simulation results as a correctness check before trusting the real-data numbers
 - [ ] 3.9 Local-optimum audit: multi-start on a subset of picks, measure the objective gap, raise multi-start only where it matters (A-DRAFT-9)

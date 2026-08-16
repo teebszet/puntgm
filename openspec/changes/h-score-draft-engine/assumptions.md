@@ -190,3 +190,35 @@ position is mis-calibrated — the error shows up as reaching or as being sniped
 **Validate:** on a subset of picks, brute-force or multi-start heavily and measure the objective gap
 against the warm-started single run. If the gap is material on early picks (where the strategy space
 is widest), raise multi-start count there only. **Data:** none external; a compute experiment.
+
+**OPEN — one suspicious result to adjudicate (2026-08-17).** On a real 2025-26 smoke test, after
+taking Jokić first overall the optimizer settled on a strategy with a **negative rebound weight
+(−1.25) and P(win reb) = 0.09** — i.e. it punts rebounds while holding the best rebounder in the
+pool. The resulting 5-category build (pts .83 / ast .88 / fg3m .87 / ft_pct .89 / stl .69) is
+internally coherent for a majority objective, and a negative weight legitimately means "do not spend
+*future* picks on rebounding". But conceding a category your best asset dominates is the signature of
+a **local optimum**, not obviously of good play.
+
+Do not resolve this by argument — it is exactly what task 3.7's replay is for. Concretely: compare
+warm-started single-run H₀ against heavy multi-start on pick 2, and check whether the punt-reb line
+survives. If it does not, raise multi-start on early picks (where the strategy space is widest and
+the warm start is least informative).
+
+---
+
+## A-DRAFT-10. Category ties are ignored — KNOWN-WRONG (small)
+
+**Claim:** in the normal approximation a category differential of exactly zero has probability zero,
+so `P(win) + P(lose) = 1`.
+
+**Reality:** categories are integer-valued (and H2H rules usually score a tie as half a win), so exact
+ties happen — most often in low-volume categories like blocks and steals, where a week's differential
+is a small integer.
+
+**Current state:** `category_win_prob` accepts a `tie_margin` continuity correction that treats
+`|diff| < margin` as a tie worth half a win. It defaults to 0 (ties ignored), because the right
+margin per category is unmeasured.
+
+**Validate:** measure the empirical frequency of exact category ties per category from real weekly
+matchup results, then set `tie_margin` per category from that rather than globally.
+**Data:** weekly category tallies from simulated/imported leagues (have).
