@@ -45,6 +45,25 @@ PERCENTAGE_CATEGORIES: dict[str, tuple[str, str]] = {
 }
 
 # --- Projection / signal thresholds ------------------------------------------
+# --- Percentage-rate shrinkage (A14) — MEASURED AND REJECTED, kept empty -----
+# Prior attempts to blend a projected shooting rate toward the league rate:
+# rate = (makes + k·league_rate) / (attempts + k). The motivation was real — the engine's
+# FT%-targeted adds had a trailing rate of 0.944 and a realized rate of 0.833 (league
+# 0.802), so the projected edge was almost entirely sampling noise. Per-category k values
+# minimising attempt-weighted forward-rate MAE were ft_pct 20, fg_pct 160.
+#
+# **It made the engine worse and was reverted.** On 1,990 graded calls, fg_pct fell 77.4% ->
+# 70.2% and ft_pct 52.3% -> 41.4%. Shrinking every player toward the league rate compresses
+# the *differences between candidates*, which is the only thing the ranking has to work with;
+# it also pushes both teams' projected percentages together, so more categories read as
+# contested and the engine targeted FT% *more* often (111 -> 119 slots) with less
+# discrimination. Minimising rate-prediction error is not the same objective as ranking
+# candidates, and optimising the former degraded the latter.
+#
+# Left as an empty dict (not deleted) so the mechanism stays available and the negative
+# result stays documented. Populate to re-enable per category.
+PERCENTAGE_SHRINKAGE: dict[str, float] = {}
+
 SAFE_PROB = 0.80   # win prob >= -> "safe"
 GONE_PROB = 0.20   # win prob <= -> "gone"; between -> "contested"
 STRONG_STRENGTH = 0.45  # signal strength >= (plus a sustained, causal trend) -> "strong"
@@ -84,6 +103,25 @@ class Config:
     categories: list[str] = field(default_factory=lambda: list(DEFAULT_CATEGORIES))
     default_cadence: str = DEFAULT_CADENCE
     recent_games_window: int = 10  # games used to estimate recent production
+    # Games used to estimate the probability a player appears at all (A13). Deliberately
+    # shorter than recent_games_window: measured on 2025-26, trailing-5 predicts forward
+    # participation better than 10 or 20 (MAE 0.163 / 0.179 / 0.207) because availability
+    # is a current-state fact (injury, rotation) while production is a stable skill.
+    participation_window: int = 5
+    # Categories the engine may not choose as a move's *target* (A15). A waiver add can
+    # still help them incidentally — this only stops the engine spending its one move
+    # chasing a category the wire cannot actually move.
+    #
+    # ft_pct is excluded on measurement, not taste. Across three engine versions it graded
+    # 50.0% / 52.3% / 41.4% — at or below chance every time — while every other category sat
+    # at 92-97%. The cause is not predictability (FT impact is *more* autocorrelated than
+    # FG%, r=0.379 vs 0.321) but availability: the engine's FT%-targeted adds realized a
+    # median impact of **+0.00** on 5 attempts, because a week's worth of free throws is
+    # smaller than the swing of one made-vs-missed shot, and the wire's genuinely good FT
+    # shooters are already rostered. Bucketing by attempt volume does not rescue it
+    # (51.4% / 51.4% / 54.1% low/mid/high), and rate shrinkage made it worse (see
+    # PERCENTAGE_SHRINKAGE).
+    non_actionable_categories: frozenset[str] = frozenset({"ft_pct"})
     weights: ScoringWeights = field(default_factory=ScoringWeights)
 
     @property

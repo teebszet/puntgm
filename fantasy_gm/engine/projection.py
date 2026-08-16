@@ -22,6 +22,7 @@ from fantasy_gm.config import (
     CATEGORY_DIRECTION,
     GONE_PROB,
     PERCENTAGE_CATEGORIES,
+    PERCENTAGE_SHRINKAGE,
     SAFE_PROB,
     Config,
 )
@@ -43,13 +44,21 @@ def _label(win_prob: float) -> str:
 
 class Projector:
     def __init__(self, config: Config | None = None, method: str = "normal",
-                 n_boot: int = 600, seed: int = 0):
+                 n_boot: int = 600, seed: int = 0, participation: bool = True,
+                 shrink_percentages: bool = True):
         self.config = config or Config()
         # win-prob method: "normal" (fast Φ, default) or "bootstrap" (Monte-Carlo over real
         # per-game lines — ~2× better calibrated for counting cats, A3, at a speed cost).
         self.method = method
         self.n_boot = n_boot
         self.seed = seed
+        # A13: scale remaining *team* games by the player's measured participation rate.
+        # Toggleable so the replay harness can A/B it; on by default because assuming every
+        # scheduled game is played is wrong by a factor of ~2 (see store.participation_rate).
+        self.participation = participation
+        # A14: regress trailing shooting rates toward the league rate. Toggleable so the
+        # replay harness can A/B it.
+        self.shrink_percentages = shrink_percentages
 
     def project(
         self, store, league_id: str, team_id: str, as_of: str
@@ -66,12 +75,13 @@ class Projector:
         period_end = matchup.period_end
 
         ps = matchup.period_start
+        season = meta["season"]
         mine = self.team_projection(
             store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
-            as_of, ps, period_end, categories)
+            as_of, ps, period_end, categories, season)
         opp = self.team_projection(
             store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
-            as_of, ps, period_end, categories)
+            as_of, ps, period_end, categories, season)
 
         win_probs = None
         if self.method == "bootstrap":
@@ -173,18 +183,39 @@ class Projector:
         opponent = matchup.team_b if matchup.team_a == team_id else matchup.team_a
         categories = self.config.categories
         ps = matchup.period_start
+        meta = store.league_meta(league_id)
+        season = meta["season"] if meta else None
         mine = self.team_projection(store, state.category_tally.get(team_id, {}),
-                                    roster_ids, as_of, ps, matchup.period_end, categories)
+                                    roster_ids, as_of, ps, matchup.period_end, categories,
+                                    season)
         opp = self.team_projection(store, state.category_tally.get(opponent, {}),
                                    state.rosters.get(opponent, []), as_of, ps,
-                                   matchup.period_end, categories)
+                                   matchup.period_end, categories, season)
         proj = self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories)
         return {c: p.win_prob for c, p in proj.categories.items()}
 
+    def _shrunk_rate(self, store, cat, mean_makes, mean_att, n_obs, season) -> float:
+        """Trailing shooting rate regressed toward the league rate (A14).
+
+        ``k`` is in units of attempts, so a high-volume shooter is shrunk proportionally
+        less than someone with a handful of tries — which is the whole point.
+        """
+        makes, att = mean_makes * n_obs, mean_att * n_obs
+        if att <= 0:
+            return 0.0
+        k = PERCENTAGE_SHRINKAGE.get(cat, 0.0)
+        if k <= 0 or not self.shrink_percentages:
+            return makes / att
+        from fantasy_gm.valuation import league_percentage_rates
+
+        league = league_percentage_rates(
+            store, season or self.config.primary_season).get(cat, makes / att)
+        return (makes + k * league) / (att + k)
+
     def team_projection(
         self, store, tally: dict, roster_ids: list[str], as_of, period_start, period_end,
-        categories
+        categories, season: str | None = None
     ) -> dict[str, tuple[float, float]]:
         """Return {cat: (projected_total, projected_std)} for a roster over the period.
         Counting cats: banked tally + Σ(remaining games × expected/g), variance Σ rg·σ².
@@ -214,20 +245,46 @@ class Projector:
             rg = store.remaining_games_for_team(nba_team, as_of, period_end)
             if rg == 0:
                 continue
+            # A13: a *scheduled* team game is not a *played* player game. Measured mean
+            # participation is 0.49, so q rescales rg into expected games played.
+            q = 1.0
+            if self.participation:
+                measured = store.participation_rate(
+                    pid, as_of, window=self.config.participation_window)
+                if measured is not None:
+                    q = measured
+            eg = rg * q  # expected games played over the remaining schedule
             dist, n_obs = store.player_distribution_with_n(pid, as_of, dist_keys, window=window)
             for c in counting:
                 mu, sd = dist[c]
-                totals[c] += rg * mu * scale
-                # Game-to-game spread (independent across games, validated A4) …
-                variances[c] += rg * (sd ** 2)
+                totals[c] += eg * mu * scale
+                # Per *scheduled* game production is a mixture: 0 with probability (1−q),
+                # otherwise ~(μ, σ). So Var per scheduled game is q·σ² + q(1−q)·μ², and the
+                # second term is the DNP risk itself — a 30-point scorer who plays half the
+                # time is far less certain than his σ alone implies. Games are independent
+                # (A4), so it scales with rg.
+                variances[c] += rg * (q * sd ** 2 + q * (1.0 - q) * mu ** 2)
                 # … plus uncertainty in the *estimated* mean. We only have an N-game sample,
                 # so μ̂ carries standard error σ²/N — and that error shifts every remaining
-                # game the same way, so it scales with rg², not rg. Omitting this was making
-                # extreme win probabilities overconfident (97% predicted → 88% realized).
+                # game the same way, so it scales with the square of expected games, not eg.
+                # Omitting this was making extreme win probabilities overconfident
+                # (97% predicted → 88% realized).
                 if n_obs > 1:
-                    variances[c] += (rg ** 2) * (sd ** 2) / n_obs
-            for k in comp_keys:
-                proj_comp[k] = proj_comp.get(k, 0.0) + rg * dist[k][0] * scale
+                    variances[c] += (eg ** 2) * (sd ** 2) / n_obs
+            # Percentage cats (A14): project *attempts* from the trailing mean, but derive
+            # projected *makes* from a rate shrunk toward the league rate. An unshrunk
+            # trailing rate treats a 12-for-13 stretch as 92% true talent, which inflated
+            # percentage-category win probabilities and made the engine chase FT% fights
+            # whose projected edge was sampling noise. Already-banked makes/attempts are
+            # realized facts and are never shrunk — only the remaining schedule.
+            for cat in pct:
+                mk, at = PERCENTAGE_CATEGORIES[cat]
+                proj_att = eg * dist[at][0] * scale
+                if proj_att <= 0:
+                    continue
+                rate = self._shrunk_rate(store, cat, dist[mk][0], dist[at][0], n_obs, season)
+                proj_comp[at] = proj_comp.get(at, 0.0) + proj_att
+                proj_comp[mk] = proj_comp.get(mk, 0.0) + rate * proj_att
 
         out: dict[str, tuple[float, float]] = {}
         for c in counting:
