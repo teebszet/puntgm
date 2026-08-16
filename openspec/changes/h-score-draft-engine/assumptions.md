@@ -33,6 +33,12 @@ on the real backfill for `matchup-projection`. Retain uniform-τ as a labeled ab
 *not* improve on uniform, that is a publishable finding in itself and the simpler form should win.
 **Data:** real per-player game logs (have).
 
+**MEASURED 2026-08-17 (real 2025-26, pool 156).** Switching from uniform τ to measured per-player τ
+**reorders 45 of the top 50**, max rank shift 24. So the paper's simplification is not a technicality
+at draft-relevant ranks — it changes who you take. Which form *wins* still requires the replay
+(task 3.7); this only establishes that the choice is material. `VarianceMode.UNIFORM` is retained
+as the ablation arm.
+
 ---
 
 ## A-DRAFT-2. Player distributions are known exactly and static across the season — INHERITED
@@ -84,6 +90,36 @@ structure matters.
 **Validate:** derive `κ` per category from the real backfill (weekly aggregation of game logs), and
 compare against the paper's value. Check sensitivity: if strategy win rate is flat in `κ` over a
 plausible range, stop tuning and say so. **Data:** real game logs + a weekly period calendar (have).
+
+**MEASURED 2026-08-17 (real 2025-26, pool 156). Resolution: stop tuning κ.** Board movement vs κ=0,
+top 50:
+
+| κ | rank changes | max shift |
+|---|---|---|
+| 0.0 | 0 | 0 |
+| 0.5 | 44 | 18 |
+| 1.0 | 47 | 20 |
+| 2.0 | 47 | 23 |
+| 4.0 | 46 | 25 |
+| 8.0 | 46 | 25 |
+
+The decision that matters is **whether period variance is counted at all** (κ=0 → κ=0.5 moves 44 of
+50); past κ≈1 the board is essentially saturated. So κ is not a parameter worth fitting — κ=1.0 is
+kept and labeled, and the sensitivity table is the justification rather than a tuned value.
+
+**Related measurement — period noise is first-order, not a correction.** τ̄/σ by category:
+
+| | pts | reb | ast | stl | blk | fg3m | fg_pct | ft_pct | tov |
+|---|---|---|---|---|---|---|---|---|---|
+| τ̄/σ | 1.39 | 1.08 | 0.90 | **1.79** | 0.98 | 1.20 | **1.72** | 1.44 | 1.39 |
+
+Week-to-week noise equals or exceeds player-to-player spread in 7 of 9 categories — the term z-score
+drops is comparable in size to the term it keeps. Note this partially refutes the original intuition
+(A1) that stl/blk/ast are jointly the high-variance group: **stl is the noisiest by this measure, but
+ast (0.90) and blk (0.98) are among the *quietest*.** This is a different statistic from A1's
+coefficient of variation — it is period noise *relative to how much players differ* — so it is a
+complement to that finding, not a contradiction of it. The two highest ratios (stl, fg_pct) are also
+two of the three categories season replay found weakest, which is unlikely to be coincidence.
 
 ---
 

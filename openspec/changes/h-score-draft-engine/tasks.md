@@ -8,12 +8,12 @@ projection behind a z-score ranker is a commodity.
 
 ## 1. X-score basis and the static reduction (unblocks everything; also the fallback)
 
-- [ ] 1.1 Implement the variance-aware standardisation basis alongside the existing z-score in `valuation.py`; counting cats use player-to-player plus period-to-period spread, percentage cats use the volume-weighted impact form
-- [ ] 1.2 Derive per-category `κ` from the real 2025-26 backfill by weekly aggregation (A-DRAFT-4); report sensitivity and stop tuning if win rate is flat in it
-- [ ] 1.3 Wire measured per-player σ from `store.player_distribution` into the basis; keep a uniform-σ mode as a labeled ablation (D5, A-DRAFT-1)
-- [ ] 1.4 Static G-score reduction produces a complete ranked draft board from the basis
-- [ ] 1.5 Retain the existing z-score valuation unchanged as a labeled replay baseline
-- [ ] 1.6 Test: equal means with unequal measured variance rank differently; low-volume high-percentage players do not top percentage cats; z-score baseline is unperturbed
+- [x] 1.1 Implement the variance-aware standardisation basis alongside the existing z-score, in `fantasy_gm/draft/xscore.py`; counting cats use player-to-player plus period-to-period spread, percentage cats use the volume-weighted impact form. Periods are real ISO weeks aggregated from game logs, and **idle weeks inside a player's active span count as zero** — that is where most realized category variance lives
+- [x] 1.2 Derive per-category `κ` from the real 2025-26 backfill by weekly aggregation (A-DRAFT-4); report sensitivity and stop tuning if win rate is flat in it. **Resolved: κ saturates past ≈1.0** — the decision is whether to count period variance at all, not what κ equals. `kappa_sensitivity()` is the reported evidence
+- [x] 1.3 Wire measured per-player τ into the basis; keep a uniform-τ mode as a labeled ablation (D5, A-DRAFT-1). **Measured: reorders 45 of the top 50** — the ablation is worth running in replay
+- [x] 1.4 Static G-score reduction produces a complete ranked draft board from the basis (`g_score_board`, with per-category breakdown for explainability and for H₀ to consume)
+- [x] 1.5 Retain the existing z-score valuation unchanged as a labeled replay baseline — `fantasy_gm/valuation.py` untouched
+- [x] 1.6 Test: equal means with unequal measured variance rank differently; κ flips a higher-mean/higher-variance player below a steady one; low-volume high-percentage players do not top percentage cats; idle weeks raise τ; z-score baseline is unperturbed (14 tests)
 
 ## 0. Shared base (landed before the Track A / Track B fork)
 
