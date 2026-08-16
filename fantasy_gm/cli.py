@@ -233,6 +233,27 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_player_index(args: argparse.Namespace) -> int:
+    from fantasy_gm.data.player_index import ingest_player_index
+
+    config = Config()
+    store = _store(config)
+    cache = RawCache(config.cache_dir)
+    counts = ingest_player_index(store, args.season, cache, args.known_from,
+                                 dry_run=args.dry_run, as_of=args.as_of)
+    tag = "dry-run" if args.dry_run else "stored"
+    print(f"[playerindex] season {args.season} ({tag}), known_from {args.known_from}")
+    print(f"  {counts['rows']} player rows, {counts['rostered']} on an NBA roster "
+          f"across {counts['teams']} teams")
+    print(f"  -> {counts['positions']} position(s), "
+          f"{counts['forward_roster']} forward-roster row(s), "
+          f"{counts['incoming']} incoming player(s) with no game logs")
+    if not args.dry_run:
+        print("  depth chart is DERIVED by ranking each new roster on its players' own "
+              "minutes history (A-DRAFT-12) — override by hand for names you disagree with")
+    return 0
+
+
 def cmd_projections(args: argparse.Namespace) -> int:
     from fantasy_gm.projections.derived import DerivedProjectionSource
 
@@ -405,6 +426,17 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--leagues", type=int, default=1,
                     help="simulated leagues to average over (more = robuster but slower)")
     rp.set_defaults(func=cmd_replay)
+
+    pi = sub.add_parser("player-index",
+                        help="forward-season teams, positions, and rookies from NBA playerindex")
+    pi.add_argument("--season", required=True, help="season being entered, e.g. 2026-27")
+    pi.add_argument("--known-from", dest="known_from", required=True,
+                    help="date this snapshot was taken; reads before it will not see it")
+    pi.add_argument("--as-of", dest="as_of", default=None,
+                    help="history cut for the derived depth chart (defaults to --known-from)")
+    pi.add_argument("--dry-run", action="store_true",
+                    help="fetch + parse but don't write (this writes three tables)")
+    pi.set_defaults(func=cmd_player_index)
 
     pj = sub.add_parser("projections",
                         help="forward-season projections from the minutes/role model (2.5-2.9)")

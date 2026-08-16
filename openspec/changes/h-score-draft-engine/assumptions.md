@@ -231,9 +231,17 @@ guard rotation) is ranked by minutes rather than by the scarcity that actually e
 so their projection is too low. This bites hardest exactly where the D4 positional-assignment work
 says multi-eligible players are mispriced.
 
-**Validate:** needs a position source the store does not have. When Track A's positional data lands
-for the assignment problem, refit the minutes curve on (position, depth-at-position) and compare
-minutes MAE against the rank-only curve. **Data:** player positions — *not currently held*.
+**Validate:** refit the minutes curve on (position, depth-at-position) and compare minutes MAE
+against the rank-only curve.
+
+**Status: the data dependency is resolved; the measurement is not.** NBA's `playerindex` endpoint
+returns a listed position for every player in one batched call, and `data/player_index.py` now
+ingests it into `player_positions` (also feeding `forward_roster` and `incoming_players` — see
+A-DRAFT-12). So positions are available for D4's slot assignment, and the refit above is now
+runnable rather than blocked. Two caveats to state when it is run: `playerindex` is a *current*
+snapshot, so applying it to past seasons assumes a player's listed position is near-static, and
+NBA's listed position ("G-F") is a coarser thing than the fantasy platform's eligibility, which is
+what D4 actually needs and which comes from Yahoo with the task 4.1 OAuth.
 
 ---
 
@@ -262,3 +270,36 @@ non-stationary within a season — the reason a forward projection needs a depth
 **Note on the availability prior:** at 2.6 games of prior weight, expected games played is close to
 a carry-forward of the player's own rate, and the backtest bears that out (games MAE 5.38 vs 5.55).
 The availability model is the weakest component and the one with the most headroom.
+
+---
+
+## A-DRAFT-12. Minutes ordering carries across a team change — ASSERTED
+
+**Claim:** a projected depth chart can be derived by ranking a team's incoming roster on each
+player's own minutes history, without an external depth chart. A player who out-earned his new
+teammates elsewhere will out-earn them here too.
+
+**Why it is needed:** `forward_roster.depth_chart_pos` is the input that makes the projection react
+to an offseason move, and it had no source — the table was empty, so the role mechanism was inert
+on real data and the model degraded to carry-forward. `playerindex` supplies the *team* but no
+depth. The alternatives were to leave depth unknown (the model does nothing new), hand-enter ~450
+ranks, or pay to source depth charts. Deriving rank from the new roster's own track records needs
+none of those, and it is the more primitive claim.
+
+**Where it is wrong:** it is blind to fit and to contract. A high-minutes player joining a team
+that already has a star at his position will not simply displace him — position is exactly the
+thing rank cannot see (A-DRAFT-10). It is also blind to the reason a player moved: a veteran
+signing for a smaller role ranks by his old minutes, not his new job. Both errors are
+*systematic*, not noise: they over-project the incoming player and under-project the incumbent.
+
+**Mitigation in place:** a team change already inflates the drift term (measured ×1.45), so a moved
+player's band widens even where the mean is wrong. The derived rank is a labeled default, not a
+verdict — `role` records `returning` or `no-history`, and a hand-entered `forward_roster` row with a
+later `known_from` supersedes it, which is the intended workflow for the names worth disagreeing
+about.
+
+**Validate:** with two seasons backfilled (task 2.10), derive the depth chart for the later season
+from the earlier one and score minutes MAE against (a) the flat carry-forward baseline and (b) the
+realized rotation rank. If derived rank does not beat carry-forward, the mechanism is decoration
+and should be replaced by manual entry for the draft-relevant pool only.
+**Data:** two backfilled seasons — *blocked on 2.10*.

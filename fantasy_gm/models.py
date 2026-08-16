@@ -172,6 +172,24 @@ class ForwardRoster:
 
 
 @dataclass(frozen=True)
+class PlayerPosition:
+    """A player's listed position — the input to positional slot assignment (design D4).
+
+    Effective-dated like everything else, though position is near-static per player: what
+    actually changes between reads is the *source's* opinion, not the player.
+    """
+
+    player_id: str
+    position: str  # as listed: "G", "F", "C", "G-F", "F-C"
+    known_from: str
+    source: str = "nba"
+
+    def slots(self) -> tuple[str, ...]:
+        """Listed position split into its parts: ``"G-F"`` -> ``("G", "F")``."""
+        return tuple(p for p in self.position.replace(" ", "").split("-") if p)
+
+
+@dataclass(frozen=True)
 class Transaction:
     """An offseason move: trade, signing, waive, or draft."""
 

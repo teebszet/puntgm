@@ -29,6 +29,7 @@ from fantasy_gm.models import (
     LeagueState,
     Matchup,
     PlayerGameLog,
+    PlayerPosition,
     Transaction,
     UsageRole,
 )
@@ -169,6 +170,17 @@ CREATE TABLE IF NOT EXISTS incoming_players (
     draft_team  TEXT DEFAULT '',
     known_from  TEXT NOT NULL,
     PRIMARY KEY (player_id, season)
+);
+
+-- Listed positions. Not derivable from box scores (which carry no position at all), so
+-- without this the slot-assignment problem has no input and "depth chart position" can only
+-- be read as rotation rank (assumptions ledger A-DRAFT-10).
+CREATE TABLE IF NOT EXISTS player_positions (
+    player_id   TEXT NOT NULL,
+    position    TEXT NOT NULL,
+    known_from  TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'nba',
+    PRIMARY KEY (player_id, known_from, source)
 );
 
 -- Average draft position, for the opponent model. Sourced from the league platform
@@ -687,6 +699,35 @@ class Store:
             return None
         return ForwardRoster(row["player_id"], row["season"], row["team"],
                              row["depth_chart_pos"], row["known_from"], row["role"])
+
+    def add_player_positions(self, records: Iterable[PlayerPosition]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO player_positions(
+                   player_id, position, known_from, source)
+               VALUES (?,?,?,?)""",
+            [(p.player_id, p.position, p.known_from, p.source) for p in records],
+        )
+        self.conn.commit()
+
+    def player_positions_asof(
+        self, as_of: str, source: str | None = None
+    ) -> dict[str, PlayerPosition]:
+        """Latest listed position per player known on or before ``as_of``.
+
+        Players with no listed position are simply absent, like ADP — the caller decides what
+        an unpositioned player means rather than inheriting a slot they may not be eligible for.
+        """
+        sql = "SELECT * FROM player_positions WHERE known_from <= ?"
+        params: list = [as_of]
+        if source is not None:
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY known_from"
+        out: dict[str, PlayerPosition] = {}
+        for r in self.conn.execute(sql, params):
+            out[r["player_id"]] = PlayerPosition(r["player_id"], r["position"],
+                                                 r["known_from"], r["source"])
+        return out
 
     def add_transactions(self, records: Iterable[Transaction]) -> None:
         self.conn.executemany(
