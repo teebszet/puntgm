@@ -191,6 +191,12 @@ position is mis-calibrated — the error shows up as reaching or as being sniped
 against the warm-started single run. If the gap is material on early picks (where the strategy space
 is widest), raise multi-start count there only. **Data:** none external; a compute experiment.
 
+**REPLAY VERDICT (2026-08-17): more optimizer steps are not the answer.** Quadrupling the Adam
+budget (5 → 20 steps) changed H₀'s replay result by 0.3pp — inside noise. Whatever is wrong is
+structural, not under-convergence. Multi-start remains untried and is a *different* remedy from more
+steps; see `results.md` for the full candidate list, of which the single-representative-opponent
+simplification is the leading suspect.
+
 **OPEN — one suspicious result to adjudicate (2026-08-17).** On a real 2025-26 smoke test, after
 taking Jokić first overall the optimizer settled on a strategy with a **negative rebound weight
 (−1.25) and P(win reb) = 0.09** — i.e. it punts rebounds while holding the best rebounder in the
