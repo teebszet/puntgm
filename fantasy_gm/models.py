@@ -152,3 +152,58 @@ class LeagueState:
 
     def rostered_player_ids(self) -> set[str]:
         return {pid for players in self.rosters.values() for pid in players}
+
+
+# --- Forward-season inputs (draft) -------------------------------------------
+# All effective-dated by known_from: a draft-day read must not see a transaction
+# that was only reported afterwards.
+
+
+@dataclass(frozen=True)
+class ForwardRoster:
+    """Where a player sits going into a season that has not been played yet."""
+
+    player_id: str
+    season: str
+    team: str
+    depth_chart_pos: int  # 1 = lead at position; higher = deeper on the bench
+    known_from: str
+    role: str = ""
+
+
+@dataclass(frozen=True)
+class Transaction:
+    """An offseason move: trade, signing, waive, or draft."""
+
+    player_id: str
+    season: str
+    kind: str
+    known_from: str
+    from_team: str = ""
+    to_team: str = ""
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class IncomingPlayer:
+    """A player entering the league with no NBA game logs to project from."""
+
+    player_id: str
+    season: str
+    player_name: str
+    known_from: str
+    draft_pick: int | None = None
+    draft_team: str = ""
+
+
+@dataclass(frozen=True)
+class ADP:
+    """Average draft position — a market observation, not a projection."""
+
+    player_id: str
+    season: str
+    adp: float
+    source: str
+    known_from: str
+    adp_std: float | None = None
+    pct_drafted: float | None = None

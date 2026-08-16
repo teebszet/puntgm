@@ -21,11 +21,15 @@ from pathlib import Path
 
 from fantasy_gm.config import PERCENTAGE_CATEGORIES
 from fantasy_gm.models import (
+    ADP,
     Availability,
+    ForwardRoster,
     Game,
+    IncomingPlayer,
     LeagueState,
     Matchup,
     PlayerGameLog,
+    Transaction,
     UsageRole,
 )
 
@@ -122,6 +126,64 @@ CREATE TABLE IF NOT EXISTS usage_role (
     PRIMARY KEY (player_id, known_from)
 );
 CREATE INDEX IF NOT EXISTS ix_usage_player ON usage_role(player_id, known_from);
+
+-- --- Forward-season inputs (draft) -------------------------------------------
+-- Everything below describes a season that has NOT been played. Existing tables are
+-- all backward-looking (they need a game to exist first), so a draft tool has nowhere
+-- to record "who is on which team next season". All are effective-dated by known_from,
+-- so a draft-day read never sees a transaction reported afterwards.
+
+-- Where a player sits going into a season: team and depth-chart position.
+CREATE TABLE IF NOT EXISTS forward_roster (
+    player_id       TEXT NOT NULL,
+    season          TEXT NOT NULL,
+    team            TEXT NOT NULL,
+    depth_chart_pos INTEGER NOT NULL,
+    role            TEXT NOT NULL DEFAULT '',
+    known_from      TEXT NOT NULL,
+    PRIMARY KEY (player_id, season, known_from)
+);
+CREATE INDEX IF NOT EXISTS ix_fwd_roster ON forward_roster(season, known_from);
+
+-- Offseason moves that produced those rosters (trade, signing, waive, draft).
+CREATE TABLE IF NOT EXISTS transactions (
+    player_id   TEXT NOT NULL,
+    season      TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    from_team   TEXT DEFAULT '',
+    to_team     TEXT DEFAULT '',
+    known_from  TEXT NOT NULL,
+    note        TEXT DEFAULT '',
+    PRIMARY KEY (player_id, season, known_from, kind)
+);
+CREATE INDEX IF NOT EXISTS ix_txn_season ON transactions(season, known_from);
+
+-- Players entering the league with no NBA game logs. They cannot be projected from
+-- history (assumptions ledger A-DRAFT-6) and would otherwise be invisible to the
+-- player pool, which derives from player_logs.
+CREATE TABLE IF NOT EXISTS incoming_players (
+    player_id   TEXT NOT NULL,
+    season      TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    draft_pick  INTEGER,
+    draft_team  TEXT DEFAULT '',
+    known_from  TEXT NOT NULL,
+    PRIMARY KEY (player_id, season)
+);
+
+-- Average draft position, for the opponent model. Sourced from the league platform
+-- (Yahoo draft_analysis), so it is a market observation, not a projection.
+CREATE TABLE IF NOT EXISTS adp (
+    player_id   TEXT NOT NULL,
+    season      TEXT NOT NULL,
+    adp         REAL NOT NULL,
+    adp_std     REAL,
+    pct_drafted REAL,
+    source      TEXT NOT NULL,
+    known_from  TEXT NOT NULL,
+    PRIMARY KEY (player_id, season, source, known_from)
+);
+CREATE INDEX IF NOT EXISTS ix_adp_season ON adp(season, known_from);
 """
 
 
@@ -557,3 +619,119 @@ class Store:
             (after, end, team, team),
         ).fetchone()
         return int(row["n"])
+
+    # --- forward-season inputs (draft) --------------------------------------
+    # Reads take the latest record known on or before ``as_of``, mirroring
+    # ``usage_role_asof``: an offseason fact reported after draft day is invisible.
+
+    def add_forward_roster(self, records: Iterable[ForwardRoster]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO forward_roster(
+                   player_id, season, team, depth_chart_pos, role, known_from)
+               VALUES (?,?,?,?,?,?)""",
+            [(r.player_id, r.season, r.team, r.depth_chart_pos, r.role, r.known_from)
+             for r in records],
+        )
+        self.conn.commit()
+
+    def forward_roster_asof(
+        self, player_id: str, season: str, as_of: str
+    ) -> ForwardRoster | None:
+        row = self.conn.execute(
+            """SELECT * FROM forward_roster
+               WHERE player_id = ? AND season = ? AND known_from <= ?
+               ORDER BY known_from DESC LIMIT 1""",
+            (player_id, season, as_of),
+        ).fetchone()
+        if not row:
+            return None
+        return ForwardRoster(row["player_id"], row["season"], row["team"],
+                             row["depth_chart_pos"], row["known_from"], row["role"])
+
+    def add_transactions(self, records: Iterable[Transaction]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO transactions(
+                   player_id, season, kind, from_team, to_team, known_from, note)
+               VALUES (?,?,?,?,?,?,?)""",
+            [(t.player_id, t.season, t.kind, t.from_team, t.to_team, t.known_from, t.note)
+             for t in records],
+        )
+        self.conn.commit()
+
+    def transactions_asof(
+        self, season: str, as_of: str, player_id: str | None = None
+    ) -> list[Transaction]:
+        sql = """SELECT * FROM transactions WHERE season = ? AND known_from <= ?"""
+        params: list = [season, as_of]
+        if player_id is not None:
+            sql += " AND player_id = ?"
+            params.append(player_id)
+        sql += " ORDER BY known_from, player_id"
+        return [
+            Transaction(r["player_id"], r["season"], r["kind"], r["known_from"],
+                        r["from_team"], r["to_team"], r["note"])
+            for r in self.conn.execute(sql, params)
+        ]
+
+    def add_incoming_players(self, records: Iterable[IncomingPlayer]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO incoming_players(
+                   player_id, season, player_name, draft_pick, draft_team, known_from)
+               VALUES (?,?,?,?,?,?)""",
+            [(p.player_id, p.season, p.player_name, p.draft_pick, p.draft_team, p.known_from)
+             for p in records],
+        )
+        self.conn.commit()
+
+    def incoming_players_asof(self, season: str, as_of: str) -> list[IncomingPlayer]:
+        return [
+            IncomingPlayer(r["player_id"], r["season"], r["player_name"], r["known_from"],
+                           r["draft_pick"], r["draft_team"])
+            for r in self.conn.execute(
+                """SELECT * FROM incoming_players WHERE season = ? AND known_from <= ?
+                   ORDER BY draft_pick IS NULL, draft_pick, player_id""",
+                (season, as_of),
+            )
+        ]
+
+    def add_adp(self, records: Iterable[ADP]) -> None:
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO adp(
+                   player_id, season, adp, adp_std, pct_drafted, source, known_from)
+               VALUES (?,?,?,?,?,?,?)""",
+            [(a.player_id, a.season, a.adp, a.adp_std, a.pct_drafted, a.source, a.known_from)
+             for a in records],
+        )
+        self.conn.commit()
+
+    def adp_asof(
+        self, season: str, as_of: str, source: str | None = None
+    ) -> dict[str, ADP]:
+        """Latest ADP per player known on or before ``as_of``.
+
+        Players with no ADP are simply absent — the caller must decide what an
+        undrafted-in-the-market player is worth rather than inheriting a default.
+        """
+        sql = """SELECT * FROM adp WHERE season = ? AND known_from <= ?"""
+        params: list = [season, as_of]
+        if source is not None:
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY known_from"
+        out: dict[str, ADP] = {}
+        for r in self.conn.execute(sql, params):
+            out[r["player_id"]] = ADP(r["player_id"], r["season"], r["adp"], r["source"],
+                                      r["known_from"], r["adp_std"], r["pct_drafted"])
+        return out
+
+    def draft_pool_asof(self, season: str, as_of: str) -> list[str]:
+        """Every player draftable for ``season``: those with prior NBA logs plus
+        incoming players who have none."""
+        seen = {
+            r["player_id"]
+            for r in self.conn.execute(
+                "SELECT DISTINCT player_id FROM player_logs WHERE game_date <= ?", (as_of,)
+            )
+        }
+        seen.update(p.player_id for p in self.incoming_players_asof(season, as_of))
+        return sorted(seen)

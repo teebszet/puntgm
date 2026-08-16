@@ -5,8 +5,25 @@ Kept deliberately declarative so both the CLI and tests share one source of trut
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# --- Store location ----------------------------------------------------------
+# ``data/`` is resolved relative to the current working directory and is git-ignored,
+# so a git worktree starts with an empty store and would need its own (slow) backfill.
+# Setting FANTASY_GM_DATA_DIR lets parallel worktrees share the one backfilled store:
+#
+#     export FANTASY_GM_DATA_DIR=/Users/you/projects/fantasy-nba-gm/data
+#
+# SQLite tolerates concurrent readers fine; avoid running two backfills against a
+# shared store at once.
+DATA_DIR_ENV = "FANTASY_GM_DATA_DIR"
+
+
+def default_data_dir() -> Path:
+    """Store location: ``$FANTASY_GM_DATA_DIR`` if set, else ``./data``."""
+    return Path(os.environ.get(DATA_DIR_ENV) or "data")
 
 # --- Seasons -----------------------------------------------------------------
 # Primary backfill target for this milestone; the validation set (the user's own
@@ -78,7 +95,7 @@ class ScoringWeights:
 
 @dataclass(frozen=True)
 class Config:
-    data_dir: Path = Path("data")
+    data_dir: Path = field(default_factory=default_data_dir)
     seasons: list[str] = field(default_factory=lambda: list(ALL_SEASONS))
     primary_season: str = PRIMARY_SEASON
     categories: list[str] = field(default_factory=lambda: list(DEFAULT_CATEGORIES))
