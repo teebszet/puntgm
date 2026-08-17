@@ -18,5 +18,16 @@
   "changes/archive/2026-07-26-call-feed-and-matchup-projection/discussion.md": "469c9aff23f8674f2f3d9d6f3dbff0bff9bf841d320e4133bf237fcff651d103",
   "changes/archive/2026-07-26-call-feed-and-matchup-projection/tasks.md": "a261cc8bdf588532b02939e088063e52a40e222d9a1efd8f06ec162235e46962",
   "changes/archive/2026-07-26-call-feed-and-matchup-projection/design.md": "d201e81c033d882029187f7831cf21da48cde67bc2578bfa169e1140bf50fb2e",
-  "changes/archive/2026-07-26-call-feed-and-matchup-projection/proposal.md": "0953388dacd3893bc4335c2474b737cfdc019ba08a045698e991f043c18ba0f5"
+  "changes/archive/2026-07-26-call-feed-and-matchup-projection/proposal.md": "0953388dacd3893bc4335c2474b737cfdc019ba08a045698e991f043c18ba0f5",
+  "changes/h-score-draft-engine/assumptions.md": "13924a2170c77435ef6e68674c6835ee23281f916e32b0297a97f6365b69213c",
+  "changes/h-score-draft-engine/discussion.md": "372db74d07c01a248b6d48e7d173666856f7fc30c4593d15388c85ae86ceea3d",
+  "changes/h-score-draft-engine/tasks.md": "5ccc1bec5bafc9a528cc8ed8ff212b4ab933438628c2b2adcc4d3bb7f328b100",
+  "changes/h-score-draft-engine/design.md": "1715371acd50dbe7e0741330d1da796e0757800dde89919e37b894a19f3a0450",
+  "changes/h-score-draft-engine/proposal.md": "ae4c271f5b8e97e5492c02fbd92076141f39cb598030d1010e9904d746a094e9",
+  "changes/h-score-draft-engine/specs/draft-surface/spec.md": "1b8bb364108c3e8d3c071ff1c31c4e828a91d3cd9dde255883745f9c54db1f73",
+  "changes/h-score-draft-engine/specs/recommendation-log/spec.md": "ab1c629b634f40a4d00bd8147211dcf10b57db759eb08d3469d0802fe8edceed",
+  "changes/h-score-draft-engine/specs/historical-data-pipeline/spec.md": "a9b00d8b4632ea6ccd27b76e3b5a0468f19a1a292940c8ea2622f31e7f2c377a",
+  "changes/h-score-draft-engine/specs/player-projections/spec.md": "eb1d869fc0950939d26405948f8238cb04250233d8c12ccbe02187f4cb4405f5",
+  "changes/h-score-draft-engine/specs/draft-engine/spec.md": "51a449e4a76a1e6e8cbb6b07215f670971c968369ff8a26d4ef58667f91e9fe8",
+  "changes/h-score-draft-engine/results.md": "1304e6bba0363d3403b2b4bd6dd5b46eab1352008b234acf564788ed0d8417ae"
 }
