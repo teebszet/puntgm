@@ -174,13 +174,43 @@ def _team_week(roster: list[str], week: str, totals, categories: list[str]) -> d
     return out
 
 
+def round_robin_pairings(n_teams: int, week_index: int) -> list[tuple[int, int]]:
+    """One week of a rotating round-robin schedule (circle method).
+
+    Seat 0 is held fixed while the rest rotate, so over ``n_teams − 1`` weeks every team plays
+    every other exactly once. Used by the schedule-based grading arm; with an odd team count
+    the last seat in the rotation draws a bye.
+    """
+    idx = list(range(n_teams))
+    if n_teams % 2:
+        idx.append(-1)                       # phantom seat: whoever draws it has a bye
+    n = len(idx)
+    fixed, rot = idx[0], idx[1:]
+    k = week_index % (n - 1)
+    order = [fixed] + rot[k:] + rot[:k]
+    pairs = [(order[i], order[n - 1 - i]) for i in range(n // 2)]
+    return [(a, b) for a, b in pairs if a != -1 and b != -1]
+
+
 def score_rosters(
     store,
     season: str,
     rosters: list[list[str]],
     settings: DraftSettings,
+    schedule: bool = False,
 ) -> list[dict]:
-    """All-play-all weekly grading. Returns per-seat realized results."""
+    """Weekly grading of realized production. Returns per-seat results.
+
+    Two gradings, and the difference between them is itself a measurement (task 3.13):
+
+    * **all-play-all** (default) — every team vs every other, every week. Removes schedule luck
+      and any dependence on the schedule generator.
+    * **schedule** — a rotating round-robin, one opponent per week, which is what a real league
+      plays. All-play-all scores a team against the *average* of the field, and that may
+      systematically penalise concentrated builds: punting is a strategy for beating one
+      opponent at a time, and averaging over eleven is exactly the operation that erases its
+      advantage. This arm is how we find out rather than argue.
+    """
     cats = settings.categories
     totals = weekly_totals(store, season, cats)
     weeks = sorted({w for p in totals.values() for w in p})
@@ -190,33 +220,36 @@ def score_rosters(
          "per_cat": defaultdict(lambda: [0.0, 0])}
         for _ in range(n)
     ]
-    for week in weeks:
+    for wi, week in enumerate(weeks):
         week_tot = [_team_week(r, week, totals, cats) for r in rosters]
-        for a in range(n):
-            for b in range(a + 1, n):
-                won_a = 0.0
-                for c in cats:
-                    va, vb = week_tot[a][c], week_tot[b][c]
-                    direction = 1 if c in PERCENTAGE_CATEGORIES else CATEGORY_DIRECTION[c]
-                    if va == vb:
-                        pa = 0.5
-                    else:
-                        pa = 1.0 if (direction * (va - vb)) > 0 else 0.0
-                    won_a += pa
-                    per_seat[a]["per_cat"][c][0] += pa
-                    per_seat[a]["per_cat"][c][1] += 1
-                    per_seat[b]["per_cat"][c][0] += 1.0 - pa
-                    per_seat[b]["per_cat"][c][1] += 1
-                per_seat[a]["cat_wins"] += won_a
-                per_seat[b]["cat_wins"] += len(cats) - won_a
-                per_seat[a]["cat_games"] += len(cats)
-                per_seat[b]["cat_games"] += len(cats)
-                half = len(cats) / 2.0
-                res_a = 1.0 if won_a > half else (0.5 if won_a == half else 0.0)
-                per_seat[a]["matchup_wins"] += res_a
-                per_seat[b]["matchup_wins"] += 1.0 - res_a
-                per_seat[a]["matchups"] += 1
-                per_seat[b]["matchups"] += 1
+        pairings = (
+            round_robin_pairings(n, wi) if schedule
+            else [(a, b) for a in range(n) for b in range(a + 1, n)]
+        )
+        for a, b in pairings:
+            won_a = 0.0
+            for c in cats:
+                va, vb = week_tot[a][c], week_tot[b][c]
+                direction = 1 if c in PERCENTAGE_CATEGORIES else CATEGORY_DIRECTION[c]
+                if va == vb:
+                    pa = 0.5
+                else:
+                    pa = 1.0 if (direction * (va - vb)) > 0 else 0.0
+                won_a += pa
+                per_seat[a]["per_cat"][c][0] += pa
+                per_seat[a]["per_cat"][c][1] += 1
+                per_seat[b]["per_cat"][c][0] += 1.0 - pa
+                per_seat[b]["per_cat"][c][1] += 1
+            per_seat[a]["cat_wins"] += won_a
+            per_seat[b]["cat_wins"] += len(cats) - won_a
+            per_seat[a]["cat_games"] += len(cats)
+            per_seat[b]["cat_games"] += len(cats)
+            half = len(cats) / 2.0
+            res_a = 1.0 if won_a > half else (0.5 if won_a == half else 0.0)
+            per_seat[a]["matchup_wins"] += res_a
+            per_seat[b]["matchup_wins"] += 1.0 - res_a
+            per_seat[a]["matchups"] += 1
+            per_seat[b]["matchups"] += 1
     return per_seat
 
 
@@ -269,6 +302,7 @@ def run_draft_replay(
     engine_steps: int = 8,
     pool_size: int | None = None,
     opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
+    schedule: bool = False,
 ) -> dict[str, StrategyResult]:
     """Draft and grade every strategy at several seats.
 
@@ -306,7 +340,7 @@ def run_draft_replay(
                 seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
 
         rosters = snake_draft(seats, pool, settings)
-        graded = score_rosters(store, season, rosters, settings)
+        graded = score_rosters(store, season, rosters, settings, schedule=schedule)
 
         for name in names:
             seat = seat_of[name]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections import defaultdict
 
 import pytest
 
@@ -13,6 +14,7 @@ from fantasy_gm.draft.opponents import (
     survival_probability,
 )
 from fantasy_gm.draft.replay import (
+    round_robin_pairings,
     score_rosters,
     snake_draft,
     static_order_strategy,
@@ -210,3 +212,55 @@ def test_turnovers_grade_inverted():
     settings = DraftSettings(categories=["tov"], n_teams=2, rounds=1)
     graded = score_rosters(store, SEASON, [["careful"], ["careless"]], settings)
     assert graded[0]["cat_wins"] > graded[1]["cat_wins"]
+
+
+# --- schedule-based grading (task 3.13) ---------------------------------------
+
+
+def test_round_robin_covers_every_pairing_exactly_once():
+    """Over n-1 weeks the circle method must produce a complete single round-robin, or the
+    schedule arm would quietly grade some teams against a softer slate than others."""
+    n = 12
+    seen = defaultdict(int)
+    for week in range(n - 1):
+        pairs = round_robin_pairings(n, week)
+        assert len(pairs) == n // 2
+        played = [s for p in pairs for s in p]
+        assert sorted(played) == list(range(n))     # everyone plays exactly once a week
+        for a, b in pairs:
+            seen[frozenset((a, b))] += 1
+    assert len(seen) == n * (n - 1) // 2
+    assert set(seen.values()) == {1}
+
+
+def test_round_robin_gives_a_bye_with_an_odd_team_count():
+    pairs = round_robin_pairings(11, 0)
+    assert len(pairs) == 5
+    played = [s for p in pairs for s in p]
+    assert len(set(played)) == 10                   # one seat sits out
+    assert all(0 <= s < 11 for s in played)
+
+
+def test_schedule_grading_plays_one_opponent_per_week():
+    """All-play-all gives each team n-1 matchups a week; a schedule gives exactly one."""
+    store = _grading_store()
+    settings = DraftSettings(categories=["pts", "reb", "blk"], n_teams=3, rounds=2)
+    rosters = [["star1", "scrub1"], ["star2", "scrub2"], ["even1", "even2"]]
+
+    allplay = score_rosters(store, SEASON, rosters, settings)
+    sched = score_rosters(store, SEASON, rosters, settings, schedule=True)
+
+    assert sum(g["matchups"] for g in allplay) > sum(g["matchups"] for g in sched)
+    # a schedule is still zero-sum: every matchup played has exactly one unit of result in it
+    assert sum(g["matchup_wins"] for g in sched) == pytest.approx(
+        sum(g["matchups"] for g in sched) / 2
+    )
+
+
+def test_schedule_grading_still_ranks_a_stronger_roster_higher():
+    """The grading arm may change margins; it must not invert the basic ordering."""
+    store = _grading_store()
+    settings = DraftSettings(categories=["pts", "reb", "blk"], n_teams=4, rounds=2)
+    rosters = [["star1", "star2"], ["even1", "even2"], ["scrub1", "scrub2"], ["even1", "even2"]]
+    sched = score_rosters(store, SEASON, rosters, settings, schedule=True)
+    assert sched[0]["cat_wins"] > sched[2]["cat_wins"]
