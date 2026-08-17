@@ -135,9 +135,38 @@ nearly the same estimator. For contrast, on 2026-27 — where real forward roste
 changed teams. Two thirds of the projected minutes come from the role curve there and none of it
 came from the role curve in the backtest.
 
-Closing this honestly needs opening-night 2025-26 rosters, which the store does not hold and
-`stats.nba.com` will not currently serve. Until then the gate stands unpassed and the split-season
-proxy (+2.3%, 0.7σ, 7 of 9 categories) stands as the weaker second reading.
+**Re-run with reconstructed rosters (`data/reconstruct.py`, `fantasy-gm reconstruct-rosters`).**
+Opening-night 2025-26 rosters were rebuilt from the season's own first box scores — a player's
+team in their first game, within 14 days of tip-off, with depth derived from pre-cut history as
+usual. That put 371 of 608 players on a stated rank at mean `role_weight` 0.703, with 88
+team-changers, and the gate moved:
+
+| roster input | minutes MAE | bias | vs naive |
+|---|---|---|---|
+| none (mechanism inert) | 4.47 | +0.78 | +0.7%, 0.2σ |
+| reconstructed, 14d | **4.35** | +1.92 | +3.2%, 1.1σ |
+
+**Still INCONCLUSIVE, and the gate stays unpassed.** Three things keep it there:
+
+1. **1.1σ is not a result.** The model is closer on 50% of players — the aggregate gain is large
+   wins on a minority against small losses on the majority, which is the wrong shape for a draft
+   tool that has to price every player.
+2. **Bias got worse**, +0.78 → +1.92 minutes. The reconstruction is the likely cause rather than
+   the model: it recovers 14.7 players per team against 19.3 on a real roster, so every rank is
+   compressed upward and the role curve hands out too many minutes. The window sensitivity
+   supports that — as the roster fills, bias falls and MAE improves monotonically (30d: 15.8/team,
+   +1.58 bias, +3.8%/1.4σ; 60d: 16.7/team, +1.39 bias, +4.2%/1.6σ). Those wider windows are *not*
+   legitimate readings — 60 days admits December signings as opening-night players — so they
+   diagnose the artifact without licensing the number.
+3. **The reconstruction cannot see a player who never played**, so the scored pool is biased
+   toward players who stayed healthy.
+
+The honest summary: the role mechanism is worth something (it roughly quadruples the edge over
+carry-forward), the measurement is still inside the noise, and the cleanest remaining read needs
+real opening-night rosters from `playerindex` — which is what `stats.nba.com` being blocked
+actually costs. 14d is canonical and is what is in the store.
+
+The split-season proxy (+2.3%, 0.7σ, 7 of 9 categories) stands as the weaker second reading.
 
 ---
 

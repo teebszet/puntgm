@@ -254,6 +254,36 @@ def cmd_player_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reconstruct_rosters(args: argparse.Namespace) -> int:
+    """Backtest-only: opening-night rosters for a past season, from its own first box scores.
+
+    Prints what the reconstruction could not see as loudly as what it wrote — a roster set
+    that misses everyone who never played is exactly the kind of thing that quietly turns a
+    backtest into a flattering one.
+    """
+    from fantasy_gm.data.reconstruct import ReconstructionError, reconstruct_forward_roster
+
+    config = Config()
+    store = _store(config)
+    try:
+        c = reconstruct_forward_roster(store, args.season, args.as_of,
+                                       window_days=args.window_days, dry_run=args.dry_run)
+    except ReconstructionError as e:
+        print(f"cannot reconstruct: {e}", file=sys.stderr)
+        return 1
+    tag = "dry-run" if args.dry_run else "stored"
+    print(f"[reconstruct] season {args.season} ({tag}), known_from {args.as_of}")
+    print(f"  {c['forward_roster']} forward-roster row(s) across {c['teams']} teams; "
+          f"{c['movers']} player(s) on a different team than they last played for")
+    print(f"  opening window {c['season_start']}..{c['cutoff']} ({c['window_days']}d): "
+          f"{c['opening_window']} of {c['players_with_logs']} players with logs; "
+          f"{c['late_debut_excluded']} later debut(s) excluded as midseason arrivals")
+    print("  LOOKAHEAD COMPROMISE — backtest instrument, never a live source: team identity is "
+          "read from rows dated after the cut, and anyone who missed the whole season is "
+          "invisible here, so this pool is biased toward players who stayed healthy")
+    return 0
+
+
 def cmd_projections(args: argparse.Namespace) -> int:
     from fantasy_gm.projections.derived import DerivedProjectionSource
 
@@ -437,6 +467,18 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--dry-run", action="store_true",
                     help="fetch + parse but don't write (this writes three tables)")
     pi.set_defaults(func=cmd_player_index)
+
+    rr = sub.add_parser("reconstruct-rosters",
+                        help="BACKTEST ONLY: opening-night rosters for a past season, "
+                             "rebuilt from its own first box scores (lookahead compromise)")
+    rr.add_argument("--season", required=True, help="completed season, e.g. 2025-26")
+    rr.add_argument("--as-of", dest="as_of", required=True,
+                    help="cut before the season starts; stamped as known_from and used as "
+                         "the history cut for the derived depth chart")
+    rr.add_argument("--window-days", dest="window_days", type=int, default=14,
+                    help="days from tip-off a debut still counts as opening-night (default 14)")
+    rr.add_argument("--dry-run", action="store_true")
+    rr.set_defaults(func=cmd_reconstruct_rosters)
 
     pj = sub.add_parser("projections",
                         help="forward-season projections from the minutes/role model (2.5-2.9)")
