@@ -57,57 +57,100 @@ Note that H₀ also loses on **matchup win rate** (73.4% vs 80.0%), which is muc
 own objective than category win rate is. That weakens the "we are grading it on the wrong
 metric" defence, and points at causes 1 and 3.
 
-## Task 3.12 — the representative opponent, measured (2026-08-17)
+## Tasks 3.12 / 3.13 — the two candidate causes, measured (2026-08-17)
 
-Candidate cause 1 was the leading suspect. It is **real, and it is partial**: fixing it recovers
-a meaningful share of the deficit without closing it.
+Replicated on **three independent seasons** (2023-24, 2024-25, 2025-26), 12 rotations each,
+pool 180, 5 Adam steps, n = 29,700 category decisions per strategy per season. All arms draft
+as separate seats in the *same* room against the same bots and are graded on the same weeks.
 
-Three opponent models drafted as separate seats in the *same* room, against the same bots,
-graded on the same weeks — 12 rotations, pool 180, 5 Adam steps, n = 29,700 each.
+### 3.12 — the representative opponent: real, but small
+
+Pooled over the three seasons, all-play-all grading:
 
 | arm | opponent model | cat win% | vs g_score | matchup% | vs g_score |
 |---|---|---|---|---|---|
-| `g_score` | — (static board) | **62.9%** | — | **76.7%** | — |
-| `h_score_field` | all 11, objective averaged | 59.7% | −3.2pp | 72.8% | −3.9pp |
-| `h_score` | one stand-in (shipped) | 58.7% | −4.2pp | 69.9% | −6.8pp |
-| `h_score_strongest` | one stand-in, genuinely strongest | 55.0% | −7.9pp | 63.8% | −12.9pp |
+| `g_score` | — (static board) | **60.3%** | — | **71.7%** | — |
+| `h_score_field` | all 11, objective averaged | 57.6% | −2.7pp | 67.6% | −4.1pp |
+| `h_score` | one stand-in (shipped) | 57.1% | −3.2pp | 66.0% | −5.7pp |
+| `h_score_strongest` | one stand-in, genuinely strongest | 54.3% | −6.0pp | 61.5% | −10.2pp |
 
-**Grading the objective against the field it is scored on closes 43% of the matchup gap and
-24% of the category gap.** That it helps roughly twice as much on matchup win rate is the
-coherence check: matchup% is much closer to H₀'s own `P(win ≥5)` objective, so an opponent-model
-fix should show up there first, and it does.
+Scoring the objective against the field it is graded on closes **28% of the matchup gap and
+16% of the category gap**. It helps roughly twice as much on matchup win rate, which is the
+coherence check: matchup% is far closer to H₀'s own `P(win ≥5)` objective than category% is, so
+an opponent-model fix should surface there first, and it does.
 
-**Making the stand-in *stronger* makes it much worse** — `strongest` is the worst arm by a wide
-margin. This kills the intuitive reading of the bug. The problem was never that the stand-in
-was too weak a benchmark; it is that optimising against **any single opponent** licenses
-concentration that a league then punishes. The per-category rates show the mechanism directly:
-`strongest` punts points to 45.8% and threes to **17.2%** to buy fg_pct at 72.1%, which is a
-coherent plan against one team and a losing one against eleven. `field` is the least
-concentrated H₀ arm and the best.
+**The effect is directionally consistent but not large, and one season dissents.** `field`
+minus `h_score`, per season:
+
+| | 2023-24 | 2024-25 | 2025-26 |
+|---|---|---|---|
+| cat win% | **−0.5pp** | +0.9pp | +1.0pp |
+| matchup% | +0.3pp | +1.8pp | +2.9pp |
+
+Matchup% improves in all three; category% goes the wrong way in 2023-24. An earlier
+single-season (2025-26) reading of this put the gap closed at 43%/24% — that overstated it, and
+the three-season pooled figures above supersede it. Treat 3.12 as a **modest real effect**, not
+a fix.
+
+**The arm that failed is the more informative one.** `strongest` is the worst arm in every
+season, by a wide margin. That kills the intuitive reading: the defect was never that the
+stand-in was too weak a benchmark. Optimising against **any single opponent** licenses
+concentration that a league punishes, and a *tougher* single opponent licenses more of it. The
+per-category rates show the mechanism directly — in 2025-26 `strongest` punts points to 45.8%
+and threes to **17.2%** to buy fg_pct at 72.1%: coherent against one team, losing against
+eleven. `field` is the least concentrated H₀ arm and the best.
+
+### 3.13 — schedule-based grading: the concern was unfounded, structurally
+
+Pooled over three seasons, the same drafts graded both ways:
+
+| strategy | all-play-all cat% | schedule cat% | all-play-all matchup% | schedule matchup% |
+|---|---|---|---|---|
+| `g_score` | 60.3% | 59.9% | 71.7% | 70.5% |
+| `h_score_field` | 57.6% | 58.1% | 67.6% | 69.9% |
+| `h_score` | 57.1% | 56.9% | 66.0% | 65.6% |
+| `h_score_strongest` | 54.3% | 54.4% | 61.5% | 61.6% |
+
+Nothing moves systematically, and **it cannot**: a round-robin schedule plays a balanced subset
+of exactly the pairings all-play-all enumerates, so the two have the *same expectation* and
+differ only in variance. All-play-all is the mean of which a schedule is a sample. The
+hypothesis that all-play-all "systematically penalises concentrated builds" was therefore
+structurally void, not merely unsupported — and the measurement agrees, with every strategy
+landing within ~0.5pp on category rate and the differences unsystematic in sign.
+
+The schedule arm carries 11× fewer matchups (n = 900 pooled vs 9,900), so its standard error is
+~1.5pp against ~0.5pp. `h_score_field` appearing to draw level with `g_score` on schedule
+matchup% (69.9% vs 70.5%) is inside that noise and should not be read as a result.
+
+What punting actually exploits in a real league is the *specific* opponents drawn and the
+playoff bracket — variance, not mean. All-play-all remains the right default precisely because
+it removes that, and 3.13 is closed rather than a standing caveat.
 
 ### A methodological correction that matters
 
-**These numbers are not comparable to the headline table above, and neither are any future
-runs with a different arm count.** Adding two more H₀ seats changed the room from 4 named
-strategies + 8 bots to 6 + 6. The proof is that `g_score` — a static board that cannot be
-affected by any engine setting — moved from 63.1%/80.0% to 62.9%/76.7%, and `z_score` fell
-49.7% → 44.3%. A stronger field simply beats the weaker strategies more often under
-all-play-all.
+**Absolute rates are not comparable across runs with different arm counts.** Adding two H₀
+seats changed the room from 4 named strategies + 8 bots to 6 + 6. The proof is that `g_score` —
+a static board no engine setting can touch — moved from 63.1%/80.0% in the headline run to
+62.9%/76.7% in the 2025-26 arm of this one, while `z_score` fell 49.7% → 44.3%. A stronger
+field simply beats the weaker strategies more often.
 
-So only **within-run** deltas are meaningful. The `h_score` vs `g_score` matchup deficit
-reproduces almost exactly across the two runs (−6.6pp then −6.8pp), which is the reassuring
-part; the absolute rates do not, and should not be quoted across runs.
+So only **within-run** deltas are quotable. The reassuring part is that the `h_score` vs
+`g_score` matchup deficit reproduces across independent runs (−6.6pp, then −6.8pp).
 
 ### What this does and does not settle
 
-- H₀ **still loses to the static G-score board** on its best arm. 3.12 is a real contributor,
-  not the whole explanation. Causes 3 (local optima, task 3.9) and 4 (the future-pick softmax)
-  remain open, and are now the leading candidates.
-- Every H₀ arm is bad at ft_pct (21.9–34.9%) and tov (23.6–42.1%) where `g_score` is fine on
-  ft_pct (67.4%). That is a category-level weakness the pooled numbers hide, and it echoes the
+- H₀ **still loses to the static G-score board** on its best arm, in all three seasons. 3.12 is
+  a contributor worth keeping; it is not the explanation. Causes 3 (local optima, task 3.9) and
+  4 (the future-pick softmax) are now the leading candidates, and 3.8 — does this implementation
+  reproduce the paper at all — remains the priority.
+- Every H₀ arm is bad at ft_pct (21.9–34.9% in 2025-26) and tov (23.6–42.1%) where `g_score`
+  manages ft_pct at 67.4%. A category-level weakness the pooled numbers hide, echoing the
   waiver-replay finding that percentage categories are the weak spot.
-- Single season. A three-season replication (2023-24, 2024-25, 2025-26) and the task 3.13
-  schedule-grading arm are running; this section will be revised if they disagree.
+- `field` is the opponent model that should ship: better on matchup% in every season, free (the
+  expensive softmax over the pool is shared across opponents), and the only one that matches
+  what the grading measures. **The default is deliberately left on `REPRESENTATIVE` for now** —
+  3.8 asks whether this implementation reproduces the paper at all, and that diagnostic needs
+  the shipped configuration as its baseline. Flip the default once 3.8 resolves.
 
 ## Consequence for the plan
 

@@ -21,7 +21,7 @@
   "changes/archive/2026-07-26-call-feed-and-matchup-projection/proposal.md": "0953388dacd3893bc4335c2474b737cfdc019ba08a045698e991f043c18ba0f5",
   "changes/h-score-draft-engine/assumptions.md": "4b9b97f8481e6e4654eb57e91b7a88a6e7593b9e2bcc3cbd58190267d84453e0",
   "changes/h-score-draft-engine/discussion.md": "372db74d07c01a248b6d48e7d173666856f7fc30c4593d15388c85ae86ceea3d",
-  "changes/h-score-draft-engine/tasks.md": "8ff8cdf4b1229d25cecf3c8eba4f602491e950d5702df1651c60223289375ffe",
+  "changes/h-score-draft-engine/tasks.md": "979a65be0e3410a157123ef415bd5621c9542eca34e7386aa2e89864cad806a5",
   "changes/h-score-draft-engine/design.md": "1715371acd50dbe7e0741330d1da796e0757800dde89919e37b894a19f3a0450",
   "changes/h-score-draft-engine/proposal.md": "ae4c271f5b8e97e5492c02fbd92076141f39cb598030d1010e9904d746a094e9",
   "changes/h-score-draft-engine/specs/draft-surface/spec.md": "1b8bb364108c3e8d3c071ff1c31c4e828a91d3cd9dde255883745f9c54db1f73",
@@ -29,5 +29,5 @@
   "changes/h-score-draft-engine/specs/historical-data-pipeline/spec.md": "a9b00d8b4632ea6ccd27b76e3b5a0468f19a1a292940c8ea2622f31e7f2c377a",
   "changes/h-score-draft-engine/specs/player-projections/spec.md": "eb1d869fc0950939d26405948f8238cb04250233d8c12ccbe02187f4cb4405f5",
   "changes/h-score-draft-engine/specs/draft-engine/spec.md": "51a449e4a76a1e6e8cbb6b07215f670971c968369ff8a26d4ef58667f91e9fe8",
-  "changes/h-score-draft-engine/results.md": "8040497ff4ee3aef29276895f501f20745e05db385e0a52286982bb258cd70c7"
+  "changes/h-score-draft-engine/results.md": "72c62c09fecdcbb9586d0b6417156f89eb8a0cea5179b8fc512d1ef4b8a4a331"
 }
