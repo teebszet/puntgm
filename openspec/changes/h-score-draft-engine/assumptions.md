@@ -109,25 +109,35 @@ last-season carry-forward on minutes MAE, it is not ready and the honest move is
 
 **Status (Track B, 2.11): STILL OPEN — the gate has not been passed, and the model must not be
 described as validated.** The harness is built (`projections/backtest.py`, `fantasy-gm
-projection-backtest`) and runs in two modes. The cross-season mode — the actual gate — is
-**blocked on the 2024-25 backfill (task 2.10)**, which needs a network that can reach
-`stats.nba.com`; it reports the blocker rather than degrading to a number that looks like a
-result.
+projection-backtest`) and runs in two modes.
 
-What *can* be measured today is the split-season proxy: fit through 2026-01-15, score on
-2026-01-16 → 2026-04-12, 290 players.
+**The cross-season gate has now actually run.** The 2024-25 and 2023-24 backfills turned out to
+already be in the shared store (task 2.10 was recorded as blocked on `stats.nba.com` after the
+backfill had in fact been done), so the real test — fit through 2025-10-20, score the whole of
+2025-26, 379 players — is no longer hypothetical:
 
 | | minutes MAE | bias | games MAE | categories beaten |
 |---|---|---|---|---|
-| model | **2.97** | −0.36 | **5.38** | 7 of 9 |
-| naive carry-forward | 3.04 | −0.49 | 5.55 | — |
+| model | **4.47** | +0.78 | **15.83** | 9 of 9 |
+| naive carry-forward | 4.50 | +0.45 | 15.99 | — |
 
-That is +2.3% on minutes, but the **paired** difference is 0.7σ and the model is closer on only
-53% of players — i.e. inside the noise. The harness reports this as `INCONCLUSIVE`, not `PASS`,
-and the CLI exits non-zero. Two reasons not to read the proxy as the gate: both sides see the
-same season's team context, and the role model has no forward depth chart to react to, so the
-single mechanism the model has that carry-forward does not is inert. It understates the model's
-advantage and is not a substitute for 2.10.
+**INCONCLUSIVE.** +0.7% on minutes, 0.2σ paired, closer on 52% of players. Every one of the nine
+categories is beaten, which is worth noting but is not the gate and is not independent evidence —
+the categories are rates multiplied through the same projected minutes.
+
+**Read this as a floor, not as the model's score.** The measurement was taken with the model's one
+differentiating mechanism switched off. `stated_rank` is read from `forward_roster_asof(player_id,
+season, as_of)`, and `forward_roster` holds 2026-27 only, so across the 608-player 2025-26 pool:
+`stated_rank` = 0, `role_weight` > 0 for 0 players, `team_changed` for 0 players. What ran was
+history-only shrinkage against carry-forward, and the two are close because at that point they are
+nearly the same estimator. For contrast, on 2026-27 — where real forward rosters now exist — 481 of
+702 players carry a stated rank, mean `role_weight` **0.662**, and 98 players are flagged as having
+changed teams. Two thirds of the projected minutes come from the role curve there and none of it
+came from the role curve in the backtest.
+
+Closing this honestly needs opening-night 2025-26 rosters, which the store does not hold and
+`stats.nba.com` will not currently serve. Until then the gate stands unpassed and the split-season
+proxy (+2.3%, 0.7σ, 7 of 9 categories) stands as the weaker second reading.
 
 ---
 

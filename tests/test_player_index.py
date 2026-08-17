@@ -75,6 +75,21 @@ def test_an_unrostered_player_is_parsed_but_not_treated_as_having_a_job():
     assert not entries[0].is_rostered
 
 
+def test_parse_reads_the_types_the_live_endpoint_actually_sends():
+    """The fixtures above hand-type these fields as ints and strings; the live payload does
+    not. `playerindex` sends `ROSTER_STATUS` as a JSON float and leaves the draft fields
+    null for undrafted players, and a stricter int parse read every real row as unrostered
+    — the whole 2026-27 ingest wrote zero forward-roster rows because of it.
+    """
+    entries = parse_player_index([
+        _row("1", "Real", "Payload", "SAC", "F", status=1.0, DRAFT_NUMBER=20),
+        _row("2", "Un", "Drafted", "SAC", "G", status=1.0, DRAFT_NUMBER=None,
+             DRAFT_YEAR=None, DRAFT_ROUND=None),
+    ])
+    assert all(e.is_rostered for e in entries)
+    assert [e.draft_number for e in entries] == ["20", ""]
+
+
 def test_a_multi_position_listing_splits_into_slots():
     assert PlayerPosition("p", "G-F", KNOWN_FROM).slots() == ("G", "F")
     assert PlayerPosition("p", "C", KNOWN_FROM).slots() == ("C",)

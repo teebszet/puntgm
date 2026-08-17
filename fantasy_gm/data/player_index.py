@@ -65,8 +65,16 @@ def _clean(v: Any) -> str:
 
 
 def _as_int(v: Any) -> int | None:
+    """Integer-valued fields, whatever JSON type they arrive as.
+
+    ``playerindex`` types these inconsistently: `ROSTER_STATUS` comes back as a JSON float
+    (``1.0``), `DRAFT_NUMBER` as an int, and both as `null` for undrafted players. Going
+    through `float` first means ``"1.0"`` reads as 1 rather than failing — the strict
+    ``int(str(v))`` this replaces returned None for every real row, which silently made
+    every player unrostered and left `forward_roster` empty.
+    """
     try:
-        return int(str(v).strip())
+        return int(float(str(v).strip()))
     except (TypeError, ValueError):
         return None
 
