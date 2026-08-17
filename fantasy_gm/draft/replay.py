@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from fantasy_gm.config import CATEGORY_DIRECTION, PERCENTAGE_CATEGORIES
-from fantasy_gm.draft.hscore import DraftState, HScoreEngine
+from fantasy_gm.draft.hscore import DraftState, HScoreEngine, OpponentModel
 from fantasy_gm.draft.opponents import AdpBot, derive_adp_order
 from fantasy_gm.draft.settings import DraftSettings
 from fantasy_gm.draft.xscore import XScoreBasis
@@ -230,8 +230,14 @@ def build_strategies(
     settings: DraftSettings,
     rng: random.Random,
     engine_steps: int = 8,
+    opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
 ) -> dict:
-    """The field: H₀ vs G-score vs z-score vs ADP."""
+    """The field: H₀ vs G-score vs z-score vs ADP.
+
+    ``opponent_arms`` enters one H₀ per opponent model, so the stand-in and the field objective
+    draft in the *same* room against the *same* bots and are graded on the same weeks. Running
+    them in separate replays would confound the comparison with the pool each happened to face.
+    """
     from fantasy_gm.valuation import player_values
 
     adp_order = derive_adp_order(store, season)
@@ -240,12 +246,17 @@ def build_strategies(
     )]
     z = player_values(store, season)
     z_order = sorted(z, key=lambda p: (-z[p], p))
-    return {
-        "h_score": hscore_strategy(HScoreEngine(basis, settings, steps=engine_steps)),
+    out = {
         "g_score": static_order_strategy(g_order),
         "z_score": static_order_strategy(z_order),
         "adp": bot_strategy(AdpBot(adp_order, rng)),
     }
+    for arm in opponent_arms:
+        name = "h_score" if arm is OpponentModel.REPRESENTATIVE else f"h_score_{arm.value}"
+        out[name] = hscore_strategy(
+            HScoreEngine(basis, settings, steps=engine_steps, opponent_model=arm)
+        )
+    return out
 
 
 def run_draft_replay(
@@ -257,6 +268,7 @@ def run_draft_replay(
     seed: int = 7,
     engine_steps: int = 8,
     pool_size: int | None = None,
+    opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
 ) -> dict[str, StrategyResult]:
     """Draft and grade every strategy at several seats.
 
@@ -266,7 +278,9 @@ def run_draft_replay(
     """
     settings = settings or DraftSettings()
     rng = random.Random(seed)
-    strategies = build_strategies(store, season, basis, settings, rng, engine_steps)
+    strategies = build_strategies(
+        store, season, basis, settings, rng, engine_steps, opponent_arms
+    )
     names = list(strategies)
     n_teams = settings.n_teams
     rotations = rotations if rotations is not None else min(n_teams, 4)
@@ -311,10 +325,11 @@ def run_draft_replay(
 
 
 def format_replay(results: dict[str, StrategyResult]) -> str:
-    lines = [f"{'strategy':<10} {'cat win%':>10} {'matchup%':>10} {'n':>8}"]
+    width = max([10, *(len(n) for n in results)])
+    lines = [f"{'strategy':<{width}} {'cat win%':>10} {'matchup%':>10} {'n':>8}"]
     for name, r in sorted(results.items(), key=lambda kv: -kv[1].category_win_rate):
         lines.append(
-            f"{name:<10} {100 * r.category_win_rate:>9.1f}% "
+            f"{name:<{width}} {100 * r.category_win_rate:>9.1f}% "
             f"{100 * r.matchup_win_rate:>9.1f}% {r.category_games:>8d}"
         )
     return "\n".join(lines)

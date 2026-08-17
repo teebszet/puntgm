@@ -35,10 +35,36 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from fantasy_gm.draft.objective import category_probabilities, score_objective
 from fantasy_gm.draft.settings import DraftSettings
 from fantasy_gm.draft.xscore import XScoreBasis
+
+
+class OpponentModel(StrEnum):
+    """Who the objective is computed against (task 3.12).
+
+    The published formulation optimises against a single representative opponent, but the
+    replay grades against the whole field — and those are different problems. Conceding a
+    category costs one opponent's worth of probability against a stand-in, and *every*
+    opponent's worth against a league. If the objective is cheap where the grading is
+    expensive, the optimizer will happily buy the thing it is later punished for.
+
+    Three arms, so the two halves of that hypothesis can be told apart:
+
+    * ``REPRESENTATIVE`` — the shipped behaviour, kept bit-identical so the numbers already in
+      `results.md` remain the baseline. Selects by roster *length*, which in a snake draft is
+      near-constant across teams, so the choice is in practice an arbitrary fixed seat.
+    * ``STRONGEST`` — a genuine single opponent: the opposing roster with the highest total
+      basis value. Isolates "the stand-in was arbitrary" from "a stand-in is the wrong model".
+    * ``FIELD`` — the objective averaged over every opponent, which is the quantity all-play-all
+      grading actually measures.
+    """
+
+    REPRESENTATIVE = "representative"
+    STRONGEST = "strongest"
+    FIELD = "field"
 
 
 @dataclass(frozen=True)
@@ -85,6 +111,7 @@ class HScoreEngine:
         steps: int = 24,
         lr: float = 0.15,
         tie_margin: float = 0.0,
+        opponent_model: OpponentModel = OpponentModel.REPRESENTATIVE,
     ):
         self.basis = basis
         self.settings = settings or DraftSettings()
@@ -92,6 +119,7 @@ class HScoreEngine:
         self.steps = steps
         self.lr = lr
         self.tie_margin = tie_margin
+        self.opponent_model = OpponentModel(opponent_model)
         self._warm: list[float] | None = None
 
     # --- roster aggregation --------------------------------------------------
@@ -192,48 +220,90 @@ class HScoreEngine:
 
     # --- the objective -------------------------------------------------------
 
+    def _opponent_totals(
+        self, state: DraftState, opp_future: int
+    ) -> list[tuple[dict[str, float], dict[str, float], int]]:
+        """The opposing side of the differential: ``(mean, var, future_picks)`` per opponent.
+
+        Weight-independent, so this is built once per pick rather than once per gradient step.
+        The stand-in models return a single entry and keep the shipped ``opp_future`` (derived
+        from the *average* opponent's roster size); ``FIELD`` returns every opponent with its
+        own exact remaining-pick count, which is what it means to be scored against a league of
+        teams at slightly different points in the snake.
+        """
+        rosters = state.opponent_rosters
+        if not rosters:
+            return [({c: 0.0 for c in self.settings.categories},
+                     {c: 0.0 for c in self.settings.categories}, opp_future)]
+
+        if self.opponent_model is OpponentModel.FIELD:
+            out = []
+            for r in rosters:
+                mean, var = self._totals(r)
+                out.append((mean, var, max(0, self.settings.n_rounds - len(r))))
+            return out
+
+        if self.opponent_model is OpponentModel.STRONGEST:
+            chosen = max(rosters, key=lambda r: sum(self.basis.total(p) for p in r))
+        else:
+            chosen = _representative(rosters)
+        mean, var = self._totals(chosen)
+        return [(mean, var, opp_future)]
+
     def _evaluate(
         self,
-        my_players: list[str],
-        opp_players: list[str],
+        my_totals: tuple[dict[str, float], dict[str, float]],
+        opponents: list[tuple[dict[str, float], dict[str, float], int]],
         available: list[str],
         my_future: int,
-        opp_future: int,
+        opp_future_profile: tuple[dict[str, float], dict[str, float]] | None,
         weights: list[float],
     ) -> tuple[float, list[float]]:
+        """Objective and per-category win probabilities under strategy ``weights``.
+
+        Averaged over ``opponents`` — one entry for the stand-in models, all of them for
+        ``FIELD``. Everything independent of ``weights`` (roster totals, the opponents' shared
+        future-pick profile) arrives precomputed, because this runs ~2·C times per gradient step
+        and the softmax over the pool dominates its cost.
+        """
         cats = self.settings.categories
-        my_mean, my_var = self._totals(my_players)
-        op_mean, op_var = self._totals(opp_players)
+        base_mean, base_var = my_totals
+        my_mean = dict(base_mean)
+        my_var = dict(base_var)
 
         if my_future > 0:
             fm, fv = self._weighted_future(available, weights)
             for c in cats:
                 my_mean[c] += my_future * fm[c]
                 my_var[c] += my_future * fv[c]
-        if opp_future > 0:
-            # Opponents draft *competently but not adaptively*: best-available under neutral
-            # category weights, via the same softmax machinery. Modelling them as the pool
-            # average instead would hand us a free edge for every remaining round — the
-            # optimizer would then believe that simply having picks left is an advantage,
-            # which inflates early-draft confidence. The edge H₀ should claim is that it
-            # *shapes* its picks, not that its opponents draft at random.
-            om, ov = self._weighted_future(available, [1.0] * len(cats))
-            for c in cats:
-                op_mean[c] += opp_future * om[c]
-                op_var[c] += opp_future * ov[c]
 
-        mean_diffs = {c: my_mean[c] - op_mean[c] for c in cats}
-        var_diffs = {c: max(my_var[c] + op_var[c], 1e-12) for c in cats}
-        probs = category_probabilities(mean_diffs, var_diffs, self.settings, self.tie_margin)
-        return score_objective(probs, self.settings), probs
+        total = 0.0
+        acc = [0.0] * len(cats)
+        for op_mean0, op_var0, opp_future in opponents:
+            op_mean = dict(op_mean0)
+            op_var = dict(op_var0)
+            if opp_future > 0 and opp_future_profile is not None:
+                om, ov = opp_future_profile
+                for c in cats:
+                    op_mean[c] += opp_future * om[c]
+                    op_var[c] += opp_future * ov[c]
+            mean_diffs = {c: my_mean[c] - op_mean[c] for c in cats}
+            var_diffs = {c: max(my_var[c] + op_var[c], 1e-12) for c in cats}
+            probs = category_probabilities(mean_diffs, var_diffs, self.settings, self.tie_margin)
+            total += score_objective(probs, self.settings)
+            for i, p in enumerate(probs):
+                acc[i] += p
+
+        k = len(opponents) or 1
+        return total / k, [p / k for p in acc]
 
     def _optimise_weights(
         self,
-        my_players: list[str],
-        opp_players: list[str],
+        my_totals: tuple[dict[str, float], dict[str, float]],
+        opponents: list[tuple[dict[str, float], dict[str, float], int]],
         available: list[str],
         my_future: int,
-        opp_future: int,
+        opp_future_profile: tuple[dict[str, float], dict[str, float]] | None,
         start: list[float],
     ) -> tuple[float, list[float], list[float]]:
         """Adam on the strategy weights, numeric gradient."""
@@ -244,7 +314,7 @@ class HScoreEngine:
         b1, b2, eps, h = 0.9, 0.999, 1e-8, 1e-3
 
         best_val, best_probs = self._evaluate(
-            my_players, opp_players, available, my_future, opp_future, w
+            my_totals, opponents, available, my_future, opp_future_profile, w
         )
         best_w = list(w)
 
@@ -258,10 +328,10 @@ class HScoreEngine:
                 up[i] += h
                 dn[i] -= h
                 gu, _ = self._evaluate(
-                    my_players, opp_players, available, my_future, opp_future, up
+                    my_totals, opponents, available, my_future, opp_future_profile, up
                 )
                 gd, _ = self._evaluate(
-                    my_players, opp_players, available, my_future, opp_future, dn
+                    my_totals, opponents, available, my_future, opp_future_profile, dn
                 )
                 grad.append((gu - gd) / (2 * h))
             for i in range(n):
@@ -273,7 +343,7 @@ class HScoreEngine:
             # keep weights bounded so the softmax cannot saturate into a single player
             w = [max(-4.0, min(4.0, x)) for x in w]
             val, probs = self._evaluate(
-                my_players, opp_players, available, my_future, opp_future, w
+                my_totals, opponents, available, my_future, opp_future_profile, w
             )
             if val > best_val:
                 best_val, best_probs, best_w = val, probs, list(w)
@@ -312,23 +382,36 @@ class HScoreEngine:
         # One representative opponent: the average opposing team, not the union of them all.
         opp_avg_size = len(opp_players) / n_opp if n_opp else 0
         opp_future = max(0, int(round(n_rounds - opp_avg_size)))
-        representative_opp = _representative(state.opponent_rosters)
+        opponents = self._opponent_totals(state, opp_future)
 
         start = self._warm or [1.0] * len(cats)
+
+        # Opponents draft *competently but not adaptively*: best-available under neutral
+        # category weights, via the same softmax machinery. Modelling them as the pool average
+        # instead would hand us a free edge for every remaining round — the optimizer would then
+        # believe that simply having picks left is an advantage, which inflates early-draft
+        # confidence. The edge H₀ should claim is that it *shapes* its picks, not that its
+        # opponents draft at random.
+        #
+        # Neutral weights make this independent of the strategy being optimised, so it is
+        # computed once per pick rather than once per gradient step. That hoist is what keeps
+        # FIELD affordable: the extra opponents only add the O(C²) Poisson-binomial DP, while
+        # the softmax over the pool — the actual cost — is now shared by all of them.
+        opp_profile = self._weighted_future(pool, [1.0] * len(cats))
 
         # Baseline: the objective if we passed. Candidate value is reported as a delta from
         # this, so "how much does this pick actually move the matchup?" is legible.
         base_val, _ = self._evaluate(
-            state.my_roster, representative_opp, pool,
-            my_future_after + 1, opp_future, start,
+            self._totals(state.my_roster), opponents, pool,
+            my_future_after + 1, opp_profile, start,
         )
 
         out: list[Candidate] = []
         for pid in pool:
             rest = [p for p in pool if p != pid]
             val, probs, w = self._optimise_weights(
-                [*state.my_roster, pid], representative_opp, rest,
-                my_future_after, opp_future, start,
+                self._totals([*state.my_roster, pid]), opponents, rest,
+                my_future_after, self._weighted_future(rest, [1.0] * len(cats)), start,
             )
             out.append(
                 Candidate(

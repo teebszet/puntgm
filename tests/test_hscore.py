@@ -10,7 +10,7 @@ import pytest
 
 from fantasy_gm.data.store import Store
 from fantasy_gm.draft.assignment import assign_to_slots, solve_assignment
-from fantasy_gm.draft.hscore import DraftState, HScoreEngine
+from fantasy_gm.draft.hscore import DraftState, HScoreEngine, OpponentModel
 from fantasy_gm.draft.objective import (
     category_win_prob,
     prob_at_least,
@@ -346,3 +346,134 @@ def test_flex_slots_accept_their_positions():
     assert RosterSlot.of("G").accepts(frozenset({"SG"}))
     assert not RosterSlot.of("G").accepts(frozenset({"C"}))
     assert RosterSlot.of("UTIL").accepts(frozenset({"C"}))
+
+
+# --- opponent model (task 3.12) -----------------------------------------------
+
+
+def _lopsided_league() -> tuple:
+    """A pool plus a league where the stand-in opponent is the *only* team without blocks.
+
+    This is the shape that separates the two objectives. The representative opponent is
+    picked from the front of the roster list, so it is the block-less team; the rest of the
+    field is block-heavy. A stand-in objective therefore sees blocks as free, while the field
+    objective sees them as the contested category they actually are.
+    """
+    pool = {
+        "bigA": {"reb": 11.5, "blk": 2.6, "pts": 15.0},
+        "bigB": {"reb": 11.0, "blk": 2.4, "pts": 15.0},
+        "guard": {"pts": 22.0, "reb": 4.0, "blk": 0.2},
+        "guard2": {"pts": 21.0, "reb": 4.2, "blk": 0.2},
+    }
+    for i in range(14):
+        pool[f"mid{i}"] = {
+            "pts": 14.0 + (i % 4) * 1.5,
+            "reb": 6.0 + (i % 3) * 1.2,
+            "blk": 0.7 + (i % 3) * 0.35,
+        }
+    # blk-heavy filler for the rest of the field, blk-less filler for the stand-in
+    for i in range(4):
+        pool[f"swat{i}"] = {"pts": 12.0, "reb": 9.0, "blk": 2.8}
+        pool[f"noswat{i}"] = {"pts": 12.0, "reb": 9.0, "blk": 0.05}
+
+    basis = _basis_with(pool, pool_size=40)
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"], n_teams=5, rounds=6,
+        objective=Objective.MOST_CATEGORIES,
+    )
+    # Opponent 0 (the stand-in) has no blocks; opponents 1-3 do.
+    rosters = [
+        ["noswat0", "noswat1"],
+        ["swat0", "swat1"],
+        ["swat2", "swat3"],
+        ["noswat2", "noswat3", "mid13"],
+    ]
+    taken = {p for r in rosters for p in r}
+    return basis, settings, DraftState(opponent_rosters=rosters, taken=taken)
+
+
+def test_field_reduces_to_the_stand_in_against_a_single_opponent():
+    """With one opponent the three models are the same problem, so they must agree exactly.
+
+    Guards the averaging and the per-opponent future-pick count: against a lone opponent the
+    field mean is over one term and its exact remaining-pick count equals the rounded average.
+    """
+    basis = _basis_with(_duplicate_pool(), pool_size=20)
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"], n_teams=2, rounds=6,
+        objective=Objective.MOST_CATEGORIES,
+    )
+    state = DraftState(opponent_rosters=[["mid0", "mid1"]], taken={"mid0", "mid1"})
+
+    ranked = {}
+    for arm in OpponentModel:
+        eng = HScoreEngine(basis, settings, steps=6, opponent_model=arm)
+        ranked[arm] = eng.evaluate_candidates(state, top_n=5)
+
+    base = ranked[OpponentModel.REPRESENTATIVE]
+    for arm in (OpponentModel.STRONGEST, OpponentModel.FIELD):
+        assert [c.player_id for c in ranked[arm]] == [c.player_id for c in base]
+        for got, want in zip(ranked[arm], base, strict=True):
+            assert got.value == pytest.approx(want.value, abs=1e-9)
+
+
+def test_stand_in_is_overconfident_in_the_category_the_field_is_strong_in():
+    """The 3.12 hypothesis, made measurable.
+
+    Every opponent but the stand-in is stacked in blocks. Optimising against the stand-in
+    therefore reports a block win probability the league will not honour, which is precisely
+    the mechanism by which a conceded category is cheap in the objective and ruinous in the
+    grading.
+    """
+    basis, settings, state = _lopsided_league()
+
+    rep = HScoreEngine(basis, settings, steps=8,
+                       opponent_model=OpponentModel.REPRESENTATIVE)
+    fld = HScoreEngine(basis, settings, steps=8, opponent_model=OpponentModel.FIELD)
+    top_rep = rep.evaluate_candidates(state)[0]
+    top_fld = fld.evaluate_candidates(state)[0]
+
+    assert top_rep.win_probs["blk"] > top_fld.win_probs["blk"] + 0.15
+
+
+def test_field_objective_is_not_the_stand_in_objective():
+    """The two models must actually value the board differently, or the arm is a no-op."""
+    basis, settings, state = _lopsided_league()
+
+    rep = HScoreEngine(basis, settings, steps=8,
+                       opponent_model=OpponentModel.REPRESENTATIVE)
+    fld = HScoreEngine(basis, settings, steps=8, opponent_model=OpponentModel.FIELD)
+    v_rep = {c.player_id: c.value for c in rep.evaluate_candidates(state, top_n=12)}
+    v_fld = {c.player_id: c.value for c in fld.evaluate_candidates(state, top_n=12)}
+
+    shared = set(v_rep) & set(v_fld)
+    assert shared
+    assert any(abs(v_rep[p] - v_fld[p]) > 1e-3 for p in shared)
+
+
+def test_strongest_selects_by_value_while_representative_selects_by_position():
+    """Roster *length* is near-constant in a snake draft, so the shipped selector is really a
+    positional tie-break rather than the pessimism its name implies."""
+    basis, settings, _ = _lopsided_league()
+    weak = ["noswat0", "noswat1"]
+    strong = ["bigA", "guard"]
+    state = DraftState(opponent_rosters=[weak, strong], taken=set(weak) | set(strong))
+
+    rep = HScoreEngine(basis, settings, opponent_model=OpponentModel.REPRESENTATIVE)
+    strongest = HScoreEngine(basis, settings, opponent_model=OpponentModel.STRONGEST)
+
+    rep_mean = rep._opponent_totals(state, 4)[0][0]
+    strong_mean = strongest._opponent_totals(state, 4)[0][0]
+    assert rep_mean == pytest.approx(rep._totals(weak)[0])        # first, not best
+    assert strong_mean == pytest.approx(strongest._totals(strong)[0])
+
+
+def test_field_scores_against_every_opponent():
+    basis, settings, state = _lopsided_league()
+    eng = HScoreEngine(basis, settings, opponent_model=OpponentModel.FIELD)
+    totals = eng._opponent_totals(state, 4)
+    assert len(totals) == len(state.opponent_rosters)
+    # each opponent carries its own remaining-pick count, not a league average
+    assert [t[2] for t in totals] == [
+        settings.n_rounds - len(r) for r in state.opponent_rosters
+    ]
