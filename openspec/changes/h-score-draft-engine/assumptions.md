@@ -57,6 +57,12 @@ estimated-mean uncertainty"). Apply the same treatment here.
 **Validate:** measure realized-vs-projected dispersion by preseason role certainty bucket.
 **Data:** needs a completed season projected in advance; 2025-26 backtest is the proxy.
 
+**Status (Track B, 2.8): implemented, not yet validated.** `CategoryEstimate` carries
+`mean_stderr` separately from `per_game_std`, and the derived source propagates both through
+`rate × minutes` by the delta method, so a player's band widens for a short history, a role
+change, or a team change independently of how volatile they are game to game. The *dispersion*
+check still needs a season projected in advance, so it inherits A-DRAFT-5's blocker.
+
 ---
 
 ## A-DRAFT-3. Categories are independent — INHERITED, measurably false
@@ -137,6 +143,67 @@ naive, (b) a published projection set as a reference point. **Gate: if own-built
 last-season carry-forward on minutes MAE, it is not ready and the honest move is to say so.**
 **Data:** requires 2024-25 backfill in addition to 2025-26 — *not currently held*.
 
+**Status (Track B, 2.11): STILL OPEN — the gate has not been passed, and the model must not be
+described as validated.** The harness is built (`projections/backtest.py`, `fantasy-gm
+projection-backtest`) and runs in two modes.
+
+**The cross-season gate has now actually run.** The 2024-25 and 2023-24 backfills turned out to
+already be in the shared store (task 2.10 was recorded as blocked on `stats.nba.com` after the
+backfill had in fact been done), so the real test — fit through 2025-10-20, score the whole of
+2025-26, 379 players — is no longer hypothetical:
+
+| | minutes MAE | bias | games MAE | categories beaten |
+|---|---|---|---|---|
+| model | **4.47** | +0.78 | **15.83** | 9 of 9 |
+| naive carry-forward | 4.50 | +0.45 | 15.99 | — |
+
+**INCONCLUSIVE.** +0.7% on minutes, 0.2σ paired, closer on 52% of players. Every one of the nine
+categories is beaten, which is worth noting but is not the gate and is not independent evidence —
+the categories are rates multiplied through the same projected minutes.
+
+**Read this as a floor, not as the model's score.** The measurement was taken with the model's one
+differentiating mechanism switched off. `stated_rank` is read from `forward_roster_asof(player_id,
+season, as_of)`, and `forward_roster` holds 2026-27 only, so across the 608-player 2025-26 pool:
+`stated_rank` = 0, `role_weight` > 0 for 0 players, `team_changed` for 0 players. What ran was
+history-only shrinkage against carry-forward, and the two are close because at that point they are
+nearly the same estimator. For contrast, on 2026-27 — where real forward rosters now exist — 481 of
+702 players carry a stated rank, mean `role_weight` **0.662**, and 98 players are flagged as having
+changed teams. Two thirds of the projected minutes come from the role curve there and none of it
+came from the role curve in the backtest.
+
+**Re-run with reconstructed rosters (`data/reconstruct.py`, `fantasy-gm reconstruct-rosters`).**
+Opening-night 2025-26 rosters were rebuilt from the season's own first box scores — a player's
+team in their first game, within 14 days of tip-off, with depth derived from pre-cut history as
+usual. That put 371 of 608 players on a stated rank at mean `role_weight` 0.703, with 88
+team-changers, and the gate moved:
+
+| roster input | minutes MAE | bias | vs naive |
+|---|---|---|---|
+| none (mechanism inert) | 4.47 | +0.78 | +0.7%, 0.2σ |
+| reconstructed, 14d | **4.35** | +1.92 | +3.2%, 1.1σ |
+
+**Still INCONCLUSIVE, and the gate stays unpassed.** Three things keep it there:
+
+1. **1.1σ is not a result.** The model is closer on 50% of players — the aggregate gain is large
+   wins on a minority against small losses on the majority, which is the wrong shape for a draft
+   tool that has to price every player.
+2. **Bias got worse**, +0.78 → +1.92 minutes. The reconstruction is the likely cause rather than
+   the model: it recovers 14.7 players per team against 19.3 on a real roster, so every rank is
+   compressed upward and the role curve hands out too many minutes. The window sensitivity
+   supports that — as the roster fills, bias falls and MAE improves monotonically (30d: 15.8/team,
+   +1.58 bias, +3.8%/1.4σ; 60d: 16.7/team, +1.39 bias, +4.2%/1.6σ). Those wider windows are *not*
+   legitimate readings — 60 days admits December signings as opening-night players — so they
+   diagnose the artifact without licensing the number.
+3. **The reconstruction cannot see a player who never played**, so the scored pool is biased
+   toward players who stayed healthy.
+
+The honest summary: the role mechanism is worth something (it roughly quadruples the edge over
+carry-forward), the measurement is still inside the noise, and the cleanest remaining read needs
+real opening-night rosters from `playerindex` — which is what `stats.nba.com` being blocked
+actually costs. 14d is canonical and is what is in the store.
+
+The split-season proxy (+2.3%, 0.7σ, 7 of 9 categories) stands as the weaker second reading.
+
 ---
 
 ## A-DRAFT-6. Rookie draft-position prior — ASSERTED
@@ -151,6 +218,18 @@ the resulting uncertainty band explicit in the projection. If the band is as wid
 so and let the optimizer price the uncertainty rather than hiding it.
 **Data:** multi-season rookie histories — *not currently held*.
 
+**Status (Track B, 2.9): the asserted surface is now one number per slot bucket, and it is
+labeled.** `projections/rookies.py` expresses the prior as draft slot → expected *rotation rank*,
+then runs that rank through the **measured** minutes curve and the **measured** per-minute rate
+tiers. So the only asserted link is `FALLBACK_SLOT_RANK` (1-5 → rank 6, 6-14 → 8, 15-30 → 10,
+31-60 → 12, undrafted → 13); everything downstream of it is fit from real games. `fit_rookie_prior`
+replaces those numbers with the measured median rank of a past cohort as soon as one is in the
+store, and every projection carries `prior_basis` = `fitted` or `fallback` so the two can never be
+confused. The band is the measured spread of minutes *within* that rank plus the team-change drift
+term, which makes rookie `mean_stderr` materially wider than an established player's — as intended.
+**Still open:** the out-of-sample error by slot bucket, which needs the multi-season history from
+task 2.10.
+
 ---
 
 ## A-DRAFT-7. Expected games played is separable from per-game production — ASSERTED
@@ -163,6 +242,25 @@ high-rate, low-availability player.
 
 **Validate:** measure the correlation between games played and per-game production within player-season,
 and between availability and minutes on return. **Data:** real game logs + injury designations (have).
+
+**Status (Track B, 2.7): MEASURED — the assumption is false, and by enough to matter.** From the
+real 2025-26 backfill (`measure_games_production_correlation`, 506 players):
+
+* `corr(games played, minutes/game)` = **+0.479**
+* `corr(games played, points/game)` = **+0.336**
+* minutes in the first three games back from an absence of ≥8 days = **0.907×** the player's own
+  season average (n=1,318 returns)
+
+So availability and production are positively correlated across players — the durable players
+*are* the high-minute players — while within a player, returning from an absence costs ~9% of
+their minutes. The two effects push season value in opposite directions and the factorization
+`E[games] × E[per-game]` captures neither.
+
+**v1 decision:** expected games played ships as a separate output with its own band (which is the
+part that was missing entirely), the factorization is retained, and the covariance term is
+**reported rather than modeled** — adding it would change the `ProjectionSource` contract that
+Track A is already coding against. Carried forward as the follow-up: value the covariance term and
+decide whether it is worth a contract change.
 
 ---
 
@@ -212,7 +310,99 @@ the warm start is least informative).
 
 ---
 
-## A-DRAFT-10. Category ties are ignored — KNOWN-WRONG (small)
+## A-DRAFT-10. Depth-chart position means rotation rank — ASSERTED (structural)
+
+**Claim:** the `depth_chart_pos` the projection model consumes can be read as *rotation rank within
+the team* (1 = the team's biggest-minutes player).
+
+**Why it is asserted:** the store holds no player positions — not in `player_logs`, not anywhere —
+so "third-string centre" is not expressible and "seventh in the rotation" is. Every fit in
+`projections/minutes.py` is against rank derived from mean minutes within team, which is the only
+reading the data supports.
+
+**Consequence if wrong:** a positionally-scarce player (a starting centre on a team with a deep
+guard rotation) is ranked by minutes rather than by the scarcity that actually earns them minutes,
+so their projection is too low. This bites hardest exactly where the D4 positional-assignment work
+says multi-eligible players are mispriced.
+
+**Validate:** refit the minutes curve on (position, depth-at-position) and compare minutes MAE
+against the rank-only curve.
+
+**Status: the data dependency is resolved; the measurement is not.** NBA's `playerindex` endpoint
+returns a listed position for every player in one batched call, and `data/player_index.py` now
+ingests it into `player_positions` (also feeding `forward_roster` and `incoming_players` — see
+A-DRAFT-12). So positions are available for D4's slot assignment, and the refit above is now
+runnable rather than blocked. Two caveats to state when it is run: `playerindex` is a *current*
+snapshot, so applying it to past seasons assumes a player's listed position is near-static, and
+NBA's listed position ("G-F") is a coarser thing than the fantasy platform's eligibility, which is
+what D4 actually needs and which comes from Yahoo with the task 4.1 OAuth.
+
+---
+
+## A-DRAFT-11. Minutes-model parameters — MEASURED (2025-26 backfill)
+
+Recorded here because the standing rule is that nothing asserted stays a constant. Every parameter
+below is fit by `fit_minutes` / `fit_rates` / `fit_games` from games known as of the projection
+date, and each carries a `basis` field that reads `measured` or `fallback` so a projection built on
+an unidentifiable fit is never mistaken for one built on data. As of `2026-08-17`, on the real
+2025-26 backfill (506 players), all of them read `measured`:
+
+| parameter | value | what it does |
+|---|---|---|
+| recency half-life | **10 games** | how fast a player's own minutes history decays; chosen by held-out error *inside* the training window, over a grid from flat to 6 games |
+| within-player minutes σ | 6.78 min | game-to-game noise |
+| between-player minutes σ | 8.24 min | player-to-player spread of true mean minutes |
+| shrinkage weight | 0.68 games | prior weight toward the pool mean (small: minutes are well-identified) |
+| period-to-period drift σ | 4.32 min | how far a player's *true* minutes move between halves, net of sampling noise |
+| team-change drift multiplier | **×1.45** (55 movers) | how much more uncertain a moved player's role is — mover/stayer drift ratio |
+| role curve | rank 1 → 33.7 min … rank 12 → 16.0 min | expected minutes by rotation rank; the entry point for a stated depth chart and for the rookie prior |
+| availability prior | 2.6 games, pool rate 0.645 | beta-binomial shrinkage on games played |
+
+**Note on the recency half-life:** 10 games is short, which says role is substantially
+non-stationary within a season — the reason a forward projection needs a depth chart at all.
+
+**Note on the availability prior:** at 2.6 games of prior weight, expected games played is close to
+a carry-forward of the player's own rate, and the backtest bears that out (games MAE 5.38 vs 5.55).
+The availability model is the weakest component and the one with the most headroom.
+
+---
+
+## A-DRAFT-12. Minutes ordering carries across a team change — ASSERTED
+
+**Claim:** a projected depth chart can be derived by ranking a team's incoming roster on each
+player's own minutes history, without an external depth chart. A player who out-earned his new
+teammates elsewhere will out-earn them here too.
+
+**Why it is needed:** `forward_roster.depth_chart_pos` is the input that makes the projection react
+to an offseason move, and it had no source — the table was empty, so the role mechanism was inert
+on real data and the model degraded to carry-forward. `playerindex` supplies the *team* but no
+depth. The alternatives were to leave depth unknown (the model does nothing new), hand-enter ~450
+ranks, or pay to source depth charts. Deriving rank from the new roster's own track records needs
+none of those, and it is the more primitive claim.
+
+**Where it is wrong:** it is blind to fit and to contract. A high-minutes player joining a team
+that already has a star at his position will not simply displace him — position is exactly the
+thing rank cannot see (A-DRAFT-10). It is also blind to the reason a player moved: a veteran
+signing for a smaller role ranks by his old minutes, not his new job. Both errors are
+*systematic*, not noise: they over-project the incoming player and under-project the incumbent.
+
+**Mitigation in place:** a team change already inflates the drift term (measured ×1.45), so a moved
+player's band widens even where the mean is wrong. The derived rank is a labeled default, not a
+verdict — `role` records `returning` or `no-history`, and a hand-entered `forward_roster` row with a
+later `known_from` supersedes it, which is the intended workflow for the names worth disagreeing
+about.
+
+**Validate:** with two seasons backfilled (task 2.10), derive the depth chart for the later season
+from the earlier one and score minutes MAE against (a) the flat carry-forward baseline and (b) the
+realized rotation rank. If derived rank does not beat carry-forward, the mechanism is decoration
+and should be replaced by manual entry for the draft-relevant pool only.
+**Data:** two backfilled seasons — *blocked on 2.10*.
+
+---
+
+## A-DRAFT-13. Category ties are ignored — KNOWN-WRONG (small)
+
+*(Minted as A-DRAFT-10 on the draft-engine track and renumbered on merge: the projections track had independently claimed 10 for the rotation-rank assumption below, and that one is referenced from the code.)*
 
 **Claim:** in the normal approximation a category differential of exactly zero has probability zero,
 so `P(win) + P(lose) = 1`.
