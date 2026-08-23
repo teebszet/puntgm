@@ -67,6 +67,34 @@ projection behind a z-score ranker is a commodity.
 - [ ] 4.7 CLI: `draft` (live), `grade` (completed board), `draft-replay` (validation)
 - [ ] 4.8 **Dry-run the full live path against a real Yahoo mock draft before the real draft** — the fetch layer has never run against a live token and draft day is the wrong time to find out
 
+## 4b. Static board — the free surface (added 2026-08-23)
+
+Not in the original scope: the interview chose to skip shipping G-score and go straight to H₀.
+Three seasons of replay inverted that (`results.md`), and this is the only draft surface that
+needs no OAuth, no forward projection and no working optimizer — so it is what can face the
+mid-September window.
+
+- [x] 4b.1 `fantasy_gm/draft/board.py` — ranked board over the categories left after a declared
+      punt, with per-category breakdown and a rank delta against z-score computed on the *same*
+      pool and the *same* reduced category set, so the delta isolates the metric
+- [x] 4b.2 Named punt builds (`PUNT_BUILDS`), covering what a 9-cat drafter actually plays
+- [x] 4b.3 **Separate availability from variance** — `AvailabilityMode` (`realized` / `neutral` /
+      `projected`). Most of the board's measured edge over z-score was availability, and on a
+      preseason board realized availability is hindsight (A-DRAFT-14). `projected` reuses the A13
+      beta-binomial games model; `xscore.include_idle_weeks` still defaults True so no published
+      replay number moves
+- [x] 4b.4 Score the three treatments head-to-head in the draft replay across two seasons and two
+      seeds. **Forward-honest edge over z-score is +5 to +9pp**; neutral vs projected is inside
+      seed noise and neither is claimed to win
+- [x] 4b.5 JSON + Markdown export with an `index.json` manifest, and a `basis` provenance line that
+      the rendering layer cannot drop
+- [x] 4b.6 CLI: `board` (`--build` / `--punt` / `--availability` / `--as-of` / `--movers` / `--out`)
+- [x] 4b.7 Test: punting re-ranks and removes the category; a rookie takes the fitted pool
+      availability rate rather than certainty; the availability variance term is binomial over
+      games not Bernoulli over weeks; the provenance line names the projection date (19 tests)
+- [ ] 4b.8 Publish it — blocked on `puntgm.com` + the X/IG handles existing. The board data and
+      its Markdown are generated; only the page is missing
+
 ## 5. Log and glue
 
 - [ ] 5.1 Draft-pick record type: draft state, ranked candidates with values, recommendation, actual pick; append-only integrity preserved

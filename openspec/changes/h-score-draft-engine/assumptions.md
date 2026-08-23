@@ -418,3 +418,70 @@ margin per category is unmeasured.
 **Validate:** measure the empirical frequency of exact category ties per category from real weekly
 matchup results, then set `tie_margin` per category from that rather than globally.
 **Data:** weekly category tallies from simulated/imported leagues (have).
+
+---
+
+## A-DRAFT-14. Realized availability is a legitimate input to a *published* board — MEASURED, FALSE
+
+**Claim (implicit, never stated until it was tested):** the G-score board can be published as a
+preseason draft board as built, because its measured edge over z-score comes from the
+variance-aware denominator.
+
+**Reality: most of that edge is availability, not variance, and on a preseason board availability
+measured from the season just finished is hindsight.** `measure_period_stats` aggregates *weekly*
+totals and counts weeks a player missed as zeros; z-score averages per game and is availability-blind.
+So the two metrics disagree loudest about players who were injured.
+
+**MEASURED 2026-08-23 (real 2025-26, pool 156).** `corr(games played, rank change vs z-score) = +0.627`.
+The eight largest "z-score overrates" all played 20–43 games; the eight largest "underrates" all played
+75–82. Restricting to players with ≥65 games collapses the overrated tail from −86 to −36.
+
+Scored in the draft replay (12-team, 6 seat rotations, 14,850 category decisions per arm), category
+win rate:
+
+| arm | 2025-26 (seed 7 / 11) | 2024-25 (seed 7 / 11) |
+|---|---|---|
+| G, realized availability | 65.2 / 66.2 | 63.6 / 64.3 |
+| G, neutral (active weeks only) | 59.1 / 58.6 | 52.4 / 52.7 |
+| G, projected availability | 56.3 / 58.1 | 53.9 / 53.9 |
+| z-score | 51.3 / 49.0 | 47.4 / 46.9 |
+| ADP | 45.8 / 46.1 | 48.0 / 48.1 |
+
+Three readings, in order of confidence:
+
+1. **The realized arm's ~+14pp over z-score is the published +13.4pp, and it is unavailable to a
+   drafter.** It knows who got hurt. It is the right number for grading a season that happened and the
+   wrong one for a board sold before one.
+2. **The honest forward claim is +5 to +9pp**, and it holds in all four runs across two seasons and
+   two seeds. Smaller than the headline, still much larger than z-score's margin over ADP — which is
+   itself negative in 2024-25, consistent with the standing finding that z-score ≈ following a list.
+3. **Neutral and projected are not separable at this sample.** The ordering flips by season *and* by
+   seed (neutral leads by 0.5–2.8pp in 2025-26, projected by 1.2–1.5pp in 2024-25), which is inside
+   seed noise. Per the standing rule on single-season deltas, neither is claimed to win.
+
+**Resolution.** All three treatments are implemented and labeled (`AvailabilityMode`), and
+`fantasy_gm/draft/xscore.py` still defaults to `include_idle_weeks=True` so nothing the replay
+harness reports has moved. The board defaults to `projected` as a **product** decision, not a
+measured one, and this is the reason to record rather than the claim: a board that says Wembanyama
+will play 58 games answers the drafter's question, and a board that pretends he will play 82 does
+not. Expected games played is rendered as its own column so a reader can separate the availability
+call from the variance call and disagree with either.
+
+**Two mechanism notes, both found by measurement rather than review.**
+
+- Availability is binomial over *games*, not Bernoulli over *weeks*. The variance inflation term is
+  `r(1−r)·μ²/n` for `n` games in a week; dropping the `/n` overstates it by n ≈ 3.5, and since it
+  scales with `μ²` the error lands almost entirely on high-production players. The first
+  implementation did drop it and ranked durable role players above every star.
+- A player with no games before the projection date must take the fitted **pool rate**, not 1.0.
+  Falling through to 1.0 treats a rookie as a nailed-on 82-game starter; it put two rookies in the
+  top eight of the first real board.
+
+**Open.** The realized arm understates the true availability effect, because idle weeks are counted
+only *inside* a player's observed span — a season-ending injury is invisible to it while an identical
+mid-season one is fully charged. Pinned in `tests/test_board.py`. Correcting it would widen the gap
+in reading (1) rather than narrow it.
+
+**Validate further:** a third season would separate neutral from projected. Only 2024-25 and 2025-26
+can be tested today, because projecting availability without lookahead needs at least one prior
+season in the store and 2023-24 is the earliest held.

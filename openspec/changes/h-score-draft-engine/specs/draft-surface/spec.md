@@ -79,3 +79,45 @@ outcome.
 
 - **WHEN** the supplied board contains no picks made by the engine
 - **THEN** grading still produces a projected profile, standing, and costly-pick analysis
+
+### Requirement: Static draft board with declared punt builds
+
+The system SHALL produce a complete ranked draft board from the variance-aware basis, for the
+balanced build and for declared punt builds, without requiring a live draft, league
+authentication, or the dynamic optimizer. Each board SHALL report per-category contribution and
+its rank difference against the z-score valuation over the same pool and category set.
+
+#### Scenario: A board is produced for a punt build
+
+- **WHEN** a board is requested with one or more categories declared as punted
+- **THEN** those categories are excluded from the scored set
+- **AND** the board is re-ranked over the remaining categories
+- **AND** each player's per-category contribution covers only the scored categories
+
+#### Scenario: The z-score comparison is like-for-like
+
+- **WHEN** a board reports a player's rank difference against z-score
+- **THEN** the z-score ranking is computed over the same player pool and the same category set
+
+### Requirement: Published boards state their availability treatment
+
+Because a player's availability materially changes their rank, a board SHALL state how
+availability entered the ranking, and SHALL NOT present a ranking derived from a completed
+season's realized availability as a forward-looking board without saying so.
+
+#### Scenario: Provenance travels with the board
+
+- **WHEN** a board is exported or rendered in any format
+- **THEN** it carries a provenance statement naming the season measured, the availability
+  treatment used, and — where availability is projected — the date the projection was made from
+
+#### Scenario: Projected availability cannot see the season it ranks
+
+- **WHEN** a board uses projected availability
+- **THEN** a projection date is required
+- **AND** the projection is fitted only from games known on or before that date
+
+#### Scenario: A player with no prior history is not assumed durable
+
+- **WHEN** a player in the pool has no games recorded before the projection date
+- **THEN** their availability is taken from the fitted pool rate rather than assumed complete

@@ -23,6 +23,14 @@ thesis — that z-score is the wrong metric for weekly H2H because it assumes fu
 is known exactly — and it holds decisively on real data against the incumbent every commercial
 tool uses. It is also a *shippable product on its own*: a static board, no optimizer required.
 
+> **Read +13.4pp with the amendment below (A-DRAFT-14, 2026-08-23).** Most of that margin is
+> *availability*, not variance: this replay counts weeks a player missed as zero-production
+> weeks, and z-score is availability-blind, so the two metrics disagree loudest about players
+> who got injured. That is correct here — the season already happened, and a missed week really
+> did lose the category — but it is **hindsight for a board published before a draft**. On a
+> forward-honest basis the same board beats z-score by **+5 to +9pp**, which is the number to
+> quote in anything a drafter reads. See "Availability is most of the edge" below.
+
 **z-score is barely better than following ADP** (49.7% vs 48.2%). Both sit at chance. That is
 worth sitting with: the metric the entire market runs on is, in this replay, worth almost
 nothing over reading down a consensus list.
@@ -151,6 +159,43 @@ So only **within-run** deltas are quotable. The reassuring part is that the `h_s
   what the grading measures. **The default is deliberately left on `REPRESENTATIVE` for now** —
   3.8 asks whether this implementation reproduces the paper at all, and that diagnostic needs
   the shipped configuration as its baseline. Flip the default once 3.8 resolves.
+
+## Availability is most of the edge (2026-08-23)
+
+The headline compares two metrics that differ in **two** ways, not one. G-score aggregates
+*weekly* totals and charges a player for weeks they missed; z-score averages *per game* and
+cannot see availability at all. Measured on 2025-26 over the 156-player pool,
+`corr(games played, rank change vs z-score) = +0.627` — the eight biggest "z-score overrates
+them" names played 20–43 games, the eight biggest "underrates" played 75–82.
+
+Scoring the availability treatments as separate arms in the same replay (12-team, 6 seat
+rotations, 14,850 category decisions per arm), category win rate:
+
+| arm | 2025-26 (seed 7 / 11) | 2024-25 (seed 7 / 11) |
+|---|---|---|
+| G, realized availability | 65.2 / 66.2 | 63.6 / 64.3 |
+| G, neutral (active weeks only) | 59.1 / 58.6 | 52.4 / 52.7 |
+| G, projected availability | 56.3 / 58.1 | 53.9 / 53.9 |
+| z-score | 51.3 / 49.0 | 47.4 / 46.9 |
+| adp | 45.8 / 46.1 | 48.0 / 48.1 |
+
+- **The realized arm reproduces the headline** (~+14pp over z-score) and is the arm the
+  +13.4pp figure comes from. It requires knowing who got hurt.
+- **The forward-honest claim is +5 to +9pp**, and it holds in all four runs across two seasons
+  and two seeds. Still far larger than z-score's own margin over ADP — which is *negative* in
+  2024-25, reinforcing the standing finding that z-score ≈ reading down a list.
+- **Neutral and projected are not separable here.** The ordering flips by season and by seed.
+  Per the standing rule on single-season deltas, neither is claimed to win; the board defaults
+  to `projected` on product grounds, stated as such in A-DRAFT-14.
+
+**This does not move any number already published**, because `include_idle_weeks` still
+defaults to True everywhere the replay harness touches. What changes is which number the
+*board* is allowed to advertise.
+
+**For the write-up (task 6.3):** lead with +5 to +9pp against z-score on a preseason-honest
+basis, and treat the availability result as its own finding rather than burying it — "the
+market's metric cannot see who plays" is a stronger and more defensible story than an inflated
+single number, and it is the one that survives someone checking it.
 
 ## Consequence for the plan
 

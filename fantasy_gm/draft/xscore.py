@@ -216,10 +216,21 @@ def xscore_basis(
     pool_size: int = 156,
     kappa: float = DEFAULT_KAPPA,
     mode: VarianceMode = VarianceMode.MEASURED,
+    include_idle_weeks: bool = True,
 ) -> XScoreBasis:
-    """Build the standardisation basis for ``season`` over the rosterable pool."""
+    """Build the standardisation basis for ``season`` over the rosterable pool.
+
+    ``include_idle_weeks`` defaults to True and **must stay that way for replay**: a week the
+    player missed is a week the manager lost the category, and modelling those away is what
+    produced the 31%-of-adds-never-played failure. It is exposed only so a *forward-looking*
+    board can separate the two effects — see :mod:`fantasy_gm.draft.board`, which found that
+    realized availability accounts for most of the board's disagreement with z-score and is
+    hindsight when the board is published before a season rather than scored after one.
+    """
     categories = list(categories or DEFAULT_CATEGORIES)
-    stats, pool = measure_period_stats(store, season, categories, pool_size)
+    stats, pool = measure_period_stats(
+        store, season, categories, pool_size, include_idle_weeks=include_idle_weeks
+    )
     scored = [p for p in pool if p in stats]
 
     bases: dict[str, CategoryBasis] = {}
@@ -260,13 +271,14 @@ def g_score_board(
     kappa: float = DEFAULT_KAPPA,
     mode: VarianceMode = VarianceMode.MEASURED,
     limit: int | None = None,
+    include_idle_weeks: bool = True,
 ) -> list[tuple[str, float, dict[str, float]]]:
     """Ranked board: ``[(player_id, total, {category: contribution})]``, best first.
 
     The per-category breakdown is what makes a pick explainable — and what the H₀ optimizer
     consumes when it decides which categories a roster is already winning.
     """
-    basis = xscore_basis(store, season, categories, pool_size, kappa, mode)
+    basis = xscore_basis(store, season, categories, pool_size, kappa, mode, include_idle_weeks)
     rows = [
         (p, round(basis.total(p), 4), {c: round(basis.category_score(p, c), 4)
                                        for c in basis.categories})

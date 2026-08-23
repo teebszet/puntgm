@@ -14,6 +14,7 @@ from fantasy_gm.data.cache import RawCache
 from fantasy_gm.data.simulate import simulate_league
 from fantasy_gm.data.store import Store
 from fantasy_gm.data.synthetic import seed_synthetic_season
+from fantasy_gm.draft.board import PUNT_BUILDS, AvailabilityMode
 from fantasy_gm.engine.engine import DecisionEngine
 from fantasy_gm.log.reclog import RecommendationLog
 
@@ -487,6 +488,65 @@ def cmd_yahoo_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_board(args: argparse.Namespace) -> int:
+    from fantasy_gm.draft.board import (
+        all_builds,
+        biggest_movers,
+        build_board,
+        export,
+        render_table,
+    )
+
+    config = Config()
+    store = _store(config)
+    availability = AvailabilityMode(args.availability)
+    as_of = args.as_of
+    if availability is AvailabilityMode.PROJECTED and not as_of:
+        print("--availability projected needs --as-of (a date before the season starts, so "
+              "the availability fit sees no part of the season being ranked)", file=sys.stderr)
+        return 1
+
+    try:
+        if args.punt:
+            punt = tuple(c.strip() for c in args.punt.split(",") if c.strip())
+            boards = [build_board(store, args.season, punt,
+                                  availability=availability, as_of=as_of)]
+        elif args.build == "all":
+            boards = all_builds(store, args.season,
+                                availability=availability, as_of=as_of)
+        else:
+            if args.build not in PUNT_BUILDS:
+                print(f"unknown build {args.build!r}; known: {', '.join(PUNT_BUILDS)}",
+                      file=sys.stderr)
+                return 1
+            boards = [build_board(store, args.season, PUNT_BUILDS[args.build],
+                                  build=args.build, availability=availability, as_of=as_of)]
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if not boards or not boards[0].rows:
+        print(f"no data to rank for {args.season} (backfill it first)", file=sys.stderr)
+        return 1
+
+    for board in boards:
+        print(render_table(board, top=args.top))
+        if args.movers:
+            under, over = biggest_movers(board)
+            print("\n  z-score underrates (this board rates them higher):")
+            for r in under:
+                print(f"    +{r.z_delta:<3} {r.player_name:<26} G#{r.rank} vs z#{r.z_rank}")
+            print("  z-score overrates:")
+            for r in over:
+                print(f"    {r.z_delta:<4} {r.player_name:<26} G#{r.rank} vs z#{r.z_rank}")
+        print()
+
+    if args.out:
+        written = export(boards, args.out, top=args.top if args.top > 0 else None)
+        print(f"wrote {len(written)} files to {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -628,6 +688,28 @@ def build_parser() -> argparse.ArgumentParser:
     yi.add_argument("--force", action="store_true",
                     help="load despite unresolved players / unverified history")
     yi.set_defaults(func=cmd_yahoo_import)
+
+    bd = sub.add_parser("board",
+                        help="static G-score draft board, with punt builds (the free surface)")
+    bd.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS,
+                    help="season whose per-week production the board is measured from")
+    bd.add_argument("--build", default="balanced",
+                    help=f"named punt build, or 'all' ({', '.join(PUNT_BUILDS)})")
+    bd.add_argument("--punt", default=None,
+                    help="comma-separated categories to punt; overrides --build")
+    bd.add_argument("--availability", default=AvailabilityMode.PROJECTED,
+                    choices=[m.value for m in AvailabilityMode],
+                    help="how availability enters the rank (see fantasy_gm.draft.board)")
+    bd.add_argument("--as-of", dest="as_of", default=None,
+                    help="date the availability projection is made from; required for "
+                         "--availability projected, and must precede the season to avoid "
+                         "lookahead")
+    bd.add_argument("--top", type=int, default=30)
+    bd.add_argument("--movers", action="store_true",
+                    help="also show where this board most disagrees with z-score")
+    bd.add_argument("--out", default=None,
+                    help="directory to export <build>.json / <build>.md and index.json into")
+    bd.set_defaults(func=cmd_board)
     return p
 
 
