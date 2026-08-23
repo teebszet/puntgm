@@ -367,3 +367,68 @@ def format_replay(results: dict[str, StrategyResult]) -> str:
             f"{100 * r.matchup_win_rate:>9.1f}% {r.category_games:>8d}"
         )
     return "\n".join(lines)
+
+
+def run_board_replay(
+    store,
+    season: str,
+    orders: dict[str, list[str]],
+    pool: list[str],
+    settings: DraftSettings | None = None,
+    rotations: int = 6,
+    seed: int = 7,
+    include_adp: bool = True,
+    schedule: bool = False,
+) -> dict[str, StrategyResult]:
+    """Grade a set of *static boards* against each other in one room.
+
+    Separate from :func:`run_draft_replay` because that function owns the H₀ field and builds
+    its own strategies; this one takes explicit orderings so an arbitrary ladder of boards can
+    be compared without an optimizer in the room.
+
+    **Keep the room small and the arms dissimilar.** Every seat drafts from one shared pool, so
+    two near-identical boards placed in the same room take turns removing each other's next
+    pick and both score worse than either would alone. That is a property of the draft, not of
+    the boards. Comparing a ladder of five z-score variants therefore means five two-arm rooms,
+    not one six-arm room — see ``scripts/steelman_z_replay.py``.
+    """
+    settings = settings or DraftSettings()
+    names = list(orders)
+    strategies = {n: static_order_strategy(o) for n, o in orders.items()}
+    adp_order = derive_adp_order(store, season)
+    if include_adp:
+        names.append("adp")
+
+    n_teams = settings.n_teams
+    results = {n: StrategyResult(n) for n in names}
+
+    for rot in range(rotations):
+        seats: list = [None] * n_teams
+        seat_of: dict[str, int] = {}
+        for i, name in enumerate(names):
+            seat = (i + rot) % n_teams
+            seat_of[name] = seat
+            seats[seat] = (
+                bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
+                if name == "adp"
+                else strategies[name]
+            )
+        for s in range(n_teams):
+            if seats[s] is None:
+                seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
+
+        rosters = snake_draft(seats, list(pool), settings)
+        graded = score_rosters(store, season, rosters, settings, schedule=schedule)
+        for name in names:
+            g = graded[seat_of[name]]
+            r = results[name]
+            r.category_wins += g["cat_wins"]
+            r.category_games += g["cat_games"]
+            r.matchup_wins += g["matchup_wins"]
+            r.matchups += g["matchups"]
+            r.by_seat[seat_of[name]][0] += g["cat_wins"]
+            r.by_seat[seat_of[name]][1] += g["cat_games"]
+            for c, (w, n) in g["per_cat"].items():
+                r.per_category[c][0] += w
+                r.per_category[c][1] += n
+    return results
