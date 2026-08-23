@@ -112,6 +112,9 @@ class HScoreEngine:
         lr: float = 0.15,
         tie_margin: float = 0.0,
         opponent_model: OpponentModel = OpponentModel.REPRESENTATIVE,
+        future_from_shortlist: bool = True,
+        normalise_weights: bool = False,
+        future_slices: bool = False,
     ):
         self.basis = basis
         self.settings = settings or DraftSettings()
@@ -120,6 +123,11 @@ class HScoreEngine:
         self.lr = lr
         self.tie_margin = tie_margin
         self.opponent_model = OpponentModel(opponent_model)
+        # Both default to the shipped behaviour so every number already in `results.md`
+        # reproduces bit-for-bit; task 3.8 turns them off to measure what they cost.
+        self.future_from_shortlist = future_from_shortlist
+        self.normalise_weights = normalise_weights
+        self.future_slices = future_slices
         self._warm: list[float] | None = None
 
     # --- roster aggregation --------------------------------------------------
@@ -218,6 +226,78 @@ class HScoreEngine:
                     var[c] += w * ps.std**2
         return mean, var
 
+    def _future_block(
+        self, available: list[str], weights: list[float], n_picks: int, stride: int
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """Total mean and variance of ALL ``n_picks`` remaining picks, each drawn from the pool
+        that will actually still be there when that pick comes round.
+
+        The shipped model values one future pick and multiplies by the number of them, so a
+        thirteenth-round pick is priced identically to a third-round pick. It is not close: by
+        round thirteen the top ``12 x 12`` players are gone. Measured, the shipped engine
+        expects *every* remaining round — its own and its opponent's — to land on roughly the
+        25th-best player on the board. A team whose future is that good has little reason to
+        care which player it takes now, which blunts exactly the marginal comparison H₀ exists
+        to make.
+
+        (Widening the pool alone does not fix this, and we checked before assuming: at the
+        shipped softmax temperature almost all the probability mass sits on the top of the
+        board whatever the pool contains, so drawing from all 144 remaining players instead of
+        the 40-man shortlist moves the expected pick by about 1%. The defect is *where in the
+        board the pick sits*, not how many players are nominally in the bag.)
+
+        ``available`` is ranked, so the pool at future pick ``j`` is the suffix starting at
+        ``(j-1) * stride`` — one player per team per round, on average, taken ahead of us. That
+        every slice is a *suffix* is what makes this affordable: one backward accumulation over
+        the pool serves all the slices at once, so the whole block costs the same as the single
+        softmax it replaces.
+        """
+        cats = self.settings.categories
+        zero = ({c: 0.0 for c in cats}, {c: 0.0 for c in cats})
+        if n_picks <= 0 or not available:
+            return zero
+
+        scores = []
+        for pid in available:
+            s = 0.0
+            for w, c in zip(weights, cats, strict=True):
+                s += w * self.basis.category_score(pid, c)
+            scores.append(s)
+        top = max(scores)
+        exps = [math.exp(self.softmax_temp * (v - top)) for v in scores]
+
+        n = len(available)
+        # Suffix accumulators, built once: sum of weight, of weight*mean, of weight*mean^2 and
+        # of weight*tau^2, per category, from each index to the end of the board.
+        suf_z = [0.0] * (n + 1)
+        suf_a = {c: [0.0] * (n + 1) for c in cats}
+        suf_b = {c: [0.0] * (n + 1) for c in cats}
+        suf_t = {c: [0.0] * (n + 1) for c in cats}
+        for i in range(n - 1, -1, -1):
+            e = exps[i]
+            stats = self.basis.stats.get(available[i])
+            suf_z[i] = suf_z[i + 1] + e
+            for c in cats:
+                ps = stats.get(c) if stats else None
+                m = ps.mean if ps else 0.0
+                t2 = ps.std**2 if ps else 0.0
+                suf_a[c][i] = suf_a[c][i + 1] + e * m
+                suf_b[c][i] = suf_b[c][i + 1] + e * m * m
+                suf_t[c][i] = suf_t[c][i + 1] + e * t2
+
+        mean = {c: 0.0 for c in cats}
+        var = {c: 0.0 for c in cats}
+        for j in range(n_picks):
+            start = min(j * stride, n - 1)
+            z = suf_z[start]
+            if z <= 0.0:
+                continue
+            for c in cats:
+                mu = suf_a[c][start] / z
+                mean[c] += mu
+                var[c] += max(suf_b[c][start] / z - mu * mu, 0.0) + suf_t[c][start] / z
+        return mean, var
+
     # --- the objective -------------------------------------------------------
 
     def _opponent_totals(
@@ -272,10 +352,18 @@ class HScoreEngine:
         my_var = dict(base_var)
 
         if my_future > 0:
-            fm, fv = self._weighted_future(available, weights)
-            for c in cats:
-                my_mean[c] += my_future * fm[c]
-                my_var[c] += my_future * fv[c]
+            if self.future_slices:
+                fm, fv = self._future_block(
+                    available, weights, my_future, self.settings.n_teams
+                )
+                for c in cats:
+                    my_mean[c] += fm[c]
+                    my_var[c] += fv[c]
+            else:
+                fm, fv = self._weighted_future(available, weights)
+                for c in cats:
+                    my_mean[c] += my_future * fm[c]
+                    my_var[c] += my_future * fv[c]
 
         total = 0.0
         acc = [0.0] * len(cats)
@@ -283,10 +371,16 @@ class HScoreEngine:
             op_mean = dict(op_mean0)
             op_var = dict(op_var0)
             if opp_future > 0 and opp_future_profile is not None:
-                om, ov = opp_future_profile
-                for c in cats:
-                    op_mean[c] += opp_future * om[c]
-                    op_var[c] += opp_future * ov[c]
+                if isinstance(opp_future_profile, dict):
+                    om, ov = opp_future_profile[opp_future]
+                    for c in cats:
+                        op_mean[c] += om[c]
+                        op_var[c] += ov[c]
+                else:
+                    om, ov = opp_future_profile
+                    for c in cats:
+                        op_mean[c] += opp_future * om[c]
+                        op_var[c] += opp_future * ov[c]
             mean_diffs = {c: my_mean[c] - op_mean[c] for c in cats}
             var_diffs = {c: max(my_var[c] + op_var[c], 1e-12) for c in cats}
             probs = category_probabilities(mean_diffs, var_diffs, self.settings, self.tie_margin)
@@ -342,6 +436,8 @@ class HScoreEngine:
                 w[i] += self.lr * mhat / (math.sqrt(vhat) + eps)   # ascent
             # keep weights bounded so the softmax cannot saturate into a single player
             w = [max(-4.0, min(4.0, x)) for x in w]
+            if self.normalise_weights:
+                w = _renormalise(w, n)
             val, probs = self._evaluate(
                 my_totals, opponents, available, my_future, opp_future_profile, w
             )
@@ -373,7 +469,16 @@ class HScoreEngine:
         if not pool:
             return []
 
-        pool = sorted(pool, key=lambda p: -self.basis.total(p))[: max(shortlist, top_n)]
+        ranked = sorted(pool, key=lambda p: -self.basis.total(p))
+        shortlisted = ranked[: max(shortlist, top_n)]
+        # ``shortlist`` exists to bound how many players get the full gradient descent. It was
+        # also, silently, bounding the pool that *future picks* are drawn from — so with the
+        # default of 40 the engine modelled all twelve of its remaining rounds, and all twelve
+        # of its opponent's, as landing on top-40 players when a twelve-team draft will in fact
+        # consume about 150. Both sides were inflated, but the tilt the strategy weights buy is
+        # measured against that pool, so it is not a wash.
+        future_universe = shortlisted if self.future_from_shortlist else ranked
+        pool = shortlisted
 
         n_rounds = self.settings.n_rounds
         my_future_after = max(0, n_rounds - len(state.my_roster) - 1)
@@ -397,21 +502,37 @@ class HScoreEngine:
         # computed once per pick rather than once per gradient step. That hoist is what keeps
         # FIELD affordable: the extra opponents only add the O(C²) Poisson-binomial DP, while
         # the softmax over the pool — the actual cost — is now shared by all of them.
-        opp_profile = self._weighted_future(pool, [1.0] * len(cats))
+        neutral = [1.0] * len(cats)
+
+        def opp_future_for(avail: list[str]):
+            """The opposing side's unknown picks, priced the same way ours are.
+
+            Under ``future_slices`` a count of remaining picks no longer scales one profile, so
+            this returns a total per distinct remaining-pick count instead. ``FIELD`` is the
+            only model that produces more than one count, and never more than a handful.
+            """
+            if not self.future_slices:
+                return self._weighted_future(avail, neutral)
+            return {
+                k: self._future_block(avail, neutral, k, self.settings.n_teams)
+                for k in {o[2] for o in opponents}
+            }
+
+        opp_profile = opp_future_for(future_universe)
 
         # Baseline: the objective if we passed. Candidate value is reported as a delta from
         # this, so "how much does this pick actually move the matchup?" is legible.
         base_val, _ = self._evaluate(
-            self._totals(state.my_roster), opponents, pool,
+            self._totals(state.my_roster), opponents, future_universe,
             my_future_after + 1, opp_profile, start,
         )
 
         out: list[Candidate] = []
         for pid in pool:
-            rest = [p for p in pool if p != pid]
+            rest = [p for p in future_universe if p != pid]
             val, probs, w = self._optimise_weights(
                 self._totals([*state.my_roster, pid]), opponents, rest,
-                my_future_after, self._weighted_future(rest, [1.0] * len(cats)), start,
+                my_future_after, opp_future_for(rest), start,
             )
             out.append(
                 Candidate(
@@ -433,6 +554,28 @@ class HScoreEngine:
 
     def reset_warm_start(self) -> None:
         self._warm = None
+
+
+def _renormalise(w: list[float], n: int) -> list[float]:
+    """Project the strategy weights back onto a fixed L1 norm (the paper's constraint).
+
+    The published formulation holds ``Σ j_C = 1`` and renormalises after every gradient step.
+    Without it the weight scale and the softmax temperature are the same parameter twice: the
+    optimizer can sharpen the future-pick distribution simply by inflating every weight, which
+    is a direction in the objective that changes the answer without expressing any strategy.
+    That is a textbook way to land in a bad local optimum, and this engine had no constraint at
+    all — only a ±4 clip, which bounds the degeneracy rather than removing it.
+
+    We hold the **L1** norm rather than the signed sum. ``Σ j = 1`` is only well defined while
+    every weight is positive, as it is in the paper, where punting shows up as a weight near
+    zero; this engine allows negative weights and the signed sum can pass through zero. Fixing
+    ``Σ|j| = n`` is the same constraint on the positive orthant, up to the constant that makes
+    the neutral vector ``[1, …, 1]`` a fixed point.
+    """
+    scale = sum(abs(x) for x in w)
+    if scale < 1e-9:
+        return [1.0] * n
+    return [x * n / scale for x in w]
 
 
 def _representative(opponent_rosters: list[list[str]]) -> list[str]:

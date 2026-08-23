@@ -264,6 +264,7 @@ def build_strategies(
     rng: random.Random,
     engine_steps: int = 8,
     opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
+    engine_variants: dict[str, dict] | None = None,
 ) -> dict:
     """The field: H₀ vs G-score vs z-score vs ADP.
 
@@ -289,6 +290,13 @@ def build_strategies(
         out[name] = hscore_strategy(
             HScoreEngine(basis, settings, steps=engine_steps, opponent_model=arm)
         )
+    # Extra H₀ arms differing only in engine configuration, seated in the *same* room as the
+    # shipped one so the comparison is not confounded by which pool each faced. Task 3.8 uses
+    # this to carry the paper-faithful engine into the real-data replay.
+    for name, kwargs in (engine_variants or {}).items():
+        out[name] = hscore_strategy(
+            HScoreEngine(basis, settings, steps=engine_steps, **kwargs)
+        )
     return out
 
 
@@ -304,6 +312,7 @@ def run_draft_replay(
     opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
     schedule: bool = False,
     mirror: bool = True,
+    engine_variants: dict[str, dict] | None = None,
 ) -> dict[str, StrategyResult]:
     """Draft and grade every strategy at several seats.
 
@@ -328,7 +337,7 @@ def run_draft_replay(
     settings = settings or DraftSettings()
     rng = random.Random(seed)
     strategies = build_strategies(
-        store, season, basis, settings, rng, engine_steps, opponent_arms
+        store, season, basis, settings, rng, engine_steps, opponent_arms, engine_variants
     )
     names = list(strategies)
     n_teams = settings.n_teams
@@ -386,6 +395,93 @@ def format_replay(results: dict[str, StrategyResult]) -> str:
     return "\n".join(lines)
 
 
+def run_strategy_replay(
+    store,
+    season: str,
+    strategies: dict[str, object],
+    pool: list[str],
+    settings: DraftSettings | None = None,
+    rotations: int = 6,
+    seed: int = 7,
+    schedule: bool = False,
+    mirror: bool = True,
+) -> dict[str, StrategyResult]:
+    """Grade a room of arbitrary strategies against each other, seat-mirrored.
+
+    ``strategies`` maps an arm name to either a pick function ``(state, available) -> pid`` or a
+    factory ``(rotation) -> pick function``, so a stateful arm (an ADP bot that must be reseeded
+    per rotation, an H₀ engine that warm-starts) can be rebuilt per room while a static board is
+    simply reused.
+
+    **Keep the room small and the arms dissimilar.** Every seat drafts from one shared pool, so
+    two near-identical arms placed together take turns removing each other's next pick and both
+    score worse than either would alone. That is a property of the draft, not of the arms. A
+    ladder of variants therefore means a series of two-arm rooms, not one wide room.
+
+    Seat *adjacency*, not just seat quality, has to be controlled for. Named arms are placed at
+    consecutive seats, and a snake draft over an odd number of rounds gives the lower-seated of
+    two neighbours the first of the pair in one more round than it gives its neighbour. Two
+    identical arms are not a tie under that arrangement: measured, the same board in both seats
+    scored up to **+9.5pp** for the lower seat, which is larger than any real effect this
+    harness has ever been used to report. Rotating seats does not fix it, because the arms
+    rotate together and stay adjacent in the same order.
+
+    ``mirror`` does fix it, exactly, for a two-arm room: every rotation is also run with the arm
+    order reversed, so each arm is ahead of the other equally often.
+    """
+    settings = settings or DraftSettings()
+    names = list(strategies)
+    adp_order = derive_adp_order(store, season)
+    n_teams = settings.n_teams
+    results = {n: StrategyResult(n) for n in names}
+    orderings = [names, list(reversed(names))] if mirror else [names]
+
+    for rot in range(rotations):
+        for placement in orderings:
+            seats: list = [None] * n_teams
+            seat_of: dict[str, int] = {}
+            for i, name in enumerate(placement):
+                seat = (i + rot) % n_teams
+                seat_of[name] = seat
+                factory = strategies[name]
+                seats[seat] = factory(rot) if callable_factory(factory) else factory
+            for sidx in range(n_teams):
+                if seats[sidx] is None:
+                    seats[sidx] = bot_strategy(
+                        AdpBot(adp_order, random.Random(seed + rot * 100 + sidx))
+                    )
+
+            rosters = snake_draft(seats, list(pool), settings)
+            graded = score_rosters(store, season, rosters, settings, schedule=schedule)
+            for name in names:
+                g = graded[seat_of[name]]
+                r = results[name]
+                r.category_wins += g["cat_wins"]
+                r.category_games += g["cat_games"]
+                r.matchup_wins += g["matchup_wins"]
+                r.matchups += g["matchups"]
+                r.by_seat[seat_of[name]][0] += g["cat_wins"]
+                r.by_seat[seat_of[name]][1] += g["cat_games"]
+                for c, (w, n) in g["per_cat"].items():
+                    r.per_category[c][0] += w
+                    r.per_category[c][1] += n
+    return results
+
+
+def callable_factory(obj) -> bool:
+    """True for a ``(rotation) -> strategy`` factory, false for a strategy itself.
+
+    Both are callables, so they are told apart by arity — a strategy takes ``(state,
+    available)``, a factory takes ``(rotation)``.
+    """
+    import inspect
+
+    try:
+        return len(inspect.signature(obj).parameters) == 1
+    except (TypeError, ValueError):
+        return False
+
+
 def run_board_replay(
     store,
     season: str,
@@ -402,64 +498,16 @@ def run_board_replay(
 
     Separate from :func:`run_draft_replay` because that function owns the H₀ field and builds
     its own strategies; this one takes explicit orderings so an arbitrary ladder of boards can
-    be compared without an optimizer in the room.
-
-    **Keep the room small and the arms dissimilar.** Every seat drafts from one shared pool, so
-    two near-identical boards placed in the same room take turns removing each other's next
-    pick and both score worse than either would alone. That is a property of the draft, not of
-    the boards. Comparing a ladder of five z-score variants therefore means five two-arm rooms,
-    not one six-arm room — see ``scripts/steelman_z_replay.py``.
+    be compared without an optimizer in the room. See
+    :func:`run_strategy_replay`, which it delegates to, for the seat-mirroring argument and for
+    why a ladder means a series of two-arm rooms rather than one wide room.
     """
     settings = settings or DraftSettings()
-    names = list(orders)
-    strategies = {n: static_order_strategy(o) for n, o in orders.items()}
     adp_order = derive_adp_order(store, season)
+    arms: dict[str, object] = {n: static_order_strategy(o) for n, o in orders.items()}
     if include_adp:
-        names.append("adp")
-
-    n_teams = settings.n_teams
-    results = {n: StrategyResult(n) for n in names}
-
-    # Seat *adjacency*, not just seat quality, has to be controlled for. Named arms are placed
-    # at consecutive seats, and a snake draft over an odd number of rounds gives the
-    # lower-seated of two neighbours the first of the pair in one more round than it gives its
-    # neighbour. Two identical boards are not a tie under that arrangement: measured here, the
-    # same board in both seats scored up to +9.5pp for the lower seat, which is larger than any
-    # real effect this harness has ever been used to report. Rotating seats does not fix it,
-    # because the arms rotate together and stay adjacent in the same order.
-    #
-    # Mirroring does fix it, exactly, for a two-arm room: every rotation is also run with the
-    # arm order reversed, so each arm is ahead of the other equally often.
-    orderings = [names, list(reversed(names))] if mirror else [names]
-
-    for rot in range(rotations):
-        for placement in orderings:
-          seats: list = [None] * n_teams
-          seat_of: dict[str, int] = {}
-          for i, name in enumerate(placement):
-              seat = (i + rot) % n_teams
-              seat_of[name] = seat
-              seats[seat] = (
-                  bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
-                  if name == "adp"
-                  else strategies[name]
-              )
-          for s in range(n_teams):
-              if seats[s] is None:
-                  seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
-
-          rosters = snake_draft(seats, list(pool), settings)
-          graded = score_rosters(store, season, rosters, settings, schedule=schedule)
-          for name in names:
-              g = graded[seat_of[name]]
-              r = results[name]
-              r.category_wins += g["cat_wins"]
-              r.category_games += g["cat_games"]
-              r.matchup_wins += g["matchup_wins"]
-              r.matchups += g["matchups"]
-              r.by_seat[seat_of[name]][0] += g["cat_wins"]
-              r.by_seat[seat_of[name]][1] += g["cat_games"]
-              for c, (w, n) in g["per_cat"].items():
-                  r.per_category[c][0] += w
-                  r.per_category[c][1] += n
-    return results
+        arms["adp"] = lambda rot: bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
+    return run_strategy_replay(
+        store, season, arms, pool, settings,
+        rotations=rotations, seed=seed, schedule=schedule, mirror=mirror,
+    )
