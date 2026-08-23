@@ -13,6 +13,13 @@ from fantasy_gm.engine.projection import Projector
 from fantasy_gm.models import Perspective, ReconciliationMove
 
 
+def _rank_direction(cat: str) -> int:
+    """Sort direction for the shortlist. Percentage categories are ranked by *impact*,
+    which is already signed (higher is better, negative means actively harmful), so they
+    take +1 rather than the raw category direction."""
+    return 1 if cat in PERCENTAGE_CATEGORIES else CATEGORY_DIRECTION[cat]
+
+
 class Reconciler:
     def __init__(self, config: Config | None = None):
         self.config = config or Config()
@@ -38,19 +45,22 @@ class Reconciler:
         if not wire or not drops:
             return []
 
-        contested = set(proj.contested())
+        # A15: only chase categories the wire can actually move. A category that is
+        # contested but not actionable (ft_pct) would otherwise absorb the team's single
+        # move on a coin flip; better to spend it elsewhere, or not at all.
+        contested = set(proj.contested()) - self.config.non_actionable_categories
         base_wp = {c: proj.categories[c].win_prob for c in self.config.categories}
         drop = drops[0]
         if not contested:
-            return []  # nothing to swing — don't churn the roster
+            return []  # nothing winnable to swing — don't churn the roster
         # Shortlist the best available add for EACH contested category (per-cat, so a
         # specialist like a FG% shooter isn't missed by a global production sort). Then
         # re-project each and keep only moves that improve a *contested* cat — never one
         # that's already safe or gone.
         cand: dict[str, tuple] = {}
         for cat in contested:
-            top = sorted(wire, key=lambda w, c=cat: -self._cat_recent(store, w[0], as_of, c)
-                         * CATEGORY_DIRECTION[c])[:6]
+            top = sorted(wire, key=lambda w, c=cat: -self._cat_recent(
+                store, w[0], as_of, c, season) * _rank_direction(c))[:6]
             for w in top:
                 cand[w[0]] = w
         evaluated = []
@@ -112,17 +122,40 @@ class Reconciler:
         ).fetchone()
         return row["player_name"] if row else pid
 
-    def _cat_recent(self, store, pid, as_of, cat) -> float:
-        """Recent per-game production in one category (volume-weighted for percentages)."""
+    def _cat_recent(self, store, pid, as_of, cat, season=None) -> float:
+        """Recent contribution in one category, per *scheduled* game.
+
+        Two corrections, both the same mistake in different clothing — ranking on a rate
+        instead of on what a roster spot actually returns:
+
+        * **A13 (counting cats)** — weight per-played-game production by the participation
+          rate. Ranking by production-when-they-play surfaces players who score well on the
+          nights they appear but rarely appear; 31% of recommended adds played zero games.
+        * **Percentage cats** — rank by volume-weighted *impact*,
+          ``(rate − league_rate) × attempts_per_scheduled_game``, never by the rate itself.
+          Ranking on rate picked players shooting 86.7% on 3 attempts a game: a spectacular
+          rate that moves a roster's aggregate percentage by almost nothing, on a sample so
+          small the rate is mostly noise. Impact can be negative — a poor shooter on volume
+          actively hurts — which the rate form could never express.
+        """
         logs = store.player_logs_asof(as_of, player_id=pid)[-self.config.recent_games_window:]
         if not logs:
             return 0.0
+        q = store.participation_rate(pid, as_of, window=self.config.participation_window)
+        q = 1.0 if q is None else q
         if cat in PERCENTAGE_CATEGORIES:
+            from fantasy_gm.valuation import league_percentage_rates
+
             mk, at = PERCENTAGE_CATEGORIES[cat]
             made = sum(lg.stats.get(mk, 0.0) for lg in logs)
             att = sum(lg.stats.get(at, 0.0) for lg in logs)
-            return made / att if att > 0 else 0.0
-        return sum(lg.stats.get(cat, 0.0) for lg in logs) / len(logs)
+            if att <= 0:
+                return 0.0
+            league_pct = league_percentage_rates(
+                store, season or self.config.primary_season).get(cat, 0.0)
+            att_per_scheduled = (att / len(logs)) * q
+            return (made / att - league_pct) * att_per_scheduled
+        return (sum(lg.stats.get(cat, 0.0) for lg in logs) / len(logs)) * q
 
     def _plays_on(self, store, pid, as_of) -> bool:
         nba_team = store.player_team(pid, as_of)

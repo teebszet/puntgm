@@ -392,6 +392,101 @@ def cmd_adp(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_manage(args: argparse.Namespace) -> int:
+    """Give every team in a simulated league a baseline manager, so the wire drains."""
+    from fantasy_gm.data.manage import apply_baseline_management
+
+    config = Config()
+    store = _store(config)
+    try:
+        report = apply_baseline_management(
+            store, args.league, config, moves_per_period=args.moves, force=args.force)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"{args.league}: {report.moves} moves over {report.periods} periods "
+          f"({report.teams} teams, {report.skipped_no_candidate} periods with no useful move)")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Strategy comparison: the engine's calls against naive baselines on identical slots."""
+    from fantasy_gm.validation.replay import (
+        STRATEGIES,
+        by_category,
+        extract_slots,
+        run_strategies,
+        summarize,
+    )
+
+    config = Config()
+    store = _store(config)
+    slots = []
+    for lg in args.leagues:
+        s = extract_slots(store, lg, config)
+        print(f"{lg}: {len(s)} decision slots", file=sys.stderr)
+        slots += s
+    if not slots:
+        print("no decision slots (simulate a league first)", file=sys.stderr)
+        return 1
+
+    results = run_strategies(store, slots, args.season, config)
+    print(f"\nstrategy comparison — {len(slots)} decision slots, season {args.season}")
+    print("(same target category and drop for every strategy; only the ADD varies)\n")
+    print(f"{'strategy':<12}{'n':>6}{'hit':>6}{'tie':>6}{'miss':>6}"
+          f"{'hit%':>8}{'decided%':>10}{'±se':>8}{'avg delta':>11}{'add DNP':>9}")
+    for name in STRATEGIES:
+        s = summarize(results[name])
+        if not s["n"]:
+            continue
+        print(f"{name:<12}{s['n']:>6}{s['hit']:>6}{s['tie']:>6}{s['miss']:>6}"
+              f"{s['hit_rate']:>8.3f}{s['hit_rate_decided']:>10.3f}{s['se']:>8.4f}"
+              f"{s['avg_delta']:>11.2f}{s['add_dnp']:>9}")
+
+    if args.by_category:
+        for name in args.by_category:
+            print(f"\n--- {name}, by target category ---")
+            for c, s in by_category(results[name]).items():
+                print(f"  {c:<8}{s['n']:>5}{s['hit_rate']:>8.3f}{s['avg_delta']:>10.2f}")
+    return 0
+
+
+def cmd_yahoo_check(args: argparse.Namespace) -> int:
+    """Verify a token can actually reach the Fantasy API (a valid token is not enough)."""
+    from pathlib import Path
+
+    from fantasy_gm.data.yahoo_fetch import check_access
+
+    token = Path(args.token).read_text().strip()
+    ok, message = check_access(token)
+    print(("OK  " if ok else "FAIL ") + message)
+    return 0 if ok else 1
+
+
+def cmd_yahoo_import(args: argparse.Namespace) -> int:
+    """Load a fetched Yahoo snapshot as a real league (read-only, point-in-time)."""
+    import json
+
+    from fantasy_gm.data.yahoo_import import ImportRefused, import_snapshot
+
+    config = Config()
+    store = _store(config)
+    with open(args.snapshot) as fh:
+        snapshot = json.load(fh)
+    overrides = {}
+    if args.overrides:
+        with open(args.overrides) as fh:
+            overrides = json.load(fh)
+    try:
+        report = import_snapshot(store, snapshot, overrides=overrides, force=args.force)
+    except ImportRefused as exc:
+        print(f"import refused: {exc}", file=sys.stderr)
+        return 1
+    for k, v in report.items():
+        print(f"  {k}: {v}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -504,6 +599,35 @@ def build_parser() -> argparse.ArgumentParser:
                     help="date the market snapshot was taken")
     ad.add_argument("--source", default="yahoo")
     ad.set_defaults(func=cmd_adp)
+    mg = sub.add_parser("manage",
+                        help="give simulated teams a baseline manager so the wire drains")
+    mg.add_argument("league", help="league id to manage")
+    mg.add_argument("--moves", type=int, default=1, help="moves per team per scoring period")
+    mg.add_argument("--force", action="store_true",
+                    help="run a second pass (management is not idempotent)")
+    mg.set_defaults(func=cmd_manage)
+
+    cp = sub.add_parser("compare",
+                        help="engine vs naive baselines on identical decision slots")
+    cp.add_argument("leagues", nargs="+", help="league ids to pool slots from")
+    cp.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    cp.add_argument("--by-category", nargs="*", default=None,
+                    metavar="STRATEGY", help="also break these strategies down per category")
+    cp.set_defaults(func=cmd_compare)
+
+    yc = sub.add_parser("yahoo-check",
+                        help="verify an access token can actually reach the Fantasy API")
+    yc.add_argument("--token", default="data/yahoo_access_token.txt",
+                    help="file containing the bearer token")
+    yc.set_defaults(func=cmd_yahoo_check)
+
+    yi = sub.add_parser("yahoo-import",
+                        help="load a fetched Yahoo snapshot as a real league (read-only)")
+    yi.add_argument("snapshot", help="path to the JSON snapshot from yahoo_fetch")
+    yi.add_argument("--overrides", help="JSON map of yahoo_player_id -> nba_player_id")
+    yi.add_argument("--force", action="store_true",
+                    help="load despite unresolved players / unverified history")
+    yi.set_defaults(func=cmd_yahoo_import)
     return p
 
 

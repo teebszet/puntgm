@@ -31,6 +31,12 @@ BUNDLES: dict[str, tuple[str, ...]] = {
 _DELTA = 0.03  # win-prob move that counts as a real gain/concede
 
 
+def _rank_direction(cat: str) -> int:
+    """Percentage cats are ranked by signed impact, so they sort +1 regardless of the raw
+    category direction (see ``Reconciler._cat_recent``)."""
+    return 1 if cat in PERCENTAGE_CATEGORIES else CATEGORY_DIRECTION[cat]
+
+
 @dataclass(frozen=True)
 class WireOption:
     category: str          # the contested category considered
@@ -80,16 +86,16 @@ class WireAnalyzer:
 
         options = [
             self._best_for_cat(store, league_id, team_id, as_of, my_roster, drop, wire, cat,
-                               base, shortlist)
+                               base, shortlist, season)
             for cat in proj.contested()
         ]
         return WireAnalysis(persp, options, self._bundle_depth(store, season, wire))
 
     def _best_for_cat(self, store, league_id, team_id, as_of, my_roster, drop, wire, cat,
-                      base, shortlist) -> WireOption:
-        # shortlist the wire by recent production in the target cat (bounds the re-projection)
+                      base, shortlist, season=None) -> WireOption:
+        # shortlist the wire by recent contribution in the target cat (bounds the re-projection)
         scored = sorted(
-            ((self._recent(store, pid, as_of, cat) * CATEGORY_DIRECTION[cat], pid, name)
+            ((self._recent(store, pid, as_of, cat, season) * _rank_direction(cat), pid, name)
              for pid, name in wire),
             reverse=True,
         )
@@ -111,16 +117,27 @@ class WireAnalyzer:
         verdict = "chase" if net >= 0 else "trade-off"
         return WireOption(cat, pid, name, round(gain, 3), concedes, net, verdict)
 
-    def _recent(self, store, pid, as_of, cat) -> float:
+    def _recent(self, store, pid, as_of, cat, season=None) -> float:
+        """Recent contribution per *scheduled* game — participation-weighted, and
+        volume-weighted impact for percentages, for the same reasons as the reconciler's
+        shortlist (see ``Reconciler._cat_recent``)."""
         logs = store.player_logs_asof(as_of, player_id=pid)[-self.config.recent_games_window:]
         if not logs:
             return 0.0
+        q = store.participation_rate(pid, as_of, window=self.config.participation_window)
+        q = 1.0 if q is None else q
         if cat in PERCENTAGE_CATEGORIES:
+            from fantasy_gm.valuation import league_percentage_rates
+
             mk, at = PERCENTAGE_CATEGORIES[cat]
             made = sum(lg.stats.get(mk, 0.0) for lg in logs)
             att = sum(lg.stats.get(at, 0.0) for lg in logs)
-            return made / att if att > 0 else 0.0
-        return sum(lg.stats.get(cat, 0.0) for lg in logs) / len(logs)
+            if att <= 0:
+                return 0.0
+            league_pct = league_percentage_rates(
+                store, season or self.config.primary_season).get(cat, 0.0)
+            return (made / att - league_pct) * (att / len(logs)) * q
+        return (sum(lg.stats.get(cat, 0.0) for lg in logs) / len(logs)) * q
 
     def _bundle_depth(self, store, season, wire) -> dict[str, int]:
         """Classify each available player into the bundle their production leans toward, using
