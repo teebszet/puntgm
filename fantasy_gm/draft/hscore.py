@@ -123,8 +123,9 @@ class HScoreEngine:
         self.lr = lr
         self.tie_margin = tie_margin
         self.opponent_model = OpponentModel(opponent_model)
-        # Both default to the shipped behaviour so every number already in `results.md`
-        # reproduces bit-for-bit; task 3.8 turns them off to measure what they cost.
+        # All three default to the shipped behaviour, so every number already in `results.md`
+        # reproduces bit-for-bit; task 3.8 switches them one at a time to measure what each is
+        # worth. `future_slices` is the one that matters — see `_future_block`.
         self.future_from_shortlist = future_from_shortlist
         self.normalise_weights = normalise_weights
         self.future_slices = future_slices
@@ -471,12 +472,15 @@ class HScoreEngine:
 
         ranked = sorted(pool, key=lambda p: -self.basis.total(p))
         shortlisted = ranked[: max(shortlist, top_n)]
-        # ``shortlist`` exists to bound how many players get the full gradient descent. It was
-        # also, silently, bounding the pool that *future picks* are drawn from — so with the
-        # default of 40 the engine modelled all twelve of its remaining rounds, and all twelve
-        # of its opponent's, as landing on top-40 players when a twelve-team draft will in fact
-        # consume about 150. Both sides were inflated, but the tilt the strategy weights buy is
-        # measured against that pool, so it is not a wash.
+        # ``shortlist`` exists to bound how many players get the full gradient descent. It is
+        # also, silently, bounding the pool that *future picks* are drawn from: with the default
+        # of 40 the engine draws all twelve of its remaining rounds, and its opponent's, from
+        # the top forty when a twelve-team draft will consume about 150.
+        #
+        # **Measured, this is worth about 1%** and is not the defect it looks like — at the
+        # shipped softmax temperature nearly all the mass sits at the top of the board whatever
+        # else is in the bag. It is switchable so that stays measured rather than remembered;
+        # the term that actually mattered is `future_slices`.
         future_universe = shortlisted if self.future_from_shortlist else ranked
         pool = shortlisted
 
