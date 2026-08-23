@@ -485,3 +485,61 @@ in reading (1) rather than narrow it.
 **Validate further:** a third season would separate neutral from projected. Only 2024-25 and 2025-26
 can be tested today, because projecting availability without lookahead needs at least one prior
 season in the store and 2023-24 is the earliest held.
+
+
+---
+
+## A-DRAFT-15. The z-score baseline is the one the market uses — REFUTED 2026-08-24
+
+**Claim (implicit, never written down):** beating `valuation.player_values` means beating what a
+9-cat drafter uses.
+
+**Reality:** `player_values` is a **per-game** z-score. That is the form free ranking lists
+publish; Basketball Monster and Hashtag Basketball both expose a **total-value** mode that
+multiplies by games played. Since the measured G-score edge is availability (A-DRAFT-14), the
+per-game form was the only baseline it could beat.
+
+**Measured** (`fantasy_gm/draft/zvariants.py`, seat-mirrored replay, 12 rotations, 4 seeds,
+three seasons): G-score beats per-game z by +11 to +20pp and **loses to total-value z by 0.7 to
+3.8pp** in all twelve runs. At the measured kappa=0 the forward G board is *bit-identical* to
+total-value z over the whole 156-player pool.
+
+**Impact:** the "+5 to +9pp forward-honest" claim is withdrawn. The publishable claim is stated
+against per-game rankings explicitly, and no variance claim is made. See `results.md`.
+
+---
+
+## A-DRAFT-16. Rotating seats controls for draft position — FALSE, and it inflated our numbers
+
+**Claim:** rotating the seat assignment removes draft-position advantage from a replay.
+
+**Reality:** the named arms rotate *together* and stay adjacent in a fixed order. Over an odd
+number of rounds a snake hands the lower-seated of two neighbours the first of the pair once
+more than its neighbour, and with fewer rotations than teams the arms do not even sample the
+same seats. Both favour whichever arm is listed first — always `g_score`, ahead of `z_score`.
+
+**Measured:** drafting one board *against itself*, the artifact reached **+9.5pp**, comparable
+to effects this harness has been used to report. It is board-dependent: ~0.5pp on a shallow
+board, largest exactly where value gradients are steep, which is where near-null effects were
+being measured.
+
+**Fix:** `mirror=True` on both `run_draft_replay` and `run_board_replay` re-runs every rotation
+with the arm order reversed. Exact cancellation for a two-arm room.
+
+**Standing rule this earns:** *every replay table carries a null arm* — the same strategy in
+both seats — so the harness's noise floor is measured rather than assumed. Without it, an
+artifact and a finding are indistinguishable.
+
+---
+
+## A-DRAFT-4 (resolved). kappa = 1.0 — MEASURED 2026-08-24, and the answer is 0
+
+**Was:** "PROVISIONAL: 1.0 gives period noise and player spread equal weight, which is a choice,
+not a measurement."
+
+**Measured:** swept {0, 0.25, 0.5, 1, 2, 4} in forward-honest and hindsight pairings, two
+seasons, two seeds. **kappa=0 won every run**, monotone decline in kappa. The variance
+correction is not under-tuned; on this data it is harmful.
+
+**Applied:** `board.BOARD_KAPPA = 0.0`. `xscore.DEFAULT_KAPPA` stays 1.0 for the H₀ engine until
+task 3.8 resolves, so this investigation does not confound that one.

@@ -92,6 +92,20 @@ mid-September window.
 - [x] 4b.7 Test: punting re-ranks and removes the category; a rookie takes the fitted pool
       availability rate rather than certainty; the availability variance term is binomial over
       games not Bernoulli over weeks; the provenance line names the projection date (19 tests)
+- [x] 4b.9 **Steelman the z-score baseline** (`fantasy_gm/draft/zvariants.py`) — total value,
+      replacement-level iteration, punt-aware subsets, naive vs fitted availability. Reproduces
+      the shipped z-score exactly under defaults (pinned by test). **G-score beats per-game z by
+      +11 to +20pp across three seasons and loses to total-value z by 0.7 to 3.8pp.** A-DRAFT-15
+- [x] 4b.10 **Close the second hindsight leak** — forward boards constructed from per-game stats
+      compounded over a *scheduled* game count rather than aggregated over active weeks, which
+      had retained each player's realized games-per-week. corr(realized games, G-vs-z gain)
+      +0.60/+0.64 -> +0.07/-0.10. A-DRAFT-14
+- [x] 4b.11 **Fix the seat-adjacency bias in the replay harness** (`mirror=True`) — the same
+      board in both seats scored up to +9.5pp for the lower-listed arm. Every table now carries
+      a null arm. A-DRAFT-16
+- [x] 4b.12 **Fit kappa** — 0, not the provisional 1.0; won every run of a 6-point sweep in both
+      pairings. `BOARD_KAPPA = 0.0`; the engine's `DEFAULT_KAPPA` deliberately untouched pending
+      task 3.8. A-DRAFT-4 resolved
 - [ ] 4b.8 Publish it — blocked on `puntgm.com` + the X/IG handles existing. The board data and
       its Markdown are generated; only the page is missing
 

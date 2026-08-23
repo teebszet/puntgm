@@ -303,12 +303,27 @@ def run_draft_replay(
     pool_size: int | None = None,
     opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
     schedule: bool = False,
+    mirror: bool = True,
 ) -> dict[str, StrategyResult]:
     """Draft and grade every strategy at several seats.
 
     Each rotation shifts the seat assignment by one, so a strategy's advantage cannot come
     from a favourable draft slot. Remaining seats are filled with ADP bots so the room is a
     realistic size.
+
+    **Rotation alone does not control for draft position, and this was wrong here until
+    2026-08-24.** The named arms are seated consecutively and rotate *together*, so they stay
+    adjacent in a fixed order. Over an odd number of rounds a snake gives the lower-seated of
+    two neighbours the first of the pair once more than its neighbour, and with fewer rotations
+    than teams the arms do not even sample the same seats. Both effects favour whichever arm
+    happens to be listed first — which, in ``build_strategies``, is always ``g_score`` ahead of
+    ``z_score``. Calibrated by drafting one board against *itself*, the artifact measured up to
+    **+9.5pp**, comparable to the effects this harness has been used to report.
+
+    ``mirror`` re-runs every rotation with the arm order reversed, which cancels it exactly for
+    a two-arm comparison and substantially otherwise. It doubles the run, which for an H₀ arm
+    is the expensive half — but a cheaper number that is not a measurement of the strategy is
+    not worth having.
     """
     settings = settings or DraftSettings()
     rng = random.Random(seed)
@@ -328,33 +343,35 @@ def run_draft_replay(
     results = {n: StrategyResult(n) for n in names}
     adp_order = derive_adp_order(store, season)
 
+    placements = [names, list(reversed(names))] if mirror else [names]
     for rot in range(rotations):
-        seats: list = [None] * n_teams
-        seat_of: dict[str, int] = {}
-        for i, name in enumerate(names):
-            seat = (i + rot) % n_teams
-            seats[seat] = strategies[name]
-            seat_of[name] = seat
-        for s in range(n_teams):
-            if seats[s] is None:
-                seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
+        for placement in placements:
+          seats: list = [None] * n_teams
+          seat_of: dict[str, int] = {}
+          for i, name in enumerate(placement):
+              seat = (i + rot) % n_teams
+              seats[seat] = strategies[name]
+              seat_of[name] = seat
+          for s in range(n_teams):
+              if seats[s] is None:
+                  seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
 
-        rosters = snake_draft(seats, pool, settings)
-        graded = score_rosters(store, season, rosters, settings, schedule=schedule)
+          rosters = snake_draft(seats, pool, settings)
+          graded = score_rosters(store, season, rosters, settings, schedule=schedule)
 
-        for name in names:
-            seat = seat_of[name]
-            g = graded[seat]
-            r = results[name]
-            r.category_wins += g["cat_wins"]
-            r.category_games += g["cat_games"]
-            r.matchup_wins += g["matchup_wins"]
-            r.matchups += g["matchups"]
-            r.by_seat[seat][0] += g["cat_wins"]
-            r.by_seat[seat][1] += g["cat_games"]
-            for c, (w, n) in g["per_cat"].items():
-                r.per_category[c][0] += w
-                r.per_category[c][1] += n
+          for name in names:
+              seat = seat_of[name]
+              g = graded[seat]
+              r = results[name]
+              r.category_wins += g["cat_wins"]
+              r.category_games += g["cat_games"]
+              r.matchup_wins += g["matchup_wins"]
+              r.matchups += g["matchups"]
+              r.by_seat[seat][0] += g["cat_wins"]
+              r.by_seat[seat][1] += g["cat_games"]
+              for c, (w, n) in g["per_cat"].items():
+                  r.per_category[c][0] += w
+                  r.per_category[c][1] += n
     return results
 
 
@@ -379,6 +396,7 @@ def run_board_replay(
     seed: int = 7,
     include_adp: bool = True,
     schedule: bool = False,
+    mirror: bool = True,
 ) -> dict[str, StrategyResult]:
     """Grade a set of *static boards* against each other in one room.
 
@@ -402,33 +420,46 @@ def run_board_replay(
     n_teams = settings.n_teams
     results = {n: StrategyResult(n) for n in names}
 
-    for rot in range(rotations):
-        seats: list = [None] * n_teams
-        seat_of: dict[str, int] = {}
-        for i, name in enumerate(names):
-            seat = (i + rot) % n_teams
-            seat_of[name] = seat
-            seats[seat] = (
-                bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
-                if name == "adp"
-                else strategies[name]
-            )
-        for s in range(n_teams):
-            if seats[s] is None:
-                seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
+    # Seat *adjacency*, not just seat quality, has to be controlled for. Named arms are placed
+    # at consecutive seats, and a snake draft over an odd number of rounds gives the
+    # lower-seated of two neighbours the first of the pair in one more round than it gives its
+    # neighbour. Two identical boards are not a tie under that arrangement: measured here, the
+    # same board in both seats scored up to +9.5pp for the lower seat, which is larger than any
+    # real effect this harness has ever been used to report. Rotating seats does not fix it,
+    # because the arms rotate together and stay adjacent in the same order.
+    #
+    # Mirroring does fix it, exactly, for a two-arm room: every rotation is also run with the
+    # arm order reversed, so each arm is ahead of the other equally often.
+    orderings = [names, list(reversed(names))] if mirror else [names]
 
-        rosters = snake_draft(seats, list(pool), settings)
-        graded = score_rosters(store, season, rosters, settings, schedule=schedule)
-        for name in names:
-            g = graded[seat_of[name]]
-            r = results[name]
-            r.category_wins += g["cat_wins"]
-            r.category_games += g["cat_games"]
-            r.matchup_wins += g["matchup_wins"]
-            r.matchups += g["matchups"]
-            r.by_seat[seat_of[name]][0] += g["cat_wins"]
-            r.by_seat[seat_of[name]][1] += g["cat_games"]
-            for c, (w, n) in g["per_cat"].items():
-                r.per_category[c][0] += w
-                r.per_category[c][1] += n
+    for rot in range(rotations):
+        for placement in orderings:
+          seats: list = [None] * n_teams
+          seat_of: dict[str, int] = {}
+          for i, name in enumerate(placement):
+              seat = (i + rot) % n_teams
+              seat_of[name] = seat
+              seats[seat] = (
+                  bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
+                  if name == "adp"
+                  else strategies[name]
+              )
+          for s in range(n_teams):
+              if seats[s] is None:
+                  seats[s] = bot_strategy(AdpBot(adp_order, random.Random(seed + rot * 100 + s)))
+
+          rosters = snake_draft(seats, list(pool), settings)
+          graded = score_rosters(store, season, rosters, settings, schedule=schedule)
+          for name in names:
+              g = graded[seat_of[name]]
+              r = results[name]
+              r.category_wins += g["cat_wins"]
+              r.category_games += g["cat_games"]
+              r.matchup_wins += g["matchup_wins"]
+              r.matchups += g["matchups"]
+              r.by_seat[seat_of[name]][0] += g["cat_wins"]
+              r.by_seat[seat_of[name]][1] += g["cat_games"]
+              for c, (w, n) in g["per_cat"].items():
+                  r.per_category[c][0] += w
+                  r.per_category[c][1] += n
     return results

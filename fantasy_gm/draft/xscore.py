@@ -314,3 +314,88 @@ def kappa_sensitivity(
         )
         out.append((k, changed, float(shift)))
     return out
+
+
+def measure_per_game_stats(
+    store,
+    season: str,
+    categories: list[str] | None = None,
+    pool_size: int = 156,
+) -> tuple[dict[str, dict[str, PeriodStats]], list[str]]:
+    """Per-**game** mean and spread per category, over the rosterable pool.
+
+    The counterpart to :func:`measure_period_stats`, and the input a *forward* board has to be
+    built from. Aggregating straight to weekly totals — even over active weeks only — silently
+    keeps each player's realized games *per active week*, because a week in which someone
+    suited up twice instead of four times still counts, at a lower total. That factor
+    correlates ~+0.75 with realized games played and is measured on the season being graded, so
+    a board built on it ranks up the players who turned out to stay healthy no matter what
+    availability projection it was handed. Measured on 2024-25 and 2025-26, a `projected` board
+    built the old way correlated **+0.60/+0.64 with realized games and ~0.00 with the projected
+    games it was actually given** (A-DRAFT-14).
+
+    ``PeriodStats.periods`` here counts games, not weeks. Compounding these up to a week is
+    :func:`fantasy_gm.draft.board.compound_weekly`'s job, and it uses a *scheduled* game count
+    so no realized availability can re-enter.
+    """
+    categories = list(categories or DEFAULT_CATEGORIES)
+    counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
+    pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
+
+    lines: dict[str, list[dict]] = defaultdict(list)
+    for r in store.conn.execute(
+        "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
+    ):
+        lines[r["player_id"]].append(json.loads(r["stats_json"]))
+    pool = rosterable_pool(store, season, pool_size=pool_size)
+
+    league_rates: dict[str, float] = {}
+    for c in pcts:
+        mk, at = PERCENTAGE_CATEGORIES[c]
+        made = sum(g.get(mk, 0.0) for p in pool for g in lines.get(p, ()))
+        att = sum(g.get(at, 0.0) for p in pool for g in lines.get(p, ()))
+        league_rates[c] = made / att if att > 0 else 0.0
+
+    stats: dict[str, dict[str, PeriodStats]] = {}
+    for pid in pool:
+        games = lines.get(pid)
+        if not games:
+            continue
+        per_cat: dict[str, PeriodStats] = {}
+        for c in counting:
+            per_cat[c] = _summarise([g.get(c, 0.0) for g in games])
+        for c in pcts:
+            mk, at = PERCENTAGE_CATEGORIES[c]
+            rate = league_rates[c]
+            per_cat[c] = _summarise([
+                (g.get(mk, 0.0) / g.get(at, 0.0) - rate) * g.get(at, 0.0)
+                if g.get(at, 0.0) > 0 else 0.0
+                for g in games
+            ])
+        stats[pid] = per_cat
+    return stats, pool
+
+
+def scheduled_games_per_week(store, season: str) -> float:
+    """League-mean **scheduled** games per team per week, from the published schedule.
+
+    A season's schedule is public months before a draft, so this carries no lookahead — unlike
+    counting the games a player actually appeared in, which is the whole problem this replaces.
+    Team-to-team variation over a full season is negligible (every team plays 82 games across
+    the same calendar), so one league constant is used rather than a per-team figure that would
+    invite reading it from the graded season's box scores.
+    """
+    rows = list(store.conn.execute(
+        "SELECT game_date, home_team, away_team FROM games WHERE season = ?", (season,)
+    ))
+    if not rows:
+        return 3.5
+    weeks: dict[str, set[str]] = defaultdict(set)
+    team_games: dict[str, int] = defaultdict(int)
+    for r in rows:
+        w = _iso_week(r["game_date"])
+        for team in (r["home_team"], r["away_team"]):
+            weeks[team].add(w)
+            team_games[team] += 1
+    per_team = [team_games[t] / len(weeks[t]) for t in team_games if weeks[t]]
+    return fmean(per_team) if per_team else 3.5

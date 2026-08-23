@@ -41,8 +41,10 @@ AS_OF = {
     "2025-26": "2025-10-20",
 }
 SEASONS = ["2025-26", "2024-25"]
-SEEDS = [7, 11]
-ROTATIONS = 6
+SEEDS = [7, 11, 23, 41]
+# Every arm must visit every seat: with fewer rotations than teams, two adjacent arms sample
+# different seat sets and the better slot is scored as a better board.
+ROTATIONS = 12
 
 
 def main(out_path: str | None = None) -> None:
@@ -68,6 +70,9 @@ def main(out_path: str | None = None) -> None:
         z_orders = {
             arm: z_order(store, season, as_of=as_of, **kw) for arm, kw in Z_ARMS.items()
         }
+        # The calibration arm: the G board against itself. Its measured "edge" is this
+        # harness's noise floor, and no result below that floor means anything.
+        z_orders["null_same_board"] = list(g_order)
         for arm, order in z_orders.items():
             for seed in SEEDS:
                 t = time.time()
@@ -109,7 +114,7 @@ def main(out_path: str | None = None) -> None:
 
     print("\n=== G-projected edge over each z arm, category win% (pp) ===")
     print(f"{'arm':<20}" + "".join(f"{s+' s'+str(sd):>14}" for s in SEASONS for sd in SEEDS))
-    for arm in Z_ARMS:
+    for arm in [*Z_ARMS, "null_same_board"]:
         cells = []
         for s in SEASONS:
             for sd in SEEDS:

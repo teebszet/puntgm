@@ -55,7 +55,8 @@ class Availability(StrEnum):
 
     NONE = "none"            # per-game value — the form every free ranking list publishes
     REALIZED = "realized"    # × games actually played; hindsight, so a ceiling not a baseline
-    PROJECTED = "projected"  # × expected games from history strictly before ``as_of``
+    PROJECTED = "projected"  # × expected games from the fitted A13 model, cut at ``as_of``
+    NAIVE = "naive"          # × last season's games played — what a drafter does by eye
 
 
 def games_scale(
@@ -79,6 +80,23 @@ def games_scale(
         return {p: float(len(games.get(p, ()))) for p in pool}
     if not as_of:
         raise ValueError("projected availability needs an as_of date")
+    if availability is Availability.NAIVE:
+        # The comparison that says what the A13 model is actually worth: last season's games
+        # played, carried forward unshrunk, which is what a drafter reads off a stat page.
+        # Anyone with no prior season takes the pool mean rather than a full season, for the
+        # same reason the fitted model does — defaulting to 82 would rank every rookie as an
+        # ironman.
+        prior = {
+            r["player_id"]: r["n"]
+            for r in store.conn.execute(
+                "SELECT player_id, COUNT(*) n FROM player_logs WHERE game_date < ? "
+                "AND game_date >= date(?, '-1 year') GROUP BY player_id",
+                (as_of, as_of),
+            )
+        }
+        seen = [prior[p] for p in pool if p in prior]
+        fallback = float(sum(seen)) / len(seen) if seen else 65.0
+        return {p: float(prior.get(p, fallback)) for p in pool}
     from fantasy_gm.draft.board import project_availability
 
     projections = project_availability(store, season, as_of, players=list(pool))
@@ -206,6 +224,7 @@ Z_ARMS: dict[str, dict] = {
     "z_total_projected": {"availability": Availability.PROJECTED},
     "z_replacement": {"replacement_iters": 5},
     "z_steelman": {"availability": Availability.PROJECTED, "replacement_iters": 5},
+    "z_total_naive": {"availability": Availability.NAIVE},
 }
 
 # Arms that use hindsight and may not be quoted as a baseline in any published comparison.

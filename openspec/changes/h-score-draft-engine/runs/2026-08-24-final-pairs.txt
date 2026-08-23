@@ -1,0 +1,6 @@
+2024-25  null (same board)                      -0.2   -0.6   -0.2   +0.6
+2024-25  G-projected vs z-pergame               +5.7   +5.7   +6.7   +6.9
+2024-25  G-projected vs z-total-projected       -0.2   -0.6   -0.2   +0.6
+2023-24  null (same board)                      +0.1   -0.2   +0.3   -0.5
+2023-24  G-realized  vs z-pergame              +10.9  +13.1  +12.0  +11.9
+2023-24  G-realized  vs z-total-realized        -3.8   -3.8   -3.4   -3.8

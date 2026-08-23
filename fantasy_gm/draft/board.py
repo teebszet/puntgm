@@ -28,7 +28,7 @@ the market metric was not the variance correction at all, it was that G-score co
 player missed as zeros and z-score is availability-blind. Counting those zeros is *correct for
 replay*, where the season already happened and a missed week really did lose the category. It
 is **hindsight for a board published before a draft**: it ranks Giannis 118th because he missed
-46 games last season. So the board measures production over active weeks only and reintroduces
+46 games last season. So the board measures production per game and reintroduces
 availability as a separately projected, shrunk term (:mod:`fantasy_gm.projections.availability`,
 the A13 model that is the in-season engine's single biggest win). Two claims, two columns, each
 auditable on its own. See :class:`AvailabilityMode`.
@@ -48,12 +48,13 @@ from enum import StrEnum
 
 from fantasy_gm.config import DEFAULT_CATEGORIES
 from fantasy_gm.draft.xscore import (
-    DEFAULT_KAPPA,
     CategoryBasis,
     PeriodStats,
     VarianceMode,
     XScoreBasis,
+    measure_per_game_stats,
     measure_period_stats,
+    scheduled_games_per_week,
 )
 from fantasy_gm.valuation import player_values
 
@@ -81,6 +82,19 @@ class AvailabilityMode(StrEnum):
 # combinatorial space. `punt_ft` and `punt_tov` are the two the measured findings support most
 # directly: ft_pct is the category the in-season engine gates out as non-actionable (A15), and
 # both are categories where a strong player is routinely dragged down by one number.
+# κ for a published board, MEASURED (A-DRAFT-4) rather than the provisional 1.0 the engine
+# still carries. κ weights period-to-period variance in the standardisation denominator, and
+# it is the entire thesis of the G-score correction. Swept over {0, 0.25, 0.5, 1, 2, 4} in a
+# seat-mirrored draft replay across two seasons and four seeds, in both a forward-honest and a
+# hindsight pairing, **κ=0 won every single run** and the decline was monotone in κ. The
+# variance correction is not under-tuned here; on this data it is harmful.
+#
+# Deliberately *not* applied to `xscore.DEFAULT_KAPPA`, which the H₀ engine reads. H₀ scores
+# candidates through a Poisson-binomial over category wins, where the variance term does
+# different work, and task 3.8 is still open on whether that implementation reproduces the
+# paper at all. Moving both at once would confound that investigation with this one.
+BOARD_KAPPA = 0.0
+
 PUNT_BUILDS: dict[str, tuple[str, ...]] = {
     "balanced": (),
     "punt_ft": ("ft_pct",),
@@ -131,7 +145,7 @@ class Board:
     def basis(self) -> str:
         """The provenance line. Published output must carry this verbatim."""
         head = (
-            f"Per-week production measured from {self.season} game logs over the top "
+            f"Per-game production measured from {self.season} game logs over the top "
             f"{self.pool_size} players by minutes per game."
         )
         if self.availability is AvailabilityMode.REALIZED:
@@ -142,15 +156,16 @@ class Board:
             )
         if self.availability is AvailabilityMode.NEUTRAL:
             return (
-                f"{head} Measured over active weeks only: no availability term at all, so a "
-                "player who missed half the season is ranked as if durable. Ablation, not a "
-                "recommendation."
+                f"{head} Compounded to a week over the league's scheduled games per week with "
+                "no availability term at all, so a player who missed half the season is ranked "
+                "as if durable. Ablation, not a recommendation."
             )
         return (
-            f"{head} Measured over active weeks only, then scaled by expected games played "
-            f"projected as of {self.availability_as_of} — a beta-binomial availability rate "
-            "shrunk toward the pool, not last season's realized games. Category rates are "
-            "measured, not projected forward."
+            f"{head} Compounded to a week over the league's scheduled games per week, each "
+            "played with an expected-availability probability projected as of "
+            f"{self.availability_as_of} — a beta-binomial rate shrunk toward the pool, not "
+            "last season's realized games. No count of the games this player actually went on "
+            "to play enters the rank. Category rates are measured, not projected forward."
         )
 
     @property
@@ -206,40 +221,45 @@ def project_availability(
     return out
 
 
-def _scale_for_availability(
-    stats: dict[str, dict[str, PeriodStats]],
+def compound_weekly(
+    per_game: dict[str, dict[str, PeriodStats]],
     rates: dict[str, float],
-    games_per_week: dict[str, float],
+    games_per_week: float,
 ) -> dict[str, dict[str, PeriodStats]]:
-    """Reintroduce availability into active-week stats as a *binomial* mixture over games.
+    """Build a weekly total from per-game stats and a projected availability rate.
 
-    Availability applies per game, not per week — players miss individual nights, not whole
-    weeks. With ``n`` scheduled games in a week and each played with probability ``r``, the
-    games played are Binomial(n, r) and the weekly total is roughly that count times the
-    per-game rate ``μ/n``. The law of total variance then gives::
+    A week is ``n`` scheduled games, each played with probability ``r`` and contributing a
+    per-game mean ``m`` and variance ``v``. Compounding gives::
 
-        μ' = r · μ
-        τ'² = r · τ² + r(1 − r) · μ² / n
+        mu'   = n · r · m
+        tau'2 = n · r · v  +  n · r(1 - r) · m2
 
-    That ``/n`` matters enormously and is the whole reason this is written out rather than
-    assumed. Modelling availability as a Bernoulli coin flip on the *week* (no ``/n``) inflates
-    the penalty by a factor of n ≈ 3.5, and because the term scales with μ² it lands almost
-    entirely on high-production players — it ranked durable role players above every star, which
-    is a modelling artifact and not a finding. Setting ``r = 1`` recovers the stats unchanged.
+    Two properties this construction has and the previous one did not. First, availability
+    enters **only** through ``r``, so a forward board cannot rank a player up for having turned
+    out to stay healthy — the old path measured weekly totals over active weeks, which quietly
+    retained each player's realized games *per week* (A-DRAFT-14, second leak). Second, ``n`` is
+    the *scheduled* game count, identical for everyone, so nothing about the graded season
+    reaches it.
+
+    Availability is binomial over games, never Bernoulli over weeks: players miss individual
+    nights. Dropping the game count inflates the variance penalty by n ~ 3.3, and since that
+    term scales with ``m2`` the error lands almost entirely on high-production players — the
+    first version of this ranked durable role players above every star. Setting ``r = 1``
+    recovers the pure sum-of-n-games case, which is the neutral ablation.
     """
-    scaled: dict[str, dict[str, PeriodStats]] = {}
-    for pid, by_cat in stats.items():
-        r = rates.get(pid, 1.0)
-        n = max(games_per_week.get(pid, 3.5), 1.0)
-        scaled[pid] = {
+    n = max(games_per_week, 1.0)
+    out: dict[str, dict[str, PeriodStats]] = {}
+    for pid, by_cat in per_game.items():
+        r = min(max(rates.get(pid, 1.0), 0.0), 1.0)
+        out[pid] = {
             c: PeriodStats(
-                mean=r * ps.mean,
-                std=(r * ps.std**2 + r * (1.0 - r) * ps.mean**2 / n) ** 0.5,
+                mean=n * r * ps.mean,
+                std=(n * r * ps.std**2 + n * r * (1.0 - r) * ps.mean**2) ** 0.5,
                 periods=ps.periods,
             )
             for c, ps in by_cat.items()
         }
-    return scaled
+    return out
 
 
 def _basis(
@@ -255,32 +275,27 @@ def _basis(
     """Build the standardisation basis under one availability treatment."""
     from statistics import fmean, median, pstdev
 
-    include_idle = availability is AvailabilityMode.REALIZED
-    stats, pool = measure_period_stats(
-        store, season, categories, pool_size, include_idle_weeks=include_idle
-    )
     projections: dict[str, object] = {}
-    if availability is AvailabilityMode.PROJECTED:
-        if not as_of:
-            raise ValueError("projected availability needs an --as-of date")
-        projections = project_availability(store, season, as_of, players=pool)
-        rates = {p: getattr(g, "availability_rate", 1.0) for p, g in projections.items()}
-        # Games per *active* week, measured per player rather than assumed: a week's scheduled
-        # load varies by team and by point in the calendar, and the variance term divides by it.
-        played = {
-            r["player_id"]: r["n"]
-            for r in store.conn.execute(
-                "SELECT player_id, COUNT(*) n FROM player_logs WHERE season = ? "
-                "GROUP BY player_id",
-                (season,),
-            )
-        }
-        weeks = {
-            p: max((next(iter(by_cat.values())).periods if by_cat else 0), 1)
-            for p, by_cat in stats.items()
-        }
-        games_per_week = {p: played.get(p, 0) / weeks[p] for p in stats}
-        stats = _scale_for_availability(stats, rates, games_per_week)
+    if availability is AvailabilityMode.REALIZED:
+        # Grading a finished season: a week the player missed is a week the manager lost the
+        # category, so measuring weekly totals directly is correct and must not change.
+        stats, pool = measure_period_stats(
+            store, season, categories, pool_size, include_idle_weeks=True
+        )
+    else:
+        # Forward boards are *constructed*, never measured at the week level: see
+        # `compound_weekly`. Aggregating to weeks first would smuggle realized availability
+        # back in through each player's games-per-active-week.
+        per_game, pool = measure_per_game_stats(store, season, categories, pool_size)
+        n_sched = scheduled_games_per_week(store, season)
+        if availability is AvailabilityMode.PROJECTED:
+            if not as_of:
+                raise ValueError("projected availability needs an --as-of date")
+            projections = project_availability(store, season, as_of, players=pool)
+            rates = {p: getattr(g, "availability_rate", 1.0) for p, g in projections.items()}
+        else:
+            rates = dict.fromkeys(per_game, 1.0)
+        stats = compound_weekly(per_game, rates, n_sched)
 
     scored_players = [p for p in pool if p in stats]
     bases: dict[str, CategoryBasis] = {}
@@ -306,7 +321,7 @@ def build_board(
     punt: tuple[str, ...] | list[str] = (),
     build: str | None = None,
     pool_size: int = 156,
-    kappa: float = DEFAULT_KAPPA,
+    kappa: float = BOARD_KAPPA,
     mode: VarianceMode = VarianceMode.MEASURED,
     availability: AvailabilityMode = AvailabilityMode.PROJECTED,
     as_of: str | None = None,

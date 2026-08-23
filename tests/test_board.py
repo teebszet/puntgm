@@ -188,33 +188,54 @@ def test_player_with_no_prior_history_gets_the_pool_rate_not_certainty():
     assert projections["rookie"].observed_games == 0
 
 
-def test_availability_scaling_is_binomial_over_games_not_bernoulli_over_weeks():
-    """The ``/n`` in ``τ'² = r·τ² + r(1−r)·μ²/n`` is load-bearing.
+def test_weekly_totals_are_compounded_binomially_over_games_not_bernoulli_over_weeks():
+    """The game count in ``tau'2 = n·r·v + n·r(1−r)·m2`` is load-bearing.
 
-    Without it the availability penalty is inflated by games-per-week (~3.5×), and because the
-    term scales with μ² it lands almost entirely on high-production players — it ranked durable
-    role players above every star. Pin the exact identity rather than the symptom.
+    Treating availability as a coin flip on the *week* drops the ``n``, inflating the penalty
+    by games-per-week (~3.3x), and because the term scales with ``m2`` the error lands almost
+    entirely on high-production players — it ranked durable role players above every star. Pin
+    the exact identity rather than the symptom.
     """
-    from fantasy_gm.draft.board import _scale_for_availability
+    from fantasy_gm.draft.board import compound_weekly
 
-    stats = {"p": {"pts": PeriodStats(mean=100.0, std=20.0, periods=10)}}
+    per_game = {"p": {"pts": PeriodStats(mean=25.0, std=10.0, periods=40)}}
     r, n = 0.8, 4.0
-    scaled = _scale_for_availability(stats, {"p": r}, {"p": n})["p"]["pts"]
+    out = compound_weekly(per_game, {"p": r}, n)["p"]["pts"]
 
-    assert scaled.mean == pytest.approx(r * 100.0)
-    assert scaled.std == pytest.approx((r * 400.0 + r * (1 - r) * 10000.0 / n) ** 0.5)
-    # And the Bernoulli-over-weeks form (no /n) would be strictly larger.
-    bernoulli = (r * 400.0 + r * (1 - r) * 10000.0) ** 0.5
-    assert scaled.std < bernoulli
+    assert out.mean == pytest.approx(n * r * 25.0)
+    assert out.std == pytest.approx((n * r * 100.0 + n * r * (1 - r) * 625.0) ** 0.5)
+    # The Bernoulli-over-weeks form applies the same rate to a whole week's production.
+    bernoulli = (r * (n * 100.0) + r * (1 - r) * (n * 25.0) ** 2) ** 0.5
+    assert out.std < bernoulli
 
 
-def test_full_availability_leaves_stats_untouched():
-    from fantasy_gm.draft.board import _scale_for_availability
+def test_full_availability_is_the_plain_sum_of_n_games():
+    """r = 1 must recover an unweighted week: n games' mean and n games' variance."""
+    from fantasy_gm.draft.board import compound_weekly
 
-    stats = {"p": {"pts": PeriodStats(mean=100.0, std=20.0, periods=10)}}
-    scaled = _scale_for_availability(stats, {"p": 1.0}, {"p": 3.5})["p"]["pts"]
-    assert scaled.mean == pytest.approx(100.0)
-    assert scaled.std == pytest.approx(20.0)
+    per_game = {"p": {"pts": PeriodStats(mean=25.0, std=10.0, periods=40)}}
+    out = compound_weekly(per_game, {"p": 1.0}, 4.0)["p"]["pts"]
+    assert out.mean == pytest.approx(100.0)
+    assert out.std == pytest.approx((4.0 * 100.0) ** 0.5)
+
+
+def test_a_forward_board_ignores_realized_games_per_week():
+    """The second hindsight leak (A-DRAFT-14), pinned.
+
+    Two players with identical per-game production and identical availability projections must
+    tie on a forward board even when one of them actually played far more often. Building the
+    board from weekly totals over active weeks failed this: the busier player's weeks were
+    fuller, so he ranked higher on information from the season being graded.
+    """
+    store = Store(":memory:")
+    _seed(store, {
+        "busy": [_line(pts=20, reb=5) for _ in range(40)],
+        "rested": [_line(pts=20, reb=5) if i % 3 == 0 else None for i in range(40)],
+        "filler": [_line(pts=6, reb=2) for _ in range(40)],
+    })
+    board = build_board(store, SEASON, pool_size=3, availability=AvailabilityMode.NEUTRAL)
+    rows = {r.player_id: r.total for r in board.rows}
+    assert rows["busy"] == pytest.approx(rows["rested"])
 
 
 # --- provenance and rendering ------------------------------------------------
@@ -274,3 +295,35 @@ def test_empty_board_renders_without_raising():
                   pool_size=0, kappa=1.0, variance_mode="measured")
     assert board.basis
     assert render_markdown(board)
+
+
+def test_a_published_board_applies_no_variance_penalty_by_default():
+    """κ=0 is measured, not incidental (A-DRAFT-4).
+
+    Swept over {0, 0.25, 0.5, 1, 2, 4} in a seat-mirrored replay across two seasons and four
+    seeds, in both forward-honest and hindsight pairings, κ=0 won every run and the decline was
+    monotone. The variance correction — the entire thesis of G-score — is harmful on this data.
+    Anyone raising this default is reversing a measurement and should have to edit a test.
+    """
+    from fantasy_gm.draft.board import BOARD_KAPPA
+
+    assert BOARD_KAPPA == 0.0
+    store = _pool_store()
+    default = build_board(store, SEASON, pool_size=4, availability=AvailabilityMode.NEUTRAL)
+    explicit = build_board(store, SEASON, pool_size=4, kappa=0.0,
+                           availability=AvailabilityMode.NEUTRAL)
+    assert [r.player_id for r in default.rows] == [r.player_id for r in explicit.rows]
+
+
+def test_the_engines_kappa_is_left_alone():
+    """The board's κ and the H₀ engine's are now deliberately different.
+
+    H₀ scores through a Poisson-binomial over category wins, where the variance term does
+    different work, and task 3.8 has not yet established that the implementation reproduces the
+    paper at all. Moving both together would confound the two investigations.
+    """
+    from fantasy_gm.draft.board import BOARD_KAPPA
+    from fantasy_gm.draft.xscore import DEFAULT_KAPPA
+
+    assert DEFAULT_KAPPA == 1.0
+    assert BOARD_KAPPA != DEFAULT_KAPPA

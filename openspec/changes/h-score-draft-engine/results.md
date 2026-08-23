@@ -160,7 +160,13 @@ So only **within-run** deltas are quotable. The reassuring part is that the `h_s
   3.8 asks whether this implementation reproduces the paper at all, and that diagnostic needs
   the shipped configuration as its baseline. Flip the default once 3.8 resolves.
 
-## Availability is most of the edge (2026-08-23)
+## Availability is most of the edge (2026-08-23) — SUPERSEDED 2026-08-24
+
+> **Read the next section first.** The +5 to +9pp "forward-honest" figure below is
+> **withdrawn**: the `neutral`/`projected` boards it was measured on still leaked realized
+> availability, and the harness that measured it had a seat-adjacency bias. Both are fixed.
+> The section is kept because its *direction* was right and because the correction is only
+> legible next to what it corrects.
 
 The headline compares two metrics that differ in **two** ways, not one. G-score aggregates
 *weekly* totals and charges a player for weeks they missed; z-score averages *per game* and
@@ -181,8 +187,8 @@ rotations, 14,850 category decisions per arm), category win rate:
 
 - **The realized arm reproduces the headline** (~+14pp over z-score) and is the arm the
   +13.4pp figure comes from. It requires knowing who got hurt.
-- **The forward-honest claim is +5 to +9pp**, and it holds in all four runs across two seasons
-  and two seeds. Still far larger than z-score's own margin over ADP — which is *negative* in
+- ~~**The forward-honest claim is +5 to +9pp**, and it holds in all four runs across two seasons
+  and two seeds.~~ **Withdrawn — see below. The true figure against a total-value baseline is zero.** Still far larger than z-score's own margin over ADP — which is *negative* in
   2024-25, reinforcing the standing finding that z-score ≈ reading down a list.
 - **Neutral and projected are not separable here.** The ordering flips by season and by seed.
   Per the standing rule on single-season deltas, neither is claimed to win; the board defaults
@@ -192,10 +198,121 @@ rotations, 14,850 category decisions per arm), category win rate:
 defaults to True everywhere the replay harness touches. What changes is which number the
 *board* is allowed to advertise.
 
-**For the write-up (task 6.3):** lead with +5 to +9pp against z-score on a preseason-honest
-basis, and treat the availability result as its own finding rather than burying it — "the
-market's metric cannot see who plays" is a stronger and more defensible story than an inflated
-single number, and it is the one that survives someone checking it.
+~~**For the write-up (task 6.3):** lead with +5 to +9pp against z-score on a preseason-honest
+basis.~~ Superseded; see the write-up guidance in the next section.
+
+## The whole edge is availability. The variance correction is worth nothing. (2026-08-24)
+
+Prompted by a fair challenge: *the industry does not run bare z-score, it runs z-score plus
+tweaks — what are they, and does the result survive them?* It does not survive the one that
+matters.
+
+### The baseline was a strawman
+
+`valuation.player_values` is a per-game z-score. That is what every **free** ranking list
+publishes, and it is blind to games played. It is not what a drafter using Basketball Monster
+or Hashtag Basketball holds: both expose a **total-value** mode that multiplies by games. Since
+the whole measured G-score edge turned out to be availability (previous section), beating only
+the per-game form was never going to survive contact.
+
+`fantasy_gm/draft/zvariants.py` adds the tweaks as switchable arms — total value (realized /
+fitted-projection / naive-carry-forward), replacement-level iteration, punt-aware category
+subsets — reproducing the shipped z-score exactly under defaults, which a test pins.
+
+### Two measurement defects found on the way, both of which inflated our own numbers
+
+**1. A second hindsight leak in the forward boards.** `neutral` and `projected` aggregated to
+weekly totals over *active* weeks. A week in which a player suited up twice instead of four
+times still counted, at a lower total — so each player's realized games *per week* survived the
+A-DRAFT-14 fix, which had only removed whole missed weeks. That factor correlates +0.72/+0.78
+with realized games played and is measured on the season being graded:
+
+```
+corr(REALIZED  games, G-vs-z rank gain) = +0.604 / +0.642   <- should be ~0
+corr(PROJECTED games, G-vs-z rank gain) = -0.024 / +0.041   <- is ~0
+```
+
+The board promoted exactly the players who turned out to play more while showing no
+relationship to the availability it was handed. Fixed by *constructing* the weekly total
+instead of measuring it — per-game mean and variance compounded over a **scheduled** game
+count, `mu' = n.r.m`, `tau'^2 = n.r.v + n.r(1-r).m^2` — which removes the term structurally.
+After the fix: +0.067 / -0.104.
+
+**2. A seat-adjacency bias in the replay harness itself.** Named arms are seated consecutively
+and rotate *together*, so they stay adjacent in a fixed order, and over an odd number of rounds
+a snake gives the lower-seated neighbour the first of the pair once more than its neighbour.
+Rotation does not fix this. Calibrated by drafting one board **against itself**, the artifact
+measured up to **+9.5pp** for whichever arm was listed first — which in `build_strategies` is
+always `g_score`, ahead of `z_score`. Fixed by mirroring: every rotation also runs with the arm
+order reversed. **Every table from here on carries a null arm** (the same board in both seats)
+so the noise floor is visible rather than assumed.
+
+### The numbers
+
+Seat-mirrored, 12 rotations so every arm visits every seat, 4 seeds, ~29,700 category decisions
+per arm per seed. Board kappa = 0 (see A-DRAFT-4 below). Category win-rate delta, in pp:
+
+| pair | 2025-26 | 2024-25 | 2023-24 |
+|---|---|---|---|
+| **null — same board both seats** | +2.6 −0.7 +2.1 +1.0 | −0.2 −0.6 −0.2 +0.6 | +0.1 −0.2 +0.3 −0.5 |
+| G-realized vs **per-game** z | +17.9 +19.6 +17.5 +18.6 | +15.9 +16.1 +15.9 +17.1 | +10.9 +13.1 +12.0 +11.9 |
+| G-realized vs **total-value** z (both see realized games) | −1.2 −0.9 −1.3 −1.6 | −0.7 −0.7 −1.0 −1.0 | −3.8 −3.8 −3.4 −3.8 |
+| G-projected vs **per-game** z | +2.8 +4.6 +3.8 +2.8 | +5.7 +5.7 +6.7 +6.9 | — |
+| G-projected vs **total-value** z (both see the same projection) | *identical to null* | *identical to null* | — |
+
+Read in order:
+
+1. **The published headline survives, and it is real: +11 to +20pp over the per-game z-score,
+   in all twelve runs across three seasons.** The seat fix moved it by under 1pp. This is the
+   number the free board can advertise, and the mechanism is stated honestly by saying so:
+   *the rankings everyone publishes cannot see who plays.*
+
+2. **Give z-score the games it was missing and the entire edge disappears — G-score loses.**
+   −0.7 to −3.8pp in all twelve runs. The variance correction, which is the whole thesis of
+   G-score, is worth *less than nothing* once the two metrics are matched on availability.
+
+3. **The forward comparison is not merely zero, it is degenerate.** At kappa=0 the forward
+   G board and total-value z are *the same board* — max rank delta 0 over 156 players — because
+   a leak-free forward G board is per-game mean x projected rate, which is exactly what
+   total-value z computes (the x82 is a per-player constant and cancels under standardisation).
+   The last row of the table equals the null row not by coincidence but by identity. That is
+   the cleanest available proof that nothing is left.
+
+4. **Replacement-level iteration is a no-op** (mean rank shift 2.2 places, no measurable
+   effect), and **the fitted A13 availability model is not separable from naive last-season
+   carry-forward on a board** (flips by season: −0.3 to −3.5 in 2025-26, +0.2 to +1.5 in
+   2024-25). A13's large in-season win stands; it is a different task.
+
+### A-DRAFT-4 resolved: kappa is 0, not 1
+
+kappa weights period variance in the denominator. Swept over {0, 0.25, 0.5, 1, 2, 4} in both a
+forward-honest and a hindsight pairing, across two seasons and two seeds, **kappa=0 won every
+run** and the decline was monotone (hindsight pair: −0.2/+0.2/+1.0/+1.2 at kappa=0 down to
+−3.4/−3.5/−1.3/−0.3 at kappa=4). It was never under-tuned; it is harmful. `BOARD_KAPPA = 0.0`.
+
+`xscore.DEFAULT_KAPPA` is deliberately left at 1.0 for the H₀ engine: H₀ scores through a
+Poisson-binomial over category wins, where the term does different work, and task 3.8 has not
+established that the implementation reproduces the paper at all. Moving both at once would
+confound the two investigations.
+
+### What to write up
+
+The defensible claim is **not** "our metric beats z-score". It is:
+
+> **The public rankings the whole category-league market drafts from are per-game numbers, and
+> a per-game number cannot see that a player misses a third of the season. Correcting for that
+> is worth +11 to +20pp of category win rate against those rankings, measured on three
+> completed seasons.**
+
+True, large, reproducible, and it survives a hostile reader — because it is stated against the
+baseline it actually beats. What must **not** be claimed is that this is a variance effect, or
+that it holds against a paid tool's total-value mode. It does not.
+
+The product consequence is that the moat is not the metric. Anyone with a total-value toggle
+already has this. What is left that is genuinely ours is the **punt-build machinery, the
+expected-games column, and the replay harness that can grade any of it on real seasons** — and
+the harness is arguably the most defensible asset in the project, since it is what caught both
+of the errors above.
 
 ## Consequence for the plan
 
