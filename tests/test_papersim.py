@@ -122,9 +122,20 @@ def test_slice_aware_future_is_worth_less_than_the_shipped_one():
     per_pick, _ = shipped._weighted_future(board, [1.0] * 9)
     total, _ = sliced._future_block(board, [1.0] * 9, 4, settings.n_teams)
     assert total["pts"] < 4 * per_pick["pts"]
-    # ...and the first slice is the whole board, so a single pick must agree exactly.
-    one, _ = sliced._future_block(board, [1.0] * 9, 1, settings.n_teams)
-    assert one["pts"] == pytest.approx(per_pick["pts"])
+    # ...and each slice must agree exactly with a direct softmax over that same suffix, which
+    # is the whole claim the suffix accumulation is making.
+    for picks in (1, 2, 3):
+        block_mean, block_var = sliced._future_block(board, [1.0] * 9, picks, settings.n_teams)
+        direct_mean = {c: 0.0 for c in basis.categories}
+        direct_var = {c: 0.0 for c in basis.categories}
+        for j in range(picks):
+            m, v = sliced._weighted_future(board[j * settings.n_teams:], [1.0] * 9)
+            for c in basis.categories:
+                direct_mean[c] += m[c]
+                direct_var[c] += v[c]
+        for c in basis.categories:
+            assert block_mean[c] == pytest.approx(direct_mean[c], rel=1e-9, abs=1e-9)
+            assert block_var[c] == pytest.approx(direct_var[c], rel=1e-9, abs=1e-9)
 
 
 def test_future_pool_option_changes_what_the_engine_expects_of_a_late_pick():
