@@ -111,8 +111,17 @@ mid-September window.
 - [x] 4b.12 **Fit kappa** — 0, not the provisional 1.0; won every run of a 6-point sweep in both
       pairings. `BOARD_KAPPA = 0.0`; the engine's `DEFAULT_KAPPA` deliberately untouched pending
       task 3.8. A-DRAFT-4 resolved
-- [ ] 4b.8 Publish it — blocked on `puntgm.com` + the X/IG handles existing. The board data and
-      its Markdown are generated; only the page is missing
+- [x] 4b.8 **Publish it — built 2026-08-24, awaiting a host.** `puntgm.com` was registered
+      2026-08-23. `scripts/build_site.py` generates three static pages and one JSON payload from
+      `build_board` — the *same call* the replay harness grades, which is the only way "the track
+      record is the content" is a true statement rather than a slogan. `index.html` is the board
+      (nine builds, expected games, `vs z`); `evidence.html` is the replay table **including the
+      row where we lose to total-value z**; `method.html` is how it is measured plus both errors
+      we found in our own numbers (A-DRAFT-14, A-DRAFT-16) — the differentiator now that the
+      metric is not one. Production is *measured* from 2025-26, never projected: the only forward
+      model on the page is expected games, because A-DRAFT-5 is unrun. `site/dist` is committed
+      and the deploy is manual, since the store is not in the repo — see `site/README.md`.
+      **Open:** Vercel project + DNS (Tim); making the store CI-reproducible from `nba_api`
 
 ## 5. Log and glue
 
