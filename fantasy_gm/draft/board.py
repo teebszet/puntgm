@@ -1,19 +1,31 @@
 """The static G-score draft board — the free, shippable surface.
 
-**Why this exists.** The dynamic H₀ optimizer is the differentiator, and on three seasons of
-replay it currently *loses* to the static G-score reduction (see `results.md`). The board is
-therefore not a placeholder for H₀; on present evidence it is the better product, and it is the
-only draft surface that needs no OAuth, no forward projection, and no working optimizer. It is
-what can face traffic inside the mid-September window.
+**Why this exists.** It is the only draft surface that needs no OAuth, no forward category
+projection and no working optimizer, so it is what can face traffic inside the mid-September
+window. It was written when H₀ was losing to it on three seasons of replay; task 3.8 has since
+shown that comparison was measuring a broken build of H₀ (A-DRAFT-17), so the board is once
+again the *first* product rather than the better one. That does not change what it is or what
+it may claim.
 
 **What it ranks on.** ``g_score_board`` sums the variance-aware basis over the scored
 categories. That basis is the whole claim: z-score standardises by player-to-player spread
 alone, which is the right unit for a season-long ranking and the wrong one for a category
-decided over one week (Rosenof, arXiv 2307.02188). Measured on this repo's replay, G-score
-beats z-score by **+5 to +9pp** on category win rate on a forward-honest basis (two seasons,
-two seeds). The larger +13.4pp figure in `results.md` is the *realized-availability* arm and
-is not reachable by anyone drafting in advance — see the availability note below, and
-A-DRAFT-14 for the measurement.
+decided over one week (Rosenof, arXiv 2307.02188).
+
+**That claim did not survive being measured, and what replaced it is the one to publish
+(A-DRAFT-15).** Seat-mirrored across three seasons and four seeds, this board beats the
+**per-game** z-score that every free ranking list publishes by **+11 to +20pp** of category win
+rate, in twelve runs out of twelve. Against a **total-value** z-score — z computed on season
+totals, which Basketball Monster and Hashtag both expose behind a toggle — it *loses*, by 0.7
+to 3.8pp, also twelve out of twelve. At the fitted ``BOARD_KAPPA = 0`` the two are the same
+board (max rank delta 0 over 156 players), because a leak-free forward board is per-game mean ×
+projected rate and that is exactly what total-value z computes.
+
+So the edge is **availability, not variance**, and it is an edge over the *free* rankings only.
+An earlier "+5 to +9pp forward-honest" figure is **withdrawn**: the boards it was measured on
+leaked realized games-per-week (A-DRAFT-14) and the harness had a seat-adjacency bias
+(A-DRAFT-16). The +13.4pp figure in `results.md` is the *realized-availability* arm and is not
+reachable by anyone drafting in advance.
 
 **Punting is declared here, not emergent.** In H₀ concentration falls out of the optimisation
 and is never named. A static board cannot do that, so a punt build is exactly what the market's
