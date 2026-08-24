@@ -543,3 +543,68 @@ correction is not under-tuned; on this data it is harmful.
 
 **Applied:** `board.BOARD_KAPPA = 0.0`. `xscore.DEFAULT_KAPPA` stays 1.0 for the H₀ engine until
 task 3.8 resolves, so this investigation does not confound that one.
+
+---
+
+## A-DRAFT-17. Our H₀ implements the published H₀ — FALSE until 2026-08-24, and it cost most of the effect
+
+**Claim (never stated, always assumed):** `draft/hscore.py` implements the method in Rosenof,
+*Dynamic quantification of player value for fantasy basketball* (arXiv:2409.09884), so a
+disappointing H₀ number is evidence about the *method* on real data.
+
+**Reality, part one — we had never measured the published quantity.** The paper runs one H₀
+drafter against **eleven G-score drafters**, over twenty-week seasons resampled from players'
+own real weekly lines with injured weeks excluded, with every drafter knowing the true
+distributions **exactly**, and reports **the share of seasons the H₀ team finishes first**:
+21.8% (Each Category), 37.7% (Most Categories), against 8.3% chance. `draft/replay.py` reports
+category win rate for H₀ in a mixed room on one realized season with projection error. Different
+field, different metric, different information. "H₀ loses to the static board" was a true
+statement about a different experiment, and it was silent on correctness.
+
+**Reality, part two — the implementation was short one term.** Measured with
+`draft/papersim.py`, 12 seats x 2000 resampled seasons per arm, three seasons, each arm paired
+against a twelfth-G-score-drafter null under common random numbers:
+
+| arm | Each Category | Most Categories |
+|---|---|---|
+| published | 21.8% | 37.7% |
+| chance | 8.3% | 8.3% |
+| null (12th G-score drafter) | 8.4% | 8.2% |
+| `h_score` (shipped) | **11.7%** | **15.8%** |
+| `h_full_pool` | 13.1% | 17.1% |
+| `h_normalised` | 12.6% | 16.3% |
+| `h_future_slices` | 22.1% | 33.1% |
+| `h_paper` | **23.5%** | **37.2%** |
+
+The shipped engine captured about a third of the published Each-Category effect and a quarter of
+Most-Categories. Corrected, it reproduces the paper on both objectives across three independent
+seasons, and beats its own null at 12 of 12 seats in five of the six season x objective cells.
+
+**The term:** the engine valued *one* future pick and multiplied by the number remaining, so a
+13th-round pick was priced like a 3rd-round pick. Measured directly, it expected every remaining
+round — its own and its opponent's — to land on roughly the 25th-best player on the board, and
+over-valued its own future production by about a third. A team that believes its future is that
+good has little reason to prefer one player now, which blunts exactly the marginal comparison H₀
+exists to make. `future_slices` prices the j-th future pick from the suffix of the board that
+will still be there at that pick; the suffixes are nested, so one backward accumulation serves
+them all and the corrected block costs what it replaced (1.08ms vs 1.04ms).
+
+**Second, smaller:** the paper renormalises the strategy weights after each gradient step; we
+only clipped them, leaving the weight scale and the softmax temperature as one knob entered
+twice. Worth +1.4pp / +4.1pp **on top of** slices, and nothing — sometimes less than nothing —
+without them.
+
+**Measured and discarded first:** the 40-man candidate shortlist was also bounding the future
+pool, which was the obvious defect and the one suspected first. At the shipped softmax
+temperature nearly all the probability mass sits at the top of the board regardless, so it is
+worth ~1%. Kept as the `h_full_pool` arm.
+
+**Still missing, and now the largest known gap:** `draft/assignment.py` has no callers.
+Positional assignment is a named component of the published H₀ and its output feeds the
+future-pick term directly. The reproduction above matches the paper *without* it, in a room that
+constrains neither side; a live draft constrains both. Task 3.14.
+
+**Standing rule this earns:** *a negative result about a published method is a result about our
+implementation until the published experiment has been reproduced.* Reproduce the paper's own
+number, in the paper's own setting, before spending a single session diagnosing why the method
+"does not work here."

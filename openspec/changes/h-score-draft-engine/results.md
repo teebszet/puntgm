@@ -37,6 +37,11 @@ nothing over reading down a consensus list.
 
 ## What is NOT established: H₀ is currently worse than the static board
 
+> **Resolved 2026-08-24 — see "Task 3.8" below.** The measurement stands; the diagnosis was
+> premature. The implementation was short the per-slice future-pick term, and with it the engine
+> reproduces the published simulation. Read this section as a record of a broken build, not of
+> the method.
+
 H₀ loses to G-score by ~2.5pp on categories and ~6.6pp on matchups. **This is not
 under-optimization** — quadrupling the Adam budget (5 → 20 steps, 250s → 986s) moved it by
 0.3pp, well inside noise. Something structural is wrong, not something under-tuned.
@@ -159,6 +164,9 @@ So only **within-run** deltas are quotable. The reassuring part is that the `h_s
   what the grading measures. **The default is deliberately left on `REPRESENTATIVE` for now** —
   3.8 asks whether this implementation reproduces the paper at all, and that diagnostic needs
   the shipped configuration as its baseline. Flip the default once 3.8 resolves.
+  **Unblocked 2026-08-24:** 3.8 has resolved, and it used `REPRESENTATIVE` throughout because the
+  paper's own model is a representative opponent — so the reproduction does not argue against
+  `FIELD` for the mixed room, which is the only place it was ever measured to help.
 
 ## Availability is most of the edge (2026-08-23) — SUPERSEDED 2026-08-24
 
@@ -314,6 +322,99 @@ expected-games column, and the replay harness that can grade any of it on real s
 the harness is arguably the most defensible asset in the project, since it is what caught both
 of the errors above.
 
+## Task 3.8 — H₀ reproduces the published simulation once the implementation is corrected (2026-08-24)
+
+> **This retracts the framing of "What is NOT established" above, not its measurement.** H₀ did
+> lose to the static board in the mixed-room replay. What was wrong was reading that as evidence
+> about *the method*. See A-DRAFT-17.
+
+### We had never measured the number the paper reports
+
+The published experiment (Rosenof, arXiv:2409.09884) is **one H₀ drafter against eleven G-score
+drafters**, over twenty-week seasons resampled from players' own real weekly lines with injured
+weeks excluded, with every drafter knowing the true distributions **exactly** — no projection
+error anywhere in the loop. The statistic is **the share of seasons the H₀ team finishes first**:
+21.8% (Each Category), 37.7% (Most Categories), against 8.3% chance.
+
+Everything in this document above measures category win rate, for H₀ seated beside a G-score
+board, a z-score board and nine ADP bots, on one realized season, with projection error. Different
+field, different metric, different information. That is a legitimate experiment — it is closer to
+the product than the paper's is — but it cannot distinguish *"the method does not work here"* from
+*"we built it wrong"*, and for months it was being read as if it could.
+
+`fantasy_gm/draft/papersim.py` runs the published experiment. One structural fact makes it cheap:
+the drafters only ever see the true distributions, and those do not change between simulations, so
+**the draft is identical in every simulated season** — twelve drafts per season/objective, then
+thousands of cheap resampled seasons over fixed rosters.
+
+**Every arm is paired with a null**: the same room with that seat drafted by a twelfth G-score
+drafter, under common random numbers, so the two arms are differenced rather than compared. Not a
+formality — in an all-G-score league the early seats take roughly a quarter of the titles and the
+late seats almost none, because a snake over an *odd* number of rounds is not seat-neutral.
+Reading a seat-0 title rate against 8.3% credits the seat to the algorithm. Pooled over seats the
+null lands at 8.4% / 8.2% against a chance baseline of 8.3%, so the harness itself is not tilted.
+
+### The result
+
+12 seats x 2000 resampled seasons per arm, three seasons, 8 Adam steps. Share of seasons finished
+first, averaged over seasons:
+
+| arm | config | Each Category | Most Categories |
+|---|---|---|---|
+| **published** | — | **21.8%** | **37.7%** |
+| chance | — | 8.3% | 8.3% |
+| **null** (12th G-score drafter) | — | 8.4% | 8.2% |
+| **`h_score`** | **what is shipped** | **11.7%** | **15.8%** |
+| `h_full_pool` | future pool = whole board, not the 40-man shortlist | 13.1% | 17.1% |
+| `h_normalised` | weight renormalisation alone | 12.6% | 16.3% |
+| `h_future_slices` | future picks priced per-slice (+ full pool) | 22.1% | 33.1% |
+| **`h_paper`** | **slices + renormalisation** | **23.5%** | **37.2%** |
+
+Per season (Each Category / Most Categories): `h_paper` = 21.4/36.4 (2025-26), 24.2/34.7
+(2024-25), 24.9/40.5 (2023-24). `h_score` = 10.2/16.6, 11.7/15.4, 13.4/15.3.
+
+1. **The shipped engine captured about a third of the published Each-Category effect and a
+   quarter of Most-Categories.** It was above its null — the method was doing *something* — but
+   nowhere near the published number.
+
+2. **Corrected, it reproduces the paper on both objectives**: 23.5% vs 21.8%, 37.2% vs 37.7%, on
+   three independent seasons of real weekly lines. `h_paper` beats its own null at **12 of 12
+   seats** in five of the six season x objective cells (10/12 in the sixth); `h_score` managed
+   5–11.
+
+3. **One term did almost all of it.** The engine valued *one* future pick and multiplied by how
+   many remained, pricing a 13th-round pick like a 3rd-round pick. Measured, it expected every
+   remaining round — its own and its opponent's — to land on roughly the 25th-best player on the
+   board, and over-valued its own future production by about a third. A team that believes its
+   future is that good has little reason to care which player it takes now, which blunts exactly
+   the marginal comparison H₀ exists to make. The fix is free: the slices are nested suffixes of
+   the ranked board, so one backward accumulation serves them all (1.08ms vs 1.04ms).
+
+4. **Weight renormalisation is worth +1.4pp / +4.1pp on top of slices, and nothing without
+   them** — `h_normalised` and `h_fullpool_normalised` are at or below `h_score`. Same class of
+   defect as kappa=1.0: a paper constraint we approximated with a clip, never fitted.
+
+5. **The obvious defect was standing in front of the real one.** The first suspect was the 40-man
+   candidate shortlist silently bounding the future pool. It is — and it is worth ~1%, because at
+   the shipped softmax temperature nearly all the probability mass sits at the top of the board
+   regardless. Measured before being built on.
+
+### What this does not establish
+
+**That corrected H₀ beats the static G-score board on real data.** The paper's room hands every
+drafter exact true distributions; the replay has projection error, and the last two days are a
+record of how much that distinction matters. See the next section.
+
+**Positional assignment is still not wired in.** `draft/assignment.py` — the Jonker-Volgenant
+solver from task 3.3 — is built, pinned against brute force, and has no callers. It is a named
+component of the published H₀ and it feeds the future-pick term directly. The reproduction above
+matches the paper *without* it, in a room that constrains neither side; a live draft constrains
+both. Task 3.14, and the largest known gap between our H₀ and the paper's.
+
+**Task 3.9 (local optima) is demoted, not closed.** The deficit was the future-pick model, not the
+optimizer's ability to find its own optimum. Worth re-measuring on the corrected engine, since the
+objective it now climbs is a different one.
+
 ## Consequence for the plan
 
 The interview chose to skip shipping G-score and go straight to H₀ (see `discussion.md`). On
@@ -321,6 +422,16 @@ current evidence that ordering is inverted: **the G-score board is the product t
 today**, and H₀ is a research problem that has not yet paid off. Given the September window,
 the low-risk read is that the fallback is now the front-runner and H₀ continues as the
 follow-up it was always intended to be — not that H₀ should be abandoned.
+
+**Amended 2026-08-24.** Two findings pull in opposite directions and the ordering above survives
+both. Against it: the G-score board's edge over a *total-value* z-score is gone (A-DRAFT-15), so
+the board ships on an availability claim rather than a metric claim, and it is not a moat. For it:
+H₀ was never falsified — it was under-built, and corrected it reproduces the published
+simulation (A-DRAFT-17). So the free board still goes first because it is finished and the claim
+behind it is honest, and H₀ is once again a live differentiator rather than a research problem
+with a negative result attached. What decides whether it is a *product* is the mixed-room replay
+on the corrected engine, immediately below — the paper's room has no projection error and ours
+does.
 
 ## Caveats on these numbers
 
