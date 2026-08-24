@@ -195,7 +195,7 @@ def render_board_page(data: dict) -> str:
 <div class="basis">{basis}</div>
 """
     script = """
-const CATS = %s;
+const CATS = __CAT_LABELS__;
 let DATA = null, sortKey = 'rank', sortDir = 1;
 
 function currentBuild() {
@@ -239,7 +239,10 @@ document.querySelectorAll('#board th[data-k]').forEach(th => {
     const k = th.dataset.k;
     // Rank and the per-game rank read best ascending; everything else best descending.
     if (sortKey === k) sortDir *= -1;
-    else { sortKey = k; sortDir = (k === 'rank' || k === 'z_rank' || k === 'player_name') ? 1 : -1; }
+    else {
+      sortKey = k;
+      sortDir = (k === 'rank' || k === 'z_rank' || k === 'player_name') ? 1 : -1;
+    }
     render();
   });
 });
@@ -254,7 +257,7 @@ fetch('data/boards.json')
   .catch(() => {
     document.getElementById('count').textContent = 'could not load the board';
   });
-""" % json.dumps(CAT_LABELS)
+""".replace("__CAT_LABELS__", json.dumps(CAT_LABELS))
     return _shell("puntgm — free 9-cat draft board", "board", body, script)
 
 
