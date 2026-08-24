@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>puntgm — free 9-cat draft board</title>
+<style>
+:root {
+  --bg: #0d1117; --panel: #151b23; --line: #232c38; --ink: #e6edf3;
+  --dim: #8b98a8; --accent: #4cc38a; --warn: #e0a458; --link: #6cb6ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+a { color: var(--link); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 80px; }
+header { border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+header .wrap { display: flex; align-items: baseline; gap: 28px; padding: 18px 20px; }
+.brand { font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
+.brand span { color: var(--accent); }
+nav a { margin-right: 18px; text-decoration: none; color: var(--dim); font-size: 14px; }
+nav a:hover, nav a.on { color: var(--ink); }
+h1 { font-size: 30px; line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 14px; }
+h2 { font-size: 20px; margin: 40px 0 12px; letter-spacing: -0.01em; }
+h3 { font-size: 16px; margin: 28px 0 8px; }
+p, li { color: #c9d4e0; }
+.lede { font-size: 17px; color: var(--ink); max-width: 68ch; }
+.dim { color: var(--dim); }
+.basis {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  padding: 12px 16px; font-size: 13px; color: var(--dim); margin: 22px 0; border-radius: 4px;
+}
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 24px 0 14px; }
+select, input {
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  padding: 7px 10px; border-radius: 5px; font-size: 14px;
+}
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 9px; text-align: right; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; color: var(--dim); font-weight: 600; text-transform: uppercase;
+     letter-spacing: 0.04em; cursor: pointer; user-select: none; white-space: nowrap; }
+th:hover { color: var(--ink); }
+th.l, td.l { text-align: left; }
+tbody tr:hover { background: #131a22; }
+td.name { font-weight: 500; }
+.up { color: var(--accent); }
+.down { color: #e06c75; }
+.muted { color: var(--dim); }
+.cat { font-size: 12px; color: var(--dim); }
+table.small { font-size: 13px; }
+table.small th, table.small td { padding: 6px 8px; }
+code { background: var(--panel); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+footer { border-top: 1px solid var(--line); margin-top: 60px; padding-top: 20px;
+         color: var(--dim); font-size: 13px; }
+</style>
+</head><body>
+<header><div class="wrap">
+  <div class="brand">punt<span>gm</span></div>
+  <nav><a href="/" class="on">Board</a><a href="/evidence.html" class="">Evidence</a><a href="/method.html" class="">Method</a></nav>
+</div></header>
+<div class="wrap">
+
+<h1>The rankings you draft from can't see who plays.</h1>
+<p class="lede">
+  Every free ranking list is a <strong>per-game</strong> number. A per-game number rates a player
+  who appears 55 times exactly like one who appears 80. Correcting that is worth
+  <strong>+11 to +20 percentage points</strong> of category win rate, measured on three completed
+  seasons &mdash; <a href="/evidence.html">here is the measurement</a>.
+</p>
+<p class="lede dim">
+  So this board carries an expected-games column, and a <code>vs&nbsp;z</code> column showing where
+  it disagrees with the per-game rankings. That gap is the whole product.
+</p>
+
+<div class="controls">
+  <select id="build"><option value="balanced">Balanced</option><option value="punt_ft">Balanced</option><option value="punt_fg">Balanced</option><option value="punt_tov">Balanced</option><option value="punt_ast">Balanced</option><option value="punt_pts">Balanced</option><option value="punt_ft_tov">Balanced</option><option value="punt_fg_ft">Balanced</option><option value="punt_ast_tov">Balanced</option></select>
+  <input id="q" type="search" placeholder="filter players&hellip;" size="22">
+  <span class="dim" id="count"></span>
+</div>
+
+<table id="board">
+  <thead><tr>
+    <th class="l" data-k="rank">#</th>
+    <th class="l" data-k="player_name">Player</th>
+    <th data-k="g_score">Value</th>
+    <th data-k="expected_games">Exp. games</th>
+    <th data-k="z_rank">Per-game rank</th>
+    <th data-k="z_delta">vs z</th>
+    <th class="l">Top categories</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<div class="basis">Per-game production measured from 2025-26 game logs over the top 156 players by minutes per game. Compounded to a week over the league's scheduled games per week, each played with an expected-availability probability projected as of 2026-08-24 — a beta-binomial rate shrunk toward the pool, not last season's realized games. No count of the games this player actually went on to play enters the rank. Category rates are measured, not projected forward.</div>
+
+<footer>
+  Built from real NBA box scores. Every number on this site is reproducible from the
+  <a href="https://github.com/teebszet/puntgm">open-source repository</a> that generated it.
+</footer>
+</div>
+<script>
+const CATS = {"pts": "PTS", "reb": "REB", "ast": "AST", "stl": "STL", "blk": "BLK", "fg3m": "3PM", "fg_pct": "FG%", "ft_pct": "FT%", "tov": "TO"};
+let DATA = null, sortKey = 'rank', sortDir = 1;
+
+function currentBuild() {
+  const name = document.getElementById('build').value;
+  return DATA.builds.find(b => b.build === name);
+}
+function topCats(row) {
+  return Object.entries(row.categories)
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .filter(([, v]) => v > 0)
+    .map(([c, v]) => CATS[c] + ' +' + v.toFixed(1)).join('  ');
+}
+function render() {
+  if (!DATA) return;
+  const b = currentBuild();
+  const q = document.getElementById('q').value.toLowerCase();
+  let rows = b.rows.filter(r => r.player_name.toLowerCase().includes(q));
+  rows = rows.slice().sort((x, y) => {
+    const a = x[sortKey], c = y[sortKey];
+    if (typeof a === 'string') return sortDir * a.localeCompare(c);
+    return sortDir * ((a ?? 0) - (c ?? 0));
+  });
+  document.querySelector('#board tbody').innerHTML = rows.map(r => {
+    const d = r.z_delta ?? 0;
+    const cls = d > 0 ? 'up' : d < 0 ? 'down' : 'muted';
+    const sign = d > 0 ? '+' : '';
+    return `<tr>
+      <td class="l muted">${r.rank}</td>
+      <td class="l name">${r.player_name}</td>
+      <td>${r.g_score.toFixed(2)}</td>
+      <td>${r.expected_games == null ? '&mdash;' : r.expected_games.toFixed(1)}</td>
+      <td class="muted">${r.z_rank ?? '&mdash;'}</td>
+      <td class="${cls}">${sign}${d}</td>
+      <td class="l cat">${topCats(r)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('count').textContent = rows.length + ' players';
+}
+document.querySelectorAll('#board th[data-k]').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    // Rank and the per-game rank read best ascending; everything else best descending.
+    if (sortKey === k) sortDir *= -1;
+    else { sortKey = k; sortDir = (k === 'rank' || k === 'z_rank' || k === 'player_name') ? 1 : -1; }
+    render();
+  });
+});
+document.getElementById('build').addEventListener('change', render);
+document.getElementById('q').addEventListener('input', render);
+
+// The board is fetched rather than inlined: it is ~390KB and it is regenerated far more often
+// than the page around it, so keeping the two apart keeps the committed diff readable.
+fetch('data/boards.json')
+  .then(r => r.json())
+  .then(d => { DATA = d; render(); })
+  .catch(() => {
+    document.getElementById('count').textContent = 'could not load the board';
+  });
+</script>
+</body></html>

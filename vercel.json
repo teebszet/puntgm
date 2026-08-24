@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "site/dist",
+  "framework": null,
+  "buildCommand": null,
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/data/boards.json",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600" }]
+    }
+  ]
+}
