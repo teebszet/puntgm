@@ -349,10 +349,13 @@ thousands of cheap resampled seasons over fixed rosters.
 
 **Every arm is paired with a null**: the same room with that seat drafted by a twelfth G-score
 drafter, under common random numbers, so the two arms are differenced rather than compared. Not a
-formality — in an all-G-score league the early seats take roughly a quarter of the titles and the
-late seats almost none, because a snake over an *odd* number of rounds is not seat-neutral.
-Reading a seat-0 title rate against 8.3% credits the seat to the algorithm. Pooled over seats the
-null lands at 8.4% / 8.2% against a chance baseline of 8.3%, so the harness itself is not tilted.
+formality. In an all-G-score league — every drafter running the identical board — a single seat's
+title rate ranges from **0.4% to 30.9%** across the six season x objective nulls, against an 8.3%
+chance baseline, because a snake over an *odd* number of rounds is not seat-neutral. The pattern is
+not even monotone in seat order (2024-25 gives the last seat 13%). Reading any one seat's title
+rate against 8.3% credits the seat to the algorithm. Pooled over all twelve seats the null lands at
+8.4% / 8.2%, so the harness itself is not tilted — but only the pooled, seat-differenced number is
+readable, which is why every arm above is one.
 
 ### The result
 

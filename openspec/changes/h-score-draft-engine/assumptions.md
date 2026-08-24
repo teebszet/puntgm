@@ -563,7 +563,9 @@ statement about a different experiment, and it was silent on correctness.
 
 **Reality, part two — the implementation was short one term.** Measured with
 `draft/papersim.py`, 12 seats x 2000 resampled seasons per arm, three seasons, each arm paired
-against a twelfth-G-score-drafter null under common random numbers:
+against a twelfth-G-score-drafter null under common random numbers. The null is load-bearing: in
+an all-G-score league a single seat's title rate spans **0.4% to 30.9%** against an 8.3% chance
+baseline, and not monotonically in seat order, so only the pooled seat-differenced number reads:
 
 | arm | Each Category | Most Categories |
 |---|---|---|
