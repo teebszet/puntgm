@@ -449,3 +449,87 @@ does.
   26,651 logs) and replication is running rather than pending.
 - Category-level rates are collected per strategy but not yet analysed; the percentage
   categories are the likely weak spot, as they were in waiver replay.
+
+## Task 3.8, the payoff — the corrected engine still loses on real data, 12/12 (2026-08-25)
+
+`scripts/paper_engine_replay.py`, three seasons x two seeds x three rooms, seat-mirrored over
+twelve rotations, 59,400 graded category decisions per row. Engine at `c562a44` (identical to
+`5b89e98`, which the run was launched from — the only difference between them is
+`scripts/build_site.py`). Raw rows in `runs/paper-engine-replay/`.
+
+```
+season    room      seed   cat delta   matchup delta
+2023-24   null      7/11    +0.00 +0.00    +0.00  +0.00
+2023-24   shipped   7/11    -3.71 -2.88    -8.17  -5.14
+2023-24   paper     7/11    -2.39 -3.75    -3.83  -4.98
+2024-25   null      7/11    +0.00 +0.00    +0.00  +0.00
+2024-25   shipped   7/11    -2.32 -2.61    -6.27  -5.50
+2024-25   paper     7/11    -1.53 -2.31    -3.20  -3.97
+2025-26   null      7/11    +0.00 +0.00    +0.00  +0.00
+2025-26   shipped   7/11    -3.49 -3.87    -5.98  -6.77
+2025-26   paper     7/11    -6.50 -6.67   -11.28 -12.83
+```
+
+**The result: H₀ loses to the static G-score board in all twelve runs.** Six of six on the
+shipped engine, six of six on the paper-faithful one, on both metrics, in all three seasons.
+The `future_slices` correction that made H₀ reproduce the published simulation does not
+overturn the standing result. Mean over six runs: shipped **-3.15pp** category / **-6.30pp**
+matchup; paper **-3.86pp** / **-6.68pp**.
+
+The null arm is `+0.00pp` in all six rows. The room measures nothing when there is nothing to
+measure, which is what makes the rest of the table readable.
+
+### The 2026-08-24 alarm was a single-season artifact
+
+On the first row out — 2025-26, seed 7 — the corrected engine looked roughly twice as bad as the
+uncorrected one, and that was reported in-channel with a caveat that single-season deltas
+reverse. **It reversed.** In two of three seasons the corrected engine is *better* than the
+shipped one, on both metrics:
+
+```
+season    shipped cat   paper cat     shipped mu    paper mu
+2023-24        -3.30       -3.07          -6.65       -4.40
+2024-25        -2.46       -1.92          -5.88       -3.59
+2025-26        -3.68       -6.58          -6.38      -12.05
+```
+
+The unfavourable mean is entirely 2025-26. So the honest statement about `future_slices` is that
+it *helps* against the static board in two seasons of three and hurts badly in the third — not
+that it hurts. What is unambiguous across every season is the sign of the deficit itself.
+
+### Correction: the gap between this table and the paper is NOT projection error
+
+An explanation offered in-channel on 2026-08-24 — that the paper's room has no projection error
+while ours does, so a method reasoning harder over a noisy input loses — **is wrong, and this
+file's own module docstring already said so.** `paper_engine_replay.py` builds its basis with
+`xscore_basis(store, season)`, which calls `measure_period_stats` over the *completed* season.
+Both arms draft knowing realized production. **This replay is an oracle, exactly as the paper's
+simulation is** (`papersim.py`: "the drafters know the true distributions exactly — there is no
+projection error, so the only thing under test is the drafting").
+
+What actually differs between the two experiments is what `papersim.py` lists: the field, the
+metric, and the opponent model.
+
+- **Field.** The paper seats one H₀ against eleven G-score drafters. This replay seats one H₀
+  and one G-score board at adjacent seats and fills the other ten with ADP bots
+  (`run_strategy_replay`, `n_teams=12`). H₀'s mechanism is reasoning about what opponents will
+  take; ten of its eleven opponents here are not the opponents it models.
+- **Metric.** Share of seasons finished first, versus category and matchup win rate.
+- **Missing term.** No positional assignment (`draft/assignment.py` still has no callers, task
+  3.14) and no positional eligibility, against the paper's thirteen-slot structure.
+
+### What this leaves open
+
+**Nobody has yet measured H₀ under projection error at all.** Both experiments are oracles. The
+question asked in-channel on 2026-08-24 — "is H₀ a product on data we can actually project?" —
+is not answered by this table and was not answered by the previous one. It requires a forward
+basis, which is Track B.
+
+The decisive cheap experiment for the *drafting* question is instead to vary the one axis this
+table confounds: rerun the `paper` room with the ten ADP bots replaced by G-score boards. That
+isolates "H₀ needs a field it models" from "H₀ is worse", using an engine already built. If the
+deficit survives a G-score field, the room is not the explanation and the missing positional
+term (3.14) becomes the last standing candidate.
+
+Consequence for the plan is unchanged and now rests on three seasons rather than one: **the
+G-score board is the product that ships; H₀ is not one yet.**
