@@ -141,9 +141,20 @@ class HScoreEngine:
         # across ranks is unchanged, so ``softmax_temp`` keeps meaning what it meant. Changing
         # who they take is the axis under test; changing how sharply they discriminate is not,
         # and conflating the two would make the result unreadable.
-        self.opponent_board = list(opponent_board) if opponent_board else None
+        #
+        # The board is filtered to players the basis actually scores before the ladder is
+        # built, and that is load-bearing rather than defensive. An ADP ordering covers the
+        # whole league -- 582 players against a 156-man scored pool -- so zipping the raw
+        # ordering against the ladder hands every pool player a value from further down than
+        # its rank warrants, and hands a flat 0.0 to every pool player sitting past rank 156
+        # in the full ordering. That would tell the engine its opponents pick near-uniformly
+        # from most of the board, which is the "free edge for every remaining round" failure
+        # `best_pick` already warns about -- and it would have read as a finding about H0.
+        self.opponent_board: list[str] | None = None
         self._opp_score: dict[str, float] | None = None
-        if self.opponent_board:
+        if opponent_board:
+            known = set(self.basis.pool)
+            self.opponent_board = [p for p in opponent_board if p in known]
             ladder = sorted((self.basis.total(p) for p in self.opponent_board), reverse=True)
             self._opp_score = dict(zip(self.opponent_board, ladder, strict=True))
         self._warm: list[float] | None = None

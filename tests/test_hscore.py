@@ -549,3 +549,35 @@ def test_an_opponent_board_leaves_our_own_future_picks_alone():
 
     neutral = [1.0] * len(settings.categories)
     assert told._weighted_future(board, neutral) == blind._weighted_future(board, neutral)
+
+
+def test_an_opponent_board_wider_than_the_pool_still_maps_rank_for_rank():
+    """A real ADP ordering covers the whole league; the basis scores a 156-man pool. If the
+    ladder were built over the raw ordering, every pool player past the pool's size in that
+    ordering would be handed a flat 0.0 — telling the engine its opponents pick near-uniformly
+    from most of the board, which is a finding about our zip, not about H₀.
+    """
+    basis = xscore_basis(_room_store(), SEASON, pool_size=20)
+    settings = DraftSettings(n_teams=4, rounds=4)
+    scored = set(basis.pool)
+    # The opponents' ordering: every pool player, interleaved with players the basis never
+    # scored, exactly as derive_adp_order returns them.
+    wide = []
+    for i, pid in enumerate(sorted(scored)):
+        wide.append(f"ghost{i}")
+        wide.append(pid)
+    engine = HScoreEngine(basis, settings, steps=1, opponent_board=wide)
+
+    assert engine._opp_score is not None
+    assert set(engine._opp_score) == scored          # ghosts dropped, pool intact
+    # The values handed out are exactly the pool's own G-scores, redistributed — the ladder is
+    # the same set of numbers whoever ends up holding them. (G-scores are standardised, so the
+    # bottom of the pool is negative; "no zeros" is not the invariant, "same multiset" is.)
+    assert sorted(engine._opp_score.values()) == pytest.approx(
+        sorted(basis.total(p) for p in scored)
+    )
+    # Rank-for-rank: the k-th scored player in the opponents' order holds the k-th highest
+    # value in the pool.
+    order = [p for p in wide if p in scored]
+    values = [engine._opp_score[p] for p in order]
+    assert values == sorted(values, reverse=True)
