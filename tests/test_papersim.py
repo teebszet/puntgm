@@ -15,6 +15,7 @@ from fantasy_gm.draft.papersim import (
     basis_from_panel,
     build_panel,
     draw_weeks,
+    run_paper_sim,
 )
 from fantasy_gm.draft.settings import DraftSettings
 from fantasy_gm.draft.xscore import xscore_basis
@@ -51,6 +52,40 @@ def test_eligibility_is_a_week_count_floor():
     panel = build_panel(_panel_store(), SEASON)
     assert "iron" in panel.eligible(min_weeks=2)
     assert "fragile" not in panel.eligible(min_weeks=len(panel.weeks["iron"]))
+
+
+def test_idle_weeks_option_fills_the_gap_inside_the_active_span():
+    """``include_idle_weeks=True`` puts availability back into the paper room — the one axis on
+    which it and the replay room disagree, and therefore the one that has to be switchable
+    rather than argued about (see ``scripts/room_decomposition.py``)."""
+    panel = build_panel(_panel_store(), SEASON, include_idle_weeks=True)
+    # Same span, same length: the gap is filled, not the player dropped.
+    assert len(panel.weeks["fragile"]) == len(panel.weeks["iron"])
+    # An idle week is an empty line. Every reader takes components with ``.get(k, 0.0)``, so
+    # that is a genuine zero rather than a missing observation.
+    assert any(w == {} for w in panel.weeks["fragile"])
+    assert not any(w == {} for w in panel.weeks["iron"])
+
+
+def test_idle_weeks_do_not_buy_eligibility():
+    """The paper's inclusion rule is ten *played* weeks. Padding must not smuggle a
+    twelve-week absentee into the pool as a qualified player."""
+    floor = len(build_panel(_panel_store(), SEASON).weeks["iron"])
+    padded = build_panel(_panel_store(), SEASON, include_idle_weeks=True)
+    assert len(padded.weeks["fragile"]) >= floor
+    assert "fragile" not in padded.eligible(min_weeks=floor)
+
+
+def test_idle_panel_reproduces_the_realized_basis():
+    """The point of the flag is that it recreates the replay room's semantics exactly, not
+    approximately — otherwise a cell of the decomposition would be measuring a third thing."""
+    store = _panel_store()
+    pool = ["iron", "fragile"]
+    padded = basis_from_panel(build_panel(store, SEASON, include_idle_weeks=True), pool)
+    realized = xscore_basis(store, SEASON, pool_size=10)
+    for pid in pool:
+        assert padded.stats[pid]["pts"].mean == pytest.approx(realized.stats[pid]["pts"].mean)
+        assert padded.stats[pid]["pts"].std == pytest.approx(realized.stats[pid]["pts"].std)
 
 
 def test_basis_from_panel_sees_no_idle_weeks():
@@ -176,3 +211,64 @@ def test_every_arm_is_a_valid_engine_configuration():
             continue
         engine = HScoreEngine(basis, DraftSettings(n_teams=2, rounds=3), steps=1, **kwargs)
         assert engine.best_pick(DraftState()) is not None
+
+
+# --- the field the arm drafts against ----------------------------------------
+
+
+def test_unknown_field_is_rejected():
+    with pytest.raises(ValueError, match="unknown field"):
+        run_paper_sim(_panel_store(), SEASON, field="whatever")
+
+
+def test_the_null_is_only_worth_chance_against_its_own_field():
+    """The two fields differ in exactly the way that makes the null non-optional.
+
+    In a G-score field the null is a thirteenth copy of a board every other seat is already
+    running, so pooled over every seat its title rate is **exactly** 1/N — titles sum to one
+    per season and no seat has an edge in strategy. That identity is what lets a paper-room
+    H₀ row be read at all.
+
+    In an ADP field the same null is a *better drafter than its opponents*, so it wins far more
+    than its share. Comparing an ADP-field row to the 1/N chance baseline would therefore credit
+    the board's advantage over bots to the engine. Differencing against this null is the only
+    thing that removes it.
+    """
+    store = Store(":memory:")
+    _seed(store, {
+        # Seventy game-days, because the panel's inclusion rule is ten *weeks* and ``_seed``
+        # lays one line per day — a twenty-one-game fixture spans three weeks and empties the
+        # pool.
+        f"p{i:02d}": [_line(pts=30 - i, reb=6, ast=3, fgm=6, fga=12, ftm=3, fta=4)
+                      for _ in range(70)]
+        for i in range(24)
+    })
+    kw = dict(
+        season=SEASON, arm="g_score", n_seasons=20, seed=3,
+        n_teams=4, n_rounds=3, pool_size=24,
+    )
+    chance = 1.0 / 4
+    assert run_paper_sim(store, **kw).mean_title_rate == pytest.approx(chance)
+    assert run_paper_sim(store, **kw, field="adp").mean_title_rate > chance
+
+
+def test_the_field_stream_does_not_depend_on_the_arm():
+    """Common random numbers across arms is what the whole harness rests on. If the bots' draws
+    were seeded from the arm name, the null and the arm would face different fields and the
+    difference between them would be measuring the field instead of the engine."""
+    store = Store(":memory:")
+    _seed(store, {
+        # Seventy game-days, because the panel's inclusion rule is ten *weeks* and ``_seed``
+        # lays one line per day — a twenty-one-game fixture spans three weeks and empties the
+        # pool.
+        f"p{i:02d}": [_line(pts=30 - i, reb=6, ast=3, fgm=6, fga=12, ftm=3, fta=4)
+                      for _ in range(70)]
+        for i in range(24)
+    })
+    kw = dict(
+        season=SEASON, n_seasons=2, seats=[0], seed=3, n_teams=4, n_rounds=3,
+        pool_size=24, field="adp",
+    )
+    first = run_paper_sim(store, arm="g_score", **kw)
+    second = run_paper_sim(store, arm="g_score", **kw)
+    assert first.seats[0].cat_win_rate == second.seats[0].cat_win_rate

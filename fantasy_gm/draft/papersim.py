@@ -55,7 +55,9 @@ from statistics import fmean, median, pstdev
 
 from fantasy_gm.config import CATEGORY_DIRECTION, DEFAULT_CATEGORIES, PERCENTAGE_CATEGORIES
 from fantasy_gm.draft.hscore import HScoreEngine, OpponentModel
+from fantasy_gm.draft.opponents import AdpBot, derive_adp_order
 from fantasy_gm.draft.replay import (
+    bot_strategy,
     hscore_strategy,
     round_robin_pairings,
     snake_draft,
@@ -116,21 +118,40 @@ def _iso_week(day: str) -> str:
 class WeeklyPanel:
     """Each player's real weekly stat lines — the population a simulated season resamples.
 
-    **Played weeks only.** The paper excludes injured weeks and resamples from what is left, so
-    a simulated season gives every player twenty *healthy* weeks. That is deliberately unlike
-    :func:`fantasy_gm.draft.xscore.measure_period_stats`, which counts idle weeks as zeros
-    because a realized season charges them to the manager. Here availability is removed from
-    the experiment entirely — which is the right call for a correctness check, since the whole
-    point is to isolate the optimizer from everything else this project has measured.
+    **Played weeks only, by default.** The paper excludes injured weeks and resamples from what
+    is left, so a simulated season gives every player twenty *healthy* weeks. That is
+    deliberately unlike :func:`fantasy_gm.draft.xscore.measure_period_stats`, which counts idle
+    weeks as zeros because a realized season charges them to the manager. For the correctness
+    check of task 3.8 that is the right call — the point is to isolate the optimizer from
+    everything else this project has measured.
+
+    ``build_panel(..., include_idle_weeks=True)`` puts availability back in, using the same
+    span convention as ``measure_period_stats``: weeks between a player's first and last
+    appearance in which they did not play become zero weeks, and weeks outside that span are
+    not invented. That is the one axis on which the paper room and the replay room disagree
+    most sharply, and it is the whole reason this flag exists — see
+    :mod:`scripts.room_decomposition`.
+
+    ``played`` records how many of a player's weeks were actually played, so the paper's
+    ten-week inclusion rule keeps meaning ten *played* weeks under either setting.
     """
 
     weeks: dict[str, list[dict[str, float]]] = field(default_factory=dict)
+    played: dict[str, int] = field(default_factory=dict)
 
     def eligible(self, min_weeks: int = MIN_PANEL_WEEKS) -> list[str]:
-        return sorted(p for p, w in self.weeks.items() if len(w) >= min_weeks)
+        return sorted(
+            p for p, w in self.weeks.items()
+            if self.played.get(p, len(w)) >= min_weeks
+        )
 
 
-def build_panel(store, season: str, categories: list[str] | None = None) -> WeeklyPanel:
+def build_panel(
+    store,
+    season: str,
+    categories: list[str] | None = None,
+    include_idle_weeks: bool = False,
+) -> WeeklyPanel:
     """Aggregate real box scores into per-player, per-week component totals."""
     categories = list(categories or DEFAULT_CATEGORIES)
     needed: set[str] = set()
@@ -148,9 +169,24 @@ def build_panel(store, season: str, categories: list[str] | None = None) -> Week
         wk = acc[r["player_id"]][_iso_week(r["game_date"])]
         for k in needed:
             wk[k] = wk.get(k, 0.0) + float(stats.get(k, 0.0))
-    return WeeklyPanel({
-        pid: [by_week[w] for w in sorted(by_week)] for pid, by_week in acc.items()
-    })
+
+    played = {pid: len(by_week) for pid, by_week in acc.items()}
+    if not include_idle_weeks:
+        return WeeklyPanel(
+            {pid: [by_week[w] for w in sorted(by_week)] for pid, by_week in acc.items()},
+            played,
+        )
+
+    all_weeks = sorted({w for by_week in acc.values() for w in by_week})
+    weeks: dict[str, list[dict[str, float]]] = {}
+    for pid, by_week in acc.items():
+        active = sorted(by_week)
+        span = [w for w in all_weeks if active[0] <= w <= active[-1]]
+        # An idle week is an empty line, not a missing one: every downstream reader takes
+        # components with ``.get(k, 0.0)``, so an empty dict is a genuine zero in every
+        # counting category and zero *impact* in every percentage category.
+        weeks[pid] = [by_week.get(w, {}) for w in span]
+    return WeeklyPanel(weeks, played)
 
 
 def basis_from_panel(
@@ -359,10 +395,22 @@ def _run_seat(job: tuple) -> SeatResult:
     pickle it — the twelve seats are wholly independent and the machine has cores idle."""
     (
         seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-        opponent_model, n_teams,
+        opponent_model, n_teams, field_order,
     ) = job
 
-    strategies = [static_order_strategy(board) for _ in range(n_teams)]
+    if field_order is None:
+        strategies = [static_order_strategy(board) for _ in range(n_teams)]
+    else:
+        # One shared stream for the whole field, seeded from (seed, seat) and *not* from the
+        # arm: the bots draw once per pick in snake order in both the arm room and the null
+        # room, so the stream lines up pick-for-pick and the two rooms differ only through the
+        # one swapped seat. Seeding per-bot instead would work equally well; seeding per-arm
+        # would silently destroy the pairing this whole harness is built on.
+        bot_rng = random.Random(f"field:{seed}:{seat}")
+        strategies = [
+            bot_strategy(AdpBot(field_order, bot_rng)) for _ in range(n_teams)
+        ]
+        strategies[seat] = static_order_strategy(board)
     if arm != "g_score":
         engine = HScoreEngine(
             basis, settings, steps=engine_steps, opponent_model=opponent_model, **ARMS[arm]
@@ -413,24 +461,40 @@ def run_paper_sim(
     n_teams: int = 12,
     n_rounds: int = 13,
     workers: int | None = None,
+    field: str = "g_score",
+    include_idle_weeks: bool = False,
 ) -> PaperSimResult:
-    """One arm against eleven G-score drafters, over every draft seat.
+    """One arm against eleven opponents, over every draft seat.
 
-    ``arm`` names an entry in :data:`ARMS`. ``"g_score"`` is the **null**: a twelfth G-score
-    drafter in the same room. Pooled over seats its title rate is 1/12 by construction, and its
-    *per-seat* spread is the seat effect — which has to be measured before any seat-level
-    reading of an H₀ row is trusted, because a snake over thirteen rounds is not seat-neutral
-    even when every drafter runs the same board.
+    ``arm`` names an entry in :data:`ARMS`. ``"g_score"`` is the **null**: the same seat drafted
+    by a G-score board instead. Pooled over seats the null's title rate is 1/12 by construction
+    in a G-score field, and its *per-seat* spread is the seat effect — which has to be measured
+    before any seat-level reading of an H₀ row is trusted, because a snake over thirteen rounds
+    is not seat-neutral even when every drafter runs the same board.
+
+    ``field`` selects the other eleven seats: ``"g_score"`` is the published setup, ``"adp"``
+    fills them with ADP bots as :mod:`fantasy_gm.draft.replay` does. ``include_idle_weeks``
+    charges missed weeks to the manager. Both default to the published setting, so every number
+    already recorded for task 3.8 is reproduced unchanged; they exist so the disagreement
+    between this room and the replay room can be decomposed one axis at a time.
+
+    Note that in an ADP field the null's pooled title rate is **not** 1/12 — a G-score board
+    among ADP bots is a better team than a bot, so it wins more than its share. That is exactly
+    why the null is differenced rather than compared to chance.
     """
     if arm not in ARMS:
         raise ValueError(f"unknown arm: {arm} (known: {sorted(ARMS)})")
+    if field not in ("g_score", "adp"):
+        raise ValueError(f"unknown field: {field} (known: g_score, adp)")
     settings = DraftSettings(
         categories=list(DEFAULT_CATEGORIES),
         n_teams=n_teams,
         objective=objective,
         rounds=n_rounds,
     )
-    panel = build_panel(store, season, settings.categories)
+    panel = build_panel(
+        store, season, settings.categories, include_idle_weeks=include_idle_weeks
+    )
     # The pool must hold at least one player per pick, so the panel's ten-week inclusion rule
     # is applied *before* truncation rather than after — filtering a 156-man list down to 144
     # would leave a thirteen-round twelve-team draft twelve picks short.
@@ -442,10 +506,12 @@ def run_paper_sim(
     basis = basis_from_panel(panel, pool, settings.categories, kappa=kappa, mode=variance_mode)
     board = sorted(basis.pool, key=lambda p: (-basis.total(p), p))
 
+    field_order = derive_adp_order(store, season) if field == "adp" else None
+
     seats = seats if seats is not None else list(range(n_teams))
     jobs = [
         (seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-         opponent_model, n_teams)
+         opponent_model, n_teams, field_order)
         for seat in seats
     ]
     if len(jobs) == 1:
