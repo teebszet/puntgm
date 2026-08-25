@@ -477,3 +477,75 @@ def test_field_scores_against_every_opponent():
     assert [t[2] for t in totals] == [
         settings.n_rounds - len(r) for r in state.opponent_rosters
     ]
+
+
+# --- the engine's model of the room ------------------------------------------
+
+
+def _room_store() -> Store:
+    store = Store(":memory:")
+    _seed(store, {
+        f"p{i:02d}": [
+            _line(pts=30 - i, reb=2 + (i % 7), ast=1 + (i % 5), stl=(i % 3), blk=((i + 1) % 4),
+                  fg3m=(i % 6), tov=1 + (i % 4), fgm=6, fga=12, ftm=3, fta=4)
+            for _ in range(21)
+        ]
+        for i in range(40)
+    })
+    return store
+
+
+def test_the_g_score_board_as_an_opponent_board_is_exactly_the_default():
+    """``opponent_board`` substitutes an ordering into the board's own score ladder, so handing
+    it the board it already assumes must be an identity — not merely close.
+
+    This pins the mechanism as a *pure reordering*. If it also changed the scale, the softmax
+    temperature would mean something different in the two arms and the ADP-field experiment
+    would be measuring two things at once.
+    """
+    basis = xscore_basis(_room_store(), SEASON, pool_size=40)
+    settings = DraftSettings(n_teams=4, rounds=4)
+    board = sorted(basis.pool, key=lambda p: (-basis.total(p), p))
+    state = DraftState(my_roster=["p00"], opponent_rosters=[["p01"], ["p02"], ["p03"]],
+                       taken={"p00", "p01", "p02", "p03"})
+
+    blind = HScoreEngine(basis, settings, steps=2).evaluate_candidates(state, top_n=5)
+    told = HScoreEngine(
+        basis, settings, steps=2, opponent_board=board
+    ).evaluate_candidates(state, top_n=5)
+
+    assert [c.player_id for c in blind] == [c.player_id for c in told]
+    for a, b in zip(blind, told, strict=True):
+        assert a.value == pytest.approx(b.value)
+
+
+def test_a_different_opponent_board_changes_what_the_engine_expects_them_to_take():
+    """The whole point of the flag: opponents drafting a different order must produce a
+    different expected opposing roster, or the ADP-field experiment is a no-op."""
+    basis = xscore_basis(_room_store(), SEASON, pool_size=40)
+    settings = DraftSettings(n_teams=4, rounds=4)
+    board = sorted(basis.pool, key=lambda p: (-basis.total(p), p))
+    contrarian = list(reversed(board))
+
+    neutral = [1.0] * len(settings.categories)
+    blind = HScoreEngine(basis, settings, steps=2)
+    told = HScoreEngine(basis, settings, steps=2, opponent_board=contrarian)
+
+    blind_mean, _ = blind._weighted_future(board, neutral, blind._opp_score)
+    told_mean, _ = told._weighted_future(board, neutral, told._opp_score)
+    # A field that drafts our board upside down is expected to end up with much less scoring.
+    assert told_mean["pts"] < blind_mean["pts"]
+
+
+def test_an_opponent_board_leaves_our_own_future_picks_alone():
+    """Only the opposing side is repriced. Our own future is still drawn from our own board —
+    conflating the two would make a change in the opponent model look like a change in how the
+    engine values its own remaining rounds."""
+    basis = xscore_basis(_room_store(), SEASON, pool_size=40)
+    settings = DraftSettings(n_teams=4, rounds=4)
+    board = sorted(basis.pool, key=lambda p: (-basis.total(p), p))
+    told = HScoreEngine(basis, settings, steps=2, opponent_board=list(reversed(board)))
+    blind = HScoreEngine(basis, settings, steps=2)
+
+    neutral = [1.0] * len(settings.categories)
+    assert told._weighted_future(board, neutral) == blind._weighted_future(board, neutral)

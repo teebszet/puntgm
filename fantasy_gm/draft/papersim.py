@@ -395,7 +395,7 @@ def _run_seat(job: tuple) -> SeatResult:
     pickle it — the twelve seats are wholly independent and the machine has cores idle."""
     (
         seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-        opponent_model, n_teams, field_order,
+        opponent_model, n_teams, field_order, model_the_field,
     ) = job
 
     if field_order is None:
@@ -413,7 +413,9 @@ def _run_seat(job: tuple) -> SeatResult:
         strategies[seat] = static_order_strategy(board)
     if arm != "g_score":
         engine = HScoreEngine(
-            basis, settings, steps=engine_steps, opponent_model=opponent_model, **ARMS[arm]
+            basis, settings, steps=engine_steps, opponent_model=opponent_model,
+            opponent_board=field_order if model_the_field else None,
+            **ARMS[arm],
         )
         strategies[seat] = hscore_strategy(engine)
 
@@ -463,6 +465,7 @@ def run_paper_sim(
     workers: int | None = None,
     field: str = "g_score",
     include_idle_weeks: bool = False,
+    model_the_field: bool = False,
 ) -> PaperSimResult:
     """One arm against eleven opponents, over every draft seat.
 
@@ -481,7 +484,18 @@ def run_paper_sim(
     Note that in an ADP field the null's pooled title rate is **not** 1/12 — a G-score board
     among ADP bots is a better team than a bot, so it wins more than its share. That is exactly
     why the null is differenced rather than compared to chance.
+
+    ``model_the_field`` hands the engine the field's own board as its model of what opponents
+    will take, instead of the shipped assumption that they draft best-available on ours. It is
+    a no-op in a G-score field, where the two boards are already the same. In an ADP field it
+    is the whole experiment: the decomposition found that H₀'s deficit is entirely about who
+    else is drafting, and this asks whether *telling it who else is drafting* is the fix.
     """
+    if model_the_field and field == "g_score":
+        raise ValueError(
+            "model_the_field is a no-op in a g_score field: the engine already models "
+            "opponents as drafting our board. Pass field='adp' for the experiment."
+        )
     if arm not in ARMS:
         raise ValueError(f"unknown arm: {arm} (known: {sorted(ARMS)})")
     if field not in ("g_score", "adp"):
@@ -511,7 +525,7 @@ def run_paper_sim(
     seats = seats if seats is not None else list(range(n_teams))
     jobs = [
         (seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-         opponent_model, n_teams, field_order)
+         opponent_model, n_teams, field_order, model_the_field)
         for seat in seats
     ]
     if len(jobs) == 1:

@@ -272,3 +272,10 @@ def test_the_field_stream_does_not_depend_on_the_arm():
     first = run_paper_sim(store, arm="g_score", **kw)
     second = run_paper_sim(store, arm="g_score", **kw)
     assert first.seats[0].cat_win_rate == second.seats[0].cat_win_rate
+
+
+def test_model_the_field_is_rejected_where_it_would_be_a_no_op():
+    """In a G-score field the engine already models opponents as drafting our board, so the
+    flag would silently do nothing and the run would look like a measured null result."""
+    with pytest.raises(ValueError, match="no-op in a g_score field"):
+        run_paper_sim(_panel_store(), SEASON, model_the_field=True)

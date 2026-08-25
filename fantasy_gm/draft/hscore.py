@@ -115,6 +115,7 @@ class HScoreEngine:
         future_from_shortlist: bool = True,
         normalise_weights: bool = False,
         future_slices: bool = False,
+        opponent_board: list[str] | None = None,
     ):
         self.basis = basis
         self.settings = settings or DraftSettings()
@@ -129,7 +130,42 @@ class HScoreEngine:
         self.future_from_shortlist = future_from_shortlist
         self.normalise_weights = normalise_weights
         self.future_slices = future_slices
+        # Who the *opponents* are expected to take. ``None`` keeps the shipped assumption:
+        # they draft best-available on our own board. That assumption is exactly right when
+        # the field is eleven G-score drafters — which is the published setup, and the room in
+        # which H₀ wins — and wrong against a field drafting anything else, which is the room
+        # in which it loses 0/12 seats. See `scripts/room_decomposition.py`.
+        #
+        # The ordering is substituted into the board's *own* score ladder rather than scored
+        # afresh: the opponents value a different player at each rank, but the spread of value
+        # across ranks is unchanged, so ``softmax_temp`` keeps meaning what it meant. Changing
+        # who they take is the axis under test; changing how sharply they discriminate is not,
+        # and conflating the two would make the result unreadable.
+        self.opponent_board = list(opponent_board) if opponent_board else None
+        self._opp_score: dict[str, float] | None = None
+        if self.opponent_board:
+            ladder = sorted((self.basis.total(p) for p in self.opponent_board), reverse=True)
+            self._opp_score = dict(zip(self.opponent_board, ladder, strict=True))
         self._warm: list[float] | None = None
+
+    def _score_ladder(
+        self, available: list[str], weights: list[float], score_map: dict[str, float] | None
+    ) -> list[float]:
+        """Per-player score the future-pick softmax runs over.
+
+        ``score_map`` short-circuits the strategy-weighted sum: an opponent priced off their
+        own board does not have a strategy of ours to be weighted by.
+        """
+        if score_map is not None:
+            return [score_map.get(pid, 0.0) for pid in available]
+        cats = self.settings.categories
+        out = []
+        for pid in available:
+            s = 0.0
+            for w, c in zip(weights, cats, strict=True):
+                s += w * self.basis.category_score(pid, c)
+            out.append(s)
+        return out
 
     # --- roster aggregation --------------------------------------------------
 
@@ -181,7 +217,10 @@ class HScoreEngine:
         return mean, var
 
     def _weighted_future(
-        self, available: list[str], weights: list[float]
+        self,
+        available: list[str],
+        weights: list[float],
+        score_map: dict[str, float] | None = None,
     ) -> tuple[dict[str, float], dict[str, float]]:
         """Expected profile of ONE future pick under strategy ``weights``.
 
@@ -193,12 +232,7 @@ class HScoreEngine:
         if not available:
             return ({c: 0.0 for c in cats}, {c: 0.0 for c in cats})
 
-        scores = []
-        for pid in available:
-            s = 0.0
-            for w, c in zip(weights, cats, strict=True):
-                s += w * self.basis.category_score(pid, c)
-            scores.append(s)
+        scores = self._score_ladder(available, weights, score_map)
         top = max(scores)
         exps = [math.exp(self.softmax_temp * (s - top)) for s in scores]
         z = sum(exps) or 1.0
@@ -228,7 +262,12 @@ class HScoreEngine:
         return mean, var
 
     def _future_block(
-        self, available: list[str], weights: list[float], n_picks: int, stride: int
+        self,
+        available: list[str],
+        weights: list[float],
+        n_picks: int,
+        stride: int,
+        score_map: dict[str, float] | None = None,
     ) -> tuple[dict[str, float], dict[str, float]]:
         """Total mean and variance of ALL ``n_picks`` remaining picks, each drawn from the pool
         that will actually still be there when that pick comes round.
@@ -258,12 +297,7 @@ class HScoreEngine:
         if n_picks <= 0 or not available:
             return zero
 
-        scores = []
-        for pid in available:
-            s = 0.0
-            for w, c in zip(weights, cats, strict=True):
-                s += w * self.basis.category_score(pid, c)
-            scores.append(s)
+        scores = self._score_ladder(available, weights, score_map)
         top = max(scores)
         exps = [math.exp(self.softmax_temp * (v - top)) for v in scores]
 
@@ -515,10 +549,17 @@ class HScoreEngine:
             this returns a total per distinct remaining-pick count instead. ``FIELD`` is the
             only model that produces more than one count, and never more than a handful.
             """
+            # ``_future_block`` slices the pool by *position*, so when the opponents run a
+            # different board the pool has to be ranked in their order too — the suffix that
+            # survives to their j-th pick is the tail of THEIR board, not of ours.
+            if self._opp_score is not None:
+                avail = sorted(avail, key=lambda p: (-self._opp_score.get(p, 0.0), p))
             if not self.future_slices:
-                return self._weighted_future(avail, neutral)
+                return self._weighted_future(avail, neutral, self._opp_score)
             return {
-                k: self._future_block(avail, neutral, k, self.settings.n_teams)
+                k: self._future_block(
+                    avail, neutral, k, self.settings.n_teams, self._opp_score
+                )
                 for k in {o[2] for o in opponents}
             }
 
