@@ -533,3 +533,89 @@ term (3.14) becomes the last standing candidate.
 
 Consequence for the plan is unchanged and now rests on three seasons rather than one: **the
 G-score board is the product that ships; H₀ is not one yet.**
+
+## Task 3.15 — the room decomposition: the FIELD owns the sign flip, not availability (2026-08-25)
+
+Two experiments in this repo disagreed about the same engine, and both are ours:
+
+* `scripts/paper_validation.py` — one arm against eleven G-score drafters, twenty-week seasons
+  resampled from *played* weeks, differenced against the identical room with a G-score board in
+  the arm's seat. **H₀ wins**, and the corrected engine reproduces the published title rate.
+* `scripts/paper_engine_replay.py` — G-score vs H₀ at adjacent seats among ADP bots, graded on
+  the realized season including the weeks a player missed. **H₀ loses, 12/12 runs.**
+
+Four things differ between the two rooms — the **field**, **availability**, the **metric**, and
+the **room design** — and until now they differed all at once. The previous section proposed
+swapping the field as "the decisive cheap experiment", then corrected that to say the room would
+also have to carry the paper's metric. Building it showed both readings were half right: the
+paper room already reports category and matchup win rate alongside the title rate, and its
+single-seat swap has no adjacency artifact, so **the metric and the room design were already
+free**. Only two axes were ever confounded.
+
+`scripts/room_decomposition.py` crosses those two. `run_paper_sim` gains `field="adp"` (fill the
+other eleven seats with ADP bots) and `include_idle_weeks=True` (pad each player's active span
+with zero weeks, on `measure_period_stats`' span convention, so availability is charged to the
+manager as the replay room charges it). Both default to the published setting.
+
+**Regression check first.** At default flags the `paper` cell reproduces the recorded task 3.8
+numbers to the digit — 2025-26 `most_categories`: title 16.6%, null 8.1%, cat 51.2%;
+`each_category`: title 10.2%. The refactor is faithful.
+
+### 2025-26, most_categories, 2000 seasons x 12 seats
+
+Every delta is against **that cell's own null** — the same room with a G-score board in the
+arm's seat, under common random numbers. The cells' absolute rates are not comparable to each
+other: a G-score board among ADP bots wins far more than 1/12 on merit. `seats>` counts draft
+seats where the arm beats its null on category rate.
+
+```
+cell   field    idle   arm        title delta   cat delta   matchup delta   seats>
+paper  g_score  no     h_score        +8.56pp     +1.19pp        +5.31pp    10/12
+paper  g_score  no     h_paper       +28.30pp     +3.64pp       +13.66pp    10/12
+field  adp      no     h_score       -23.81pp     -3.81pp        -7.41pp     0/12
+field  adp      no     h_paper       -13.44pp     -4.12pp        -4.50pp     0/12
+idle   g_score  yes    h_score        +3.63pp     +0.64pp        +1.82pp     7/12
+idle   g_score  yes    h_paper       +26.73pp     +3.75pp       +12.53pp    12/12
+both   adp      yes    h_score        -5.46pp     -1.60pp        -2.67pp     1/12
+both   adp      yes    h_paper       -12.25pp     -3.37pp        -4.52pp     1/12
+```
+
+**The field owns the flip. Availability does not.** Adding idle weeks inside a G-score field
+moves `h_paper` from +3.64 to +3.75pp category rate — nothing. Swapping the field reverses the
+sign in every cell, on every metric.
+
+The seat counts are the cleanest read and the hardest to explain away: **10-12 of 12 draft seats
+ahead in a G-score field, 0-1 of 12 in an ADP field.** No noise story has that shape.
+
+This is worth stating plainly because it cuts against a prior this project has earned elsewhere:
+the *G-score board's* edge over z-score is entirely availability. **H₀'s deficit is not.** The
+two findings are about different comparisons and the availability result does not transfer.
+
+### The paper correction cuts both ways
+
+`h_paper` beats `h_score` in a G-score field (+1.19 -> +3.64pp cat) and *loses* to it in an ADP
+field (-3.81 -> -4.12pp). `future_slices` sharpens H₀'s commitment to its own model of the
+room — which pays when that model is right and costs when it is wrong. That is a coherent
+mechanism rather than a coincidence, and it points at the model rather than the optimizer.
+
+### The mechanism, from the code
+
+`HScoreEngine` prices the opposing side's unknown picks with `_weighted_future(avail, neutral)` —
+a softmax over **our own board**. The engine's model of the room is "everyone else drafts
+best-available on the G-score board". In the published setup that is not an approximation, it is
+literally true. Anywhere else it is wrong.
+
+Corroborating from the opposite direction: `adp_ranks` and `survival_probability` — task 3.5's
+scarcity model — have **no callers** in `fantasy_gm/` or `scripts/`. Defined, covered by tests in
+isolation, unreachable. `PickScore.survival` is documented as "if an ADP model was given" and
+nothing has ever given one. That is the *second* named component of the published H₀ that is
+built, pinned, and dead; the other is `draft/assignment.py` (task 3.14).
+
+### Caveats
+
+1. In the ADP-field cells the null already wins 66-81% of titles, so the title metric saturates
+   there and the category delta is the cleaner read.
+2. The ADP order is the proxy (`_adp_order`, the store's own z-value ranking), not real Yahoo
+   ADP. It is a *value* ranking, so it sits closer to a G-score board than a real market does; a
+   real ADP field would be expected to widen this gap rather than close it.
+3. Neither room has positional eligibility or a positional assignment term (task 3.14).
