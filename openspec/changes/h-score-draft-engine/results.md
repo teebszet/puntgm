@@ -659,3 +659,66 @@ built, pinned, and dead; the other is `draft/assignment.py` (task 3.14).
    ADP. It is a *value* ranking, so it sits closer to a G-score board than a real market does; a
    real ADP field would be expected to widen this gap rather than close it.
 3. Neither room has positional eligibility or a positional assignment term (task 3.14).
+
+## Task 3.16 -- telling H0 the field's board does not close the deficit (2026-08-26)
+
+Task 3.15 left one hypothesis standing: H0 loses in an ADP field because `_weighted_future(avail,
+neutral)` prices the opponents' unknown picks off **our own** board, so the engine believes the
+other eleven seats are drafting the G-score board. In the published room that is literally true.
+Against ADP bots it is wrong. If that mis-wiring is the deficit, handing the engine the field's
+actual ordering should close it.
+
+`HScoreEngine` gains `opponent_board` / `model_the_field`. The field's ordering is substituted into
+the board's own score ladder rather than rescored, so the opponents value a different player at each
+rank while the spread across ranks is unchanged and `softmax_temp` keeps meaning what it meant.
+Pinned by an identity test: passing the G-score board reproduces the default engine's candidate
+values exactly.
+
+**A defect in this change, caught before it became a finding.** `derive_adp_order` returns the whole
+league -- 582 players against a 156-man scored pool -- so zipping the raw ordering against the ladder
+handed a flat 0.0 to every pool player past rank 156, telling the engine its opponents pick
+near-uniformly from most of the board. Worth 2.1pp of category rate on a smoke, **larger than the
+effect under test**. The identity test missed it because it passes the pool itself, where the filter
+is a no-op. Standing lesson: check pool membership before zipping two orderings.
+
+### The measurement
+
+2025-26, both objectives, both arms, with and without idle weeks, ADP field throughout. 2000 seasons
+x 12 seats, each cell differenced against its own null under common random numbers -- the same
+harness as 3.15, so these numbers sit directly beside that table.
+
+```
+objective        idle   arm       cat OFF   cat ON    delta    seats OFF   seats ON
+each_category    no     h_score    -2.33pp  -3.19pp  -0.86pp        1/12       0/12
+each_category    no     h_paper    -2.82pp  -3.66pp  -0.84pp        0/12       0/12
+each_category    yes    h_score    -1.54pp  -1.66pp  -0.12pp        3/12       2/12
+each_category    yes    h_paper    -1.06pp  -2.29pp  -1.23pp        3/12       2/12
+most_categories  no     h_score    -3.81pp  -4.11pp  -0.30pp        0/12       0/12
+most_categories  no     h_paper    -4.12pp  -5.14pp  -1.02pp        0/12       0/12
+most_categories  yes    h_score    -1.60pp  -2.18pp  -0.59pp        1/12       1/12
+most_categories  yes    h_paper    -3.37pp  -3.26pp  +0.12pp        1/12       0/12
+```
+
+**Modelling the field made H0 worse in 7 of 8 cells**, and the eighth (+0.12pp) is inside noise.
+Seat counts move the same way -- never up, down in 4 of 8. The hypothesis is refuted on its own
+terms: the deficit is not that H0 held the wrong belief about what the room would draft.
+
+### What this means, and what it does not
+
+It does not mean the opponent model is irrelevant. It means the *belief about the field's ordering*
+is not the missing piece, and it is consistent with a sharper reading of 3.15: H0's advantage in the
+paper's room may be less "it models the room correctly" than "the room it is drafting against shares
+its valuation, so the pool it plans around is the pool that actually survives". Handing it a truer
+model of a field it still cannot exploit buys nothing.
+
+Two named components of the published H0 remain built, pinned by tests, and unreachable:
+`draft/assignment.py` (task 3.14, positional assignment) and `adp_ranks` / `survival_probability`
+(task 3.5, scarcity). The survival half was **not** wired here -- how survival should enter the
+objective is a design decision, not a connection. 3.14 is the larger of the two and is now the
+leading remaining explanation.
+
+**Carried caveat, unchanged from 3.15:** the ADP order is the proxy (`_adp_order`, the store's own
+z-value ranking), not real Yahoo ADP. This experiment fed the engine the *same* proxy the bots draft
+from, so it is a clean test of the wiring; it is not a test against a real market.
+
+Runs: `runs/opponent-board/2025-26-{most_categories,each_category}.json`. 305 tests green, ruff clean.

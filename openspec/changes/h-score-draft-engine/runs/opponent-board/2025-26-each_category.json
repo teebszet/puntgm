@@ -1,0 +1,1042 @@
+[
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": false,
+    "arm": "h_score",
+    "model_the_field": false,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.5857847222222222,
+    "null_title": 0.7471944444444444,
+    "title_delta_pp": -16.140972222222217,
+    "cat": 0.5845457175925927,
+    "null_cat": 0.6078447916666666,
+    "cat_delta_pp": -2.3299074074073944,
+    "matchup": 0.6879750000000001,
+    "null_matchup": 0.7373729166666667,
+    "matchup_delta_pp": -4.939791666666659,
+    "seats_ahead": 1,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.811,
+        "null_title": 0.86575,
+        "cat": 0.6154013888888888,
+        "null_cat": 0.6303055555555556,
+        "matchup": 0.746525,
+        "null_matchup": 0.777425
+      },
+      {
+        "seat": 1,
+        "title": 0.7179166666666668,
+        "null_title": 0.9425,
+        "cat": 0.6103902777777778,
+        "null_cat": 0.6356583333333333,
+        "matchup": 0.7303125,
+        "null_matchup": 0.79565
+      },
+      {
+        "seat": 2,
+        "title": 0.7705,
+        "null_title": 0.9159166666666666,
+        "cat": 0.5980777777777778,
+        "null_cat": 0.6306041666666666,
+        "matchup": 0.70755,
+        "null_matchup": 0.7803875
+      },
+      {
+        "seat": 3,
+        "title": 0.6775833333333334,
+        "null_title": 0.8159166666666667,
+        "cat": 0.5969263888888889,
+        "null_cat": 0.613525,
+        "matchup": 0.72545,
+        "null_matchup": 0.735575
+      },
+      {
+        "seat": 4,
+        "title": 0.6976666666666668,
+        "null_title": 0.94125,
+        "cat": 0.6063722222222222,
+        "null_cat": 0.6377111111111111,
+        "matchup": 0.728975,
+        "null_matchup": 0.7993
+      },
+      {
+        "seat": 5,
+        "title": 0.7813333333333332,
+        "null_title": 0.77825,
+        "cat": 0.6037513888888889,
+        "null_cat": 0.614525,
+        "matchup": 0.7311625,
+        "null_matchup": 0.7404625
+      },
+      {
+        "seat": 6,
+        "title": 0.40258333333333335,
+        "null_title": 0.586875,
+        "cat": 0.5615041666666667,
+        "null_cat": 0.5862527777777777,
+        "matchup": 0.650275,
+        "null_matchup": 0.703775
+      },
+      {
+        "seat": 7,
+        "title": 0.4745,
+        "null_title": 0.5777916666666666,
+        "cat": 0.5739888888888889,
+        "null_cat": 0.5861680555555555,
+        "matchup": 0.6453375,
+        "null_matchup": 0.693725
+      },
+      {
+        "seat": 8,
+        "title": 0.6306666666666666,
+        "null_title": 0.54125,
+        "cat": 0.5867111111111111,
+        "null_cat": 0.5796402777777778,
+        "matchup": 0.6763,
+        "null_matchup": 0.6846375
+      },
+      {
+        "seat": 9,
+        "title": 0.3048333333333333,
+        "null_title": 0.6004166666666667,
+        "cat": 0.5477694444444444,
+        "null_cat": 0.5884680555555556,
+        "matchup": 0.6065875,
+        "null_matchup": 0.7001625
+      },
+      {
+        "seat": 10,
+        "title": 0.37366666666666676,
+        "null_title": 0.7546666666666666,
+        "cat": 0.5596388888888889,
+        "null_cat": 0.6017652777777778,
+        "matchup": 0.695775,
+        "null_matchup": 0.743375
+      },
+      {
+        "seat": 11,
+        "title": 0.38716666666666666,
+        "null_title": 0.6457499999999999,
+        "cat": 0.5540166666666667,
+        "null_cat": 0.5895138888888889,
+        "matchup": 0.61145,
+        "null_matchup": 0.694
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": false,
+    "arm": "h_score",
+    "model_the_field": true,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.5231701388888889,
+    "null_title": 0.7471944444444444,
+    "title_delta_pp": -22.402430555555554,
+    "cat": 0.5759594907407407,
+    "null_cat": 0.6078447916666666,
+    "cat_delta_pp": -3.1885300925925897,
+    "matchup": 0.6796489583333334,
+    "null_matchup": 0.7373729166666667,
+    "matchup_delta_pp": -5.7723958333333325,
+    "seats_ahead": 0,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.75525,
+        "null_title": 0.86575,
+        "cat": 0.6053958333333334,
+        "null_cat": 0.6303055555555556,
+        "matchup": 0.7214875,
+        "null_matchup": 0.777425
+      },
+      {
+        "seat": 1,
+        "title": 0.7465,
+        "null_title": 0.9425,
+        "cat": 0.6017152777777778,
+        "null_cat": 0.6356583333333333,
+        "matchup": 0.718675,
+        "null_matchup": 0.79565
+      },
+      {
+        "seat": 2,
+        "title": 0.7365,
+        "null_title": 0.9159166666666666,
+        "cat": 0.5947569444444445,
+        "null_cat": 0.6306041666666666,
+        "matchup": 0.7224125,
+        "null_matchup": 0.7803875
+      },
+      {
+        "seat": 3,
+        "title": 0.5135416666666668,
+        "null_title": 0.8159166666666667,
+        "cat": 0.5701347222222222,
+        "null_cat": 0.613525,
+        "matchup": 0.65315,
+        "null_matchup": 0.735575
+      },
+      {
+        "seat": 4,
+        "title": 0.6613333333333332,
+        "null_title": 0.94125,
+        "cat": 0.5926555555555556,
+        "null_cat": 0.6377111111111111,
+        "matchup": 0.6907875,
+        "null_matchup": 0.7993
+      },
+      {
+        "seat": 5,
+        "title": 0.6431666666666668,
+        "null_title": 0.77825,
+        "cat": 0.5869930555555556,
+        "null_cat": 0.614525,
+        "matchup": 0.6961125,
+        "null_matchup": 0.7404625
+      },
+      {
+        "seat": 6,
+        "title": 0.4125,
+        "null_title": 0.586875,
+        "cat": 0.5671111111111111,
+        "null_cat": 0.5862527777777777,
+        "matchup": 0.6865,
+        "null_matchup": 0.703775
+      },
+      {
+        "seat": 7,
+        "title": 0.3910833333333334,
+        "null_title": 0.5777916666666666,
+        "cat": 0.5638041666666667,
+        "null_cat": 0.5861680555555555,
+        "matchup": 0.631975,
+        "null_matchup": 0.693725
+      },
+      {
+        "seat": 8,
+        "title": 0.47783333333333333,
+        "null_title": 0.54125,
+        "cat": 0.5698013888888889,
+        "null_cat": 0.5796402777777778,
+        "matchup": 0.667825,
+        "null_matchup": 0.6846375
+      },
+      {
+        "seat": 9,
+        "title": 0.25533333333333336,
+        "null_title": 0.6004166666666667,
+        "cat": 0.5515805555555555,
+        "null_cat": 0.5884680555555556,
+        "matchup": 0.6742,
+        "null_matchup": 0.7001625
+      },
+      {
+        "seat": 10,
+        "title": 0.4213333333333334,
+        "null_title": 0.7546666666666666,
+        "cat": 0.5648847222222222,
+        "null_cat": 0.6017652777777778,
+        "matchup": 0.7043,
+        "null_matchup": 0.743375
+      },
+      {
+        "seat": 11,
+        "title": 0.2636666666666666,
+        "null_title": 0.6457499999999999,
+        "cat": 0.5426805555555556,
+        "null_cat": 0.5895138888888889,
+        "matchup": 0.5883625,
+        "null_matchup": 0.694
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": false,
+    "arm": "h_paper",
+    "model_the_field": false,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.5512118055555556,
+    "null_title": 0.7471944444444444,
+    "title_delta_pp": -19.59826388888888,
+    "cat": 0.5796393518518519,
+    "null_cat": 0.6078447916666666,
+    "cat_delta_pp": -2.8205439814814715,
+    "matchup": 0.6982052083333333,
+    "null_matchup": 0.7373729166666667,
+    "matchup_delta_pp": -3.9167708333333384,
+    "seats_ahead": 0,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.6870833333333334,
+        "null_title": 0.86575,
+        "cat": 0.5993333333333334,
+        "null_cat": 0.6303055555555556,
+        "matchup": 0.7302,
+        "null_matchup": 0.777425
+      },
+      {
+        "seat": 1,
+        "title": 0.6706666666666666,
+        "null_title": 0.9425,
+        "cat": 0.5838208333333333,
+        "null_cat": 0.6356583333333333,
+        "matchup": 0.73425,
+        "null_matchup": 0.79565
+      },
+      {
+        "seat": 2,
+        "title": 0.63425,
+        "null_title": 0.9159166666666666,
+        "cat": 0.5802319444444445,
+        "null_cat": 0.6306041666666666,
+        "matchup": 0.733125,
+        "null_matchup": 0.7803875
+      },
+      {
+        "seat": 3,
+        "title": 0.7437499999999999,
+        "null_title": 0.8159166666666667,
+        "cat": 0.5948861111111111,
+        "null_cat": 0.613525,
+        "matchup": 0.747175,
+        "null_matchup": 0.735575
+      },
+      {
+        "seat": 4,
+        "title": 0.90475,
+        "null_title": 0.94125,
+        "cat": 0.628,
+        "null_cat": 0.6377111111111111,
+        "matchup": 0.76035,
+        "null_matchup": 0.7993
+      },
+      {
+        "seat": 5,
+        "title": 0.6370833333333333,
+        "null_title": 0.77825,
+        "cat": 0.5873555555555555,
+        "null_cat": 0.614525,
+        "matchup": 0.700575,
+        "null_matchup": 0.7404625
+      },
+      {
+        "seat": 6,
+        "title": 0.46575,
+        "null_title": 0.586875,
+        "cat": 0.5810916666666667,
+        "null_cat": 0.5862527777777777,
+        "matchup": 0.6973625,
+        "null_matchup": 0.703775
+      },
+      {
+        "seat": 7,
+        "title": 0.355,
+        "null_title": 0.5777916666666666,
+        "cat": 0.5590736111111111,
+        "null_cat": 0.5861680555555555,
+        "matchup": 0.650125,
+        "null_matchup": 0.693725
+      },
+      {
+        "seat": 8,
+        "title": 0.30175,
+        "null_title": 0.54125,
+        "cat": 0.5529361111111111,
+        "null_cat": 0.5796402777777778,
+        "matchup": 0.6310125,
+        "null_matchup": 0.6846375
+      },
+      {
+        "seat": 9,
+        "title": 0.3754166666666666,
+        "null_title": 0.6004166666666667,
+        "cat": 0.5587541666666667,
+        "null_cat": 0.5884680555555556,
+        "matchup": 0.6247625,
+        "null_matchup": 0.7001625
+      },
+      {
+        "seat": 10,
+        "title": 0.2965,
+        "null_title": 0.7546666666666666,
+        "cat": 0.5578055555555556,
+        "null_cat": 0.6017652777777778,
+        "matchup": 0.693675,
+        "null_matchup": 0.743375
+      },
+      {
+        "seat": 11,
+        "title": 0.5425416666666667,
+        "null_title": 0.6457499999999999,
+        "cat": 0.5723833333333334,
+        "null_cat": 0.5895138888888889,
+        "matchup": 0.67585,
+        "null_matchup": 0.694
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": false,
+    "arm": "h_paper",
+    "model_the_field": true,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.46505208333333337,
+    "null_title": 0.7471944444444444,
+    "title_delta_pp": -28.214236111111102,
+    "cat": 0.5712251157407408,
+    "null_cat": 0.6078447916666666,
+    "cat_delta_pp": -3.6619675925925854,
+    "matchup": 0.679125,
+    "null_matchup": 0.7373729166666667,
+    "matchup_delta_pp": -5.824791666666673,
+    "seats_ahead": 0,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.54775,
+        "null_title": 0.86575,
+        "cat": 0.5796902777777778,
+        "null_cat": 0.6303055555555556,
+        "matchup": 0.6934625,
+        "null_matchup": 0.777425
+      },
+      {
+        "seat": 1,
+        "title": 0.6892916666666667,
+        "null_title": 0.9425,
+        "cat": 0.5903819444444445,
+        "null_cat": 0.6356583333333333,
+        "matchup": 0.7330375,
+        "null_matchup": 0.79565
+      },
+      {
+        "seat": 2,
+        "title": 0.689,
+        "null_title": 0.9159166666666666,
+        "cat": 0.5944597222222222,
+        "null_cat": 0.6306041666666666,
+        "matchup": 0.7242375,
+        "null_matchup": 0.7803875
+      },
+      {
+        "seat": 3,
+        "title": 0.6069166666666668,
+        "null_title": 0.8159166666666667,
+        "cat": 0.5849527777777778,
+        "null_cat": 0.613525,
+        "matchup": 0.7187,
+        "null_matchup": 0.735575
+      },
+      {
+        "seat": 4,
+        "title": 0.750625,
+        "null_title": 0.94125,
+        "cat": 0.6014125,
+        "null_cat": 0.6377111111111111,
+        "matchup": 0.6991375,
+        "null_matchup": 0.7993
+      },
+      {
+        "seat": 5,
+        "title": 0.57025,
+        "null_title": 0.77825,
+        "cat": 0.5863875,
+        "null_cat": 0.614525,
+        "matchup": 0.70645,
+        "null_matchup": 0.7404625
+      },
+      {
+        "seat": 6,
+        "title": 0.46575,
+        "null_title": 0.586875,
+        "cat": 0.5810916666666667,
+        "null_cat": 0.5862527777777777,
+        "matchup": 0.6973625,
+        "null_matchup": 0.703775
+      },
+      {
+        "seat": 7,
+        "title": 0.21399999999999997,
+        "null_title": 0.5777916666666666,
+        "cat": 0.5469236111111111,
+        "null_cat": 0.5861680555555555,
+        "matchup": 0.65665,
+        "null_matchup": 0.693725
+      },
+      {
+        "seat": 8,
+        "title": 0.30175,
+        "null_title": 0.54125,
+        "cat": 0.5529361111111111,
+        "null_cat": 0.5796402777777778,
+        "matchup": 0.6310125,
+        "null_matchup": 0.6846375
+      },
+      {
+        "seat": 9,
+        "title": 0.2379166666666667,
+        "null_title": 0.6004166666666667,
+        "cat": 0.5424791666666666,
+        "null_cat": 0.5884680555555556,
+        "matchup": 0.639775,
+        "null_matchup": 0.7001625
+      },
+      {
+        "seat": 10,
+        "title": 0.2411666666666667,
+        "null_title": 0.7546666666666666,
+        "cat": 0.5475555555555556,
+        "null_cat": 0.6017652777777778,
+        "matchup": 0.6003875,
+        "null_matchup": 0.743375
+      },
+      {
+        "seat": 11,
+        "title": 0.2662083333333334,
+        "null_title": 0.6457499999999999,
+        "cat": 0.5464305555555555,
+        "null_cat": 0.5895138888888889,
+        "matchup": 0.6492875,
+        "null_matchup": 0.694
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": true,
+    "arm": "h_score",
+    "model_the_field": false,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.7957430555555556,
+    "null_title": 0.8877708333333333,
+    "title_delta_pp": -9.20277777777777,
+    "cat": 0.6303408564814815,
+    "null_cat": 0.6457321759259259,
+    "cat_delta_pp": -1.5391319444444385,
+    "matchup": 0.7733145833333334,
+    "null_matchup": 0.806853125,
+    "matchup_delta_pp": -3.353854166666659,
+    "seats_ahead": 3,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.92925,
+        "null_title": 0.93075,
+        "cat": 0.6497069444444444,
+        "null_cat": 0.6488652777777778,
+        "matchup": 0.796225,
+        "null_matchup": 0.814575
+      },
+      {
+        "seat": 1,
+        "title": 0.9345,
+        "null_title": 0.83475,
+        "cat": 0.6500861111111111,
+        "null_cat": 0.6364680555555555,
+        "matchup": 0.798725,
+        "null_matchup": 0.79915
+      },
+      {
+        "seat": 2,
+        "title": 0.95425,
+        "null_title": 0.8495,
+        "cat": 0.6530666666666667,
+        "null_cat": 0.6508180555555556,
+        "matchup": 0.809025,
+        "null_matchup": 0.8271375
+      },
+      {
+        "seat": 3,
+        "title": 0.8295833333333332,
+        "null_title": 0.9469166666666666,
+        "cat": 0.6275694444444444,
+        "null_cat": 0.6521541666666667,
+        "matchup": 0.7603,
+        "null_matchup": 0.8135375
+      },
+      {
+        "seat": 4,
+        "title": 0.8139166666666667,
+        "null_title": 0.9435,
+        "cat": 0.6418722222222222,
+        "null_cat": 0.6558541666666666,
+        "matchup": 0.8002625,
+        "null_matchup": 0.81835
+      },
+      {
+        "seat": 5,
+        "title": 0.9195,
+        "null_title": 0.8729166666666668,
+        "cat": 0.6518,
+        "null_cat": 0.6548902777777778,
+        "matchup": 0.8125875,
+        "null_matchup": 0.802925
+      },
+      {
+        "seat": 6,
+        "title": 0.7785,
+        "null_title": 0.8705,
+        "cat": 0.6227875,
+        "null_cat": 0.6378138888888889,
+        "matchup": 0.7713125,
+        "null_matchup": 0.8024625
+      },
+      {
+        "seat": 7,
+        "title": 0.767,
+        "null_title": 0.8469166666666668,
+        "cat": 0.6309236111111111,
+        "null_cat": 0.6409361111111112,
+        "matchup": 0.7655375,
+        "null_matchup": 0.803625
+      },
+      {
+        "seat": 8,
+        "title": 0.5829166666666666,
+        "null_title": 0.8495,
+        "cat": 0.6092694444444444,
+        "null_cat": 0.6373388888888889,
+        "matchup": 0.73035,
+        "null_matchup": 0.7984625
+      },
+      {
+        "seat": 9,
+        "title": 0.7166666666666668,
+        "null_title": 0.8725,
+        "cat": 0.6119944444444444,
+        "null_cat": 0.6421263888888888,
+        "matchup": 0.72955,
+        "null_matchup": 0.79545
+      },
+      {
+        "seat": 10,
+        "title": 0.5713333333333332,
+        "null_title": 0.91225,
+        "cat": 0.6008333333333333,
+        "null_cat": 0.6420361111111111,
+        "matchup": 0.7507375,
+        "null_matchup": 0.80735
+      },
+      {
+        "seat": 11,
+        "title": 0.7515,
+        "null_title": 0.92325,
+        "cat": 0.6141805555555555,
+        "null_cat": 0.6494847222222222,
+        "matchup": 0.7551625,
+        "null_matchup": 0.7992125
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": true,
+    "arm": "h_score",
+    "model_the_field": true,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.8106180555555556,
+    "null_title": 0.8877708333333333,
+    "title_delta_pp": -7.715277777777773,
+    "cat": 0.6291224537037037,
+    "null_cat": 0.6457321759259259,
+    "cat_delta_pp": -1.6609722222222234,
+    "matchup": 0.763575,
+    "null_matchup": 0.806853125,
+    "matchup_delta_pp": -4.327812499999995,
+    "seats_ahead": 2,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.9296666666666666,
+        "null_title": 0.93075,
+        "cat": 0.6449611111111111,
+        "null_cat": 0.6488652777777778,
+        "matchup": 0.782525,
+        "null_matchup": 0.814575
+      },
+      {
+        "seat": 1,
+        "title": 0.89975,
+        "null_title": 0.83475,
+        "cat": 0.6479763888888889,
+        "null_cat": 0.6364680555555555,
+        "matchup": 0.801825,
+        "null_matchup": 0.79915
+      },
+      {
+        "seat": 2,
+        "title": 0.87675,
+        "null_title": 0.8495,
+        "cat": 0.6521402777777778,
+        "null_cat": 0.6508180555555556,
+        "matchup": 0.8065375,
+        "null_matchup": 0.8271375
+      },
+      {
+        "seat": 3,
+        "title": 0.84175,
+        "null_title": 0.9469166666666666,
+        "cat": 0.6357611111111111,
+        "null_cat": 0.6521541666666667,
+        "matchup": 0.781,
+        "null_matchup": 0.8135375
+      },
+      {
+        "seat": 4,
+        "title": 0.916,
+        "null_title": 0.9435,
+        "cat": 0.6460930555555555,
+        "null_cat": 0.6558541666666666,
+        "matchup": 0.7802875,
+        "null_matchup": 0.81835
+      },
+      {
+        "seat": 5,
+        "title": 0.834,
+        "null_title": 0.8729166666666668,
+        "cat": 0.6364013888888889,
+        "null_cat": 0.6548902777777778,
+        "matchup": 0.7597,
+        "null_matchup": 0.802925
+      },
+      {
+        "seat": 6,
+        "title": 0.70625,
+        "null_title": 0.8705,
+        "cat": 0.6228444444444444,
+        "null_cat": 0.6378138888888889,
+        "matchup": 0.760675,
+        "null_matchup": 0.8024625
+      },
+      {
+        "seat": 7,
+        "title": 0.75975,
+        "null_title": 0.8469166666666668,
+        "cat": 0.6160541666666667,
+        "null_cat": 0.6409361111111112,
+        "matchup": 0.7374,
+        "null_matchup": 0.803625
+      },
+      {
+        "seat": 8,
+        "title": 0.7771666666666668,
+        "null_title": 0.8495,
+        "cat": 0.6190569444444445,
+        "null_cat": 0.6373388888888889,
+        "matchup": 0.747025,
+        "null_matchup": 0.7984625
+      },
+      {
+        "seat": 9,
+        "title": 0.72375,
+        "null_title": 0.8725,
+        "cat": 0.6131791666666667,
+        "null_cat": 0.6421263888888888,
+        "matchup": 0.7472125,
+        "null_matchup": 0.79545
+      },
+      {
+        "seat": 10,
+        "title": 0.7729166666666666,
+        "null_title": 0.91225,
+        "cat": 0.6134111111111111,
+        "null_cat": 0.6420361111111111,
+        "matchup": 0.742275,
+        "null_matchup": 0.80735
+      },
+      {
+        "seat": 11,
+        "title": 0.6896666666666667,
+        "null_title": 0.92325,
+        "cat": 0.6015902777777777,
+        "null_cat": 0.6494847222222222,
+        "matchup": 0.7164375,
+        "null_matchup": 0.7992125
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": true,
+    "arm": "h_paper",
+    "model_the_field": false,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.8154374999999999,
+    "null_title": 0.8877708333333333,
+    "title_delta_pp": -7.233333333333336,
+    "cat": 0.6351013888888889,
+    "null_cat": 0.6457321759259259,
+    "cat_delta_pp": -1.0630787037037015,
+    "matchup": 0.7656958333333334,
+    "null_matchup": 0.806853125,
+    "matchup_delta_pp": -4.115729166666659,
+    "seats_ahead": 3,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.8055833333333332,
+        "null_title": 0.93075,
+        "cat": 0.6351430555555555,
+        "null_cat": 0.6488652777777778,
+        "matchup": 0.749075,
+        "null_matchup": 0.814575
+      },
+      {
+        "seat": 1,
+        "title": 0.978,
+        "null_title": 0.83475,
+        "cat": 0.6636180555555555,
+        "null_cat": 0.6364680555555555,
+        "matchup": 0.8182,
+        "null_matchup": 0.79915
+      },
+      {
+        "seat": 2,
+        "title": 0.9145,
+        "null_title": 0.8495,
+        "cat": 0.6573458333333333,
+        "null_cat": 0.6508180555555556,
+        "matchup": 0.7881,
+        "null_matchup": 0.8271375
+      },
+      {
+        "seat": 3,
+        "title": 0.9129166666666666,
+        "null_title": 0.9469166666666666,
+        "cat": 0.646475,
+        "null_cat": 0.6521541666666667,
+        "matchup": 0.7765625,
+        "null_matchup": 0.8135375
+      },
+      {
+        "seat": 4,
+        "title": 0.9395,
+        "null_title": 0.9435,
+        "cat": 0.6568305555555556,
+        "null_cat": 0.6558541666666666,
+        "matchup": 0.8006375,
+        "null_matchup": 0.81835
+      },
+      {
+        "seat": 5,
+        "title": 0.82675,
+        "null_title": 0.8729166666666668,
+        "cat": 0.6305013888888888,
+        "null_cat": 0.6548902777777778,
+        "matchup": 0.758025,
+        "null_matchup": 0.802925
+      },
+      {
+        "seat": 6,
+        "title": 0.7166666666666667,
+        "null_title": 0.8705,
+        "cat": 0.6245291666666667,
+        "null_cat": 0.6378138888888889,
+        "matchup": 0.7801125,
+        "null_matchup": 0.8024625
+      },
+      {
+        "seat": 7,
+        "title": 0.48166666666666663,
+        "null_title": 0.8469166666666668,
+        "cat": 0.6013902777777778,
+        "null_cat": 0.6409361111111112,
+        "matchup": 0.71215,
+        "null_matchup": 0.803625
+      },
+      {
+        "seat": 8,
+        "title": 0.81325,
+        "null_title": 0.8495,
+        "cat": 0.624975,
+        "null_cat": 0.6373388888888889,
+        "matchup": 0.7527875,
+        "null_matchup": 0.7984625
+      },
+      {
+        "seat": 9,
+        "title": 0.75575,
+        "null_title": 0.8725,
+        "cat": 0.6232666666666666,
+        "null_cat": 0.6421263888888888,
+        "matchup": 0.7256375,
+        "null_matchup": 0.79545
+      },
+      {
+        "seat": 10,
+        "title": 0.8475,
+        "null_title": 0.91225,
+        "cat": 0.6294472222222223,
+        "null_cat": 0.6420361111111111,
+        "matchup": 0.7829875,
+        "null_matchup": 0.80735
+      },
+      {
+        "seat": 11,
+        "title": 0.7931666666666666,
+        "null_title": 0.92325,
+        "cat": 0.6276944444444444,
+        "null_cat": 0.6494847222222222,
+        "matchup": 0.744075,
+        "null_matchup": 0.7992125
+      }
+    ]
+  },
+  {
+    "season": "2025-26",
+    "objective": "each_category",
+    "field": "adp",
+    "include_idle_weeks": true,
+    "arm": "h_paper",
+    "model_the_field": true,
+    "n_seasons": 2000,
+    "engine_steps": 8,
+    "title": 0.7242881944444445,
+    "null_title": 0.8877708333333333,
+    "title_delta_pp": -16.34826388888888,
+    "cat": 0.6228445601851852,
+    "null_cat": 0.6457321759259259,
+    "cat_delta_pp": -2.288761574074072,
+    "matchup": 0.7467885416666666,
+    "null_matchup": 0.806853125,
+    "matchup_delta_pp": -6.006458333333331,
+    "seats_ahead": 2,
+    "per_seat": [
+      {
+        "seat": 0,
+        "title": 0.57125,
+        "null_title": 0.93075,
+        "cat": 0.6054680555555556,
+        "null_cat": 0.6488652777777778,
+        "matchup": 0.71215,
+        "null_matchup": 0.814575
+      },
+      {
+        "seat": 1,
+        "title": 0.9151666666666667,
+        "null_title": 0.83475,
+        "cat": 0.6386444444444445,
+        "null_cat": 0.6364680555555555,
+        "matchup": 0.786975,
+        "null_matchup": 0.79915
+      },
+      {
+        "seat": 2,
+        "title": 0.918,
+        "null_title": 0.8495,
+        "cat": 0.6504236111111111,
+        "null_cat": 0.6508180555555556,
+        "matchup": 0.7824625,
+        "null_matchup": 0.8271375
+      },
+      {
+        "seat": 3,
+        "title": 0.861,
+        "null_title": 0.9469166666666666,
+        "cat": 0.6294,
+        "null_cat": 0.6521541666666667,
+        "matchup": 0.763275,
+        "null_matchup": 0.8135375
+      },
+      {
+        "seat": 4,
+        "title": 0.9395,
+        "null_title": 0.9435,
+        "cat": 0.6568305555555556,
+        "null_cat": 0.6558541666666666,
+        "matchup": 0.8006375,
+        "null_matchup": 0.81835
+      },
+      {
+        "seat": 5,
+        "title": 0.8111666666666667,
+        "null_title": 0.8729166666666668,
+        "cat": 0.6312083333333334,
+        "null_cat": 0.6548902777777778,
+        "matchup": 0.752825,
+        "null_matchup": 0.802925
+      },
+      {
+        "seat": 6,
+        "title": 0.6255833333333334,
+        "null_title": 0.8705,
+        "cat": 0.6241666666666666,
+        "null_cat": 0.6378138888888889,
+        "matchup": 0.759375,
+        "null_matchup": 0.8024625
+      },
+      {
+        "seat": 7,
+        "title": 0.42941666666666667,
+        "null_title": 0.8469166666666668,
+        "cat": 0.6007805555555555,
+        "null_cat": 0.6409361111111112,
+        "matchup": 0.7009,
+        "null_matchup": 0.803625
+      },
+      {
+        "seat": 8,
+        "title": 0.6948333333333334,
+        "null_title": 0.8495,
+        "cat": 0.6201208333333333,
+        "null_cat": 0.6373388888888889,
+        "matchup": 0.7346125,
+        "null_matchup": 0.7984625
+      },
+      {
+        "seat": 9,
+        "title": 0.4696666666666667,
+        "null_title": 0.8725,
+        "cat": 0.5942388888888889,
+        "null_cat": 0.6421263888888888,
+        "matchup": 0.6851375,
+        "null_matchup": 0.79545
+      },
+      {
+        "seat": 10,
+        "title": 0.617625,
+        "null_title": 0.91225,
+        "cat": 0.5933,
+        "null_cat": 0.6420361111111111,
+        "matchup": 0.718975,
+        "null_matchup": 0.80735
+      },
+      {
+        "seat": 11,
+        "title": 0.83825,
+        "null_title": 0.92325,
+        "cat": 0.6295527777777777,
+        "null_cat": 0.6494847222222222,
+        "matchup": 0.7641375,
+        "null_matchup": 0.7992125
+      }
+    ]
+  }
+]
