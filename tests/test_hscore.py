@@ -9,7 +9,7 @@ import random
 import pytest
 
 from fantasy_gm.data.store import Store
-from fantasy_gm.draft.assignment import assign_to_slots, solve_assignment
+from fantasy_gm.draft.assignment import assign_to_slots, solve_assignment, starting_lineup
 from fantasy_gm.draft.hscore import DraftState, HScoreEngine, OpponentModel
 from fantasy_gm.draft.objective import (
     category_win_prob,
@@ -99,6 +99,59 @@ def test_assignment_respects_ineligibility():
     assignment, total = solve_assignment(mat)
     assert assignment[0] == 1
     assert total == pytest.approx(8.0)
+
+
+def _pos(**listed):
+    return {pid: eligible_positions(tokens) for pid, tokens in listed.items()}
+
+
+def test_starting_lineup_benches_by_value_within_each_position_not_across_them():
+    """Value alone does not decide who starts, and that is the point. Six guards, five
+    forwards and two centres, ranked in exactly that order by value: the two *least* valuable
+    players on the roster start anyway, because ``C C`` demands them, while a more valuable
+    sixth guard sits — guards can reach only five of the ten slots."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(6)},
+                **{f"f{i}": ("F",) for i in range(5)},
+                **{f"c{i}": ("C",) for i in range(2)})
+    value = {pid: 100.0 - i for i, pid in enumerate(elig)}
+    placed = starting_lineup(list(elig), elig, settings.starting_slots, value)
+
+    assert len(placed) == len(settings.starting_slots)
+    assert {"c0", "c1"} <= set(placed)                       # least valuable, started anyway
+    assert "g5" not in placed                                # more valuable, benched anyway
+    # Within a position, value still decides.
+    for prefix, n_starting in (("g", 5), ("f", 3)):
+        group = sorted((p for p in elig if p.startswith(prefix)), key=lambda p: -value[p])
+        assert set(group[:n_starting]) <= set(placed)
+        assert not set(group[n_starting:]) & set(placed)
+
+
+def test_a_slot_nobody_can_fill_stays_empty():
+    """The mechanism under test: centre is the only binding position in our pool, so a roster
+    short of centres fields fewer than a full lineup and eats the difference."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(8)},
+                **{f"f{i}": ("F",) for i in range(4)},
+                c0=("C",))
+    value = dict.fromkeys(elig, 1.0)
+    placed = starting_lineup(list(elig), elig, settings.starting_slots, value)
+    assert len(placed) == len(settings.starting_slots) - 1
+    assert sorted(placed.values()).count("C") == 1
+
+
+def test_unlisted_players_never_consume_a_slot():
+    """An unplaceable player must bench himself, not a legal team-mate. Forcing him into the
+    matrix lets him take a column he cannot fill once the padding runs out."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(5)},
+                **{f"f{i}": ("F",) for i in range(5)},
+                **{f"c{i}": ("C",) for i in range(2)})
+    roster = [*elig, "unlisted_a", "unlisted_b", "unlisted_c", "unlisted_d"]
+    value = dict.fromkeys(roster, 1.0)
+    placed = starting_lineup(roster, elig, settings.starting_slots, value)
+    assert len(placed) == len(settings.starting_slots)
+    assert not {"unlisted_a", "unlisted_b", "unlisted_c", "unlisted_d"} & set(placed)
 
 
 class _Listed:

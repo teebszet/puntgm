@@ -266,12 +266,25 @@ def simulate_standings(
     rng: random.Random,
     n_weeks: int = SEASON_WEEKS,
     universe: list[str] | None = None,
+    lineups: list[list[str]] | None = None,
 ) -> tuple[list[float], list[float]]:
     """One simulated season. Returns ``(category_wins, matchup_wins)`` per seat.
 
     Each player draws ``n_weeks`` weeks with replacement from their own real weekly lines, and
     a team's week is the sum over its roster — so a team's week-to-week swing is the real,
     measured swing of the players on it, correlations within a player's own week included.
+
+    ``lineups`` restricts scoring to a **starting lineup** per seat, the bench contributing
+    nothing (task 3.14). Default ``None`` keeps the shipped behaviour — every one of the
+    thirteen scores every week — so every number already in `results.md` reproduces. The
+    lineup is fixed for the season rather than re-set weekly, and it is chosen from pre-season
+    expected value: re-assigning on each simulated week's realized lines would be an oracle,
+    and it would be a *worse* oracle here than elsewhere, because the weeks are resampled and
+    a manager cannot see a resample coming. It understates a real manager, who does move
+    people on news; that error lands on both arms and the null carries it.
+
+    Drawing is unaffected — the common-random-number universe is still built over full
+    rosters — so a lineup arm and its null stay paired week for week.
 
     ``universe`` is the **common random numbers** hook, and it is not optional in practice. The
     quantity being estimated is a *difference* between two arms whose rosters overlap in twelve
@@ -292,7 +305,8 @@ def simulate_standings(
     cat_wins = [0.0] * n
     matchup_wins = [0.0] * n
     for wi in range(n_weeks):
-        week_tot = [_roster_week(r, drawn, wi, cats) for r in rosters]
+        scoring = lineups if lineups is not None else rosters
+        week_tot = [_roster_week(r, drawn, wi, cats) for r in scoring]
         for a, b in round_robin_pairings(n, wi):
             won_a = 0.0
             for c in cats:

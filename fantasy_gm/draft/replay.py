@@ -198,8 +198,15 @@ def score_rosters(
     rosters: list[list[str]],
     settings: DraftSettings,
     schedule: bool = False,
+    lineups: list[list[str]] | None = None,
 ) -> list[dict]:
     """Weekly grading of realized production. Returns per-seat results.
+
+    ``lineups`` restricts scoring to a starting lineup per seat, the bench contributing
+    nothing (task 3.14). Default ``None`` keeps the shipped behaviour — all thirteen score
+    every week — so every number already in `results.md` reproduces. See
+    :func:`fantasy_gm.draft.assignment.starting_lineup` for how one is chosen, and why it is
+    chosen from pre-season value rather than from the week being graded.
 
     Two gradings, and the difference between them is itself a measurement (task 3.13):
 
@@ -221,7 +228,8 @@ def score_rosters(
         for _ in range(n)
     ]
     for wi, week in enumerate(weeks):
-        week_tot = [_team_week(r, week, totals, cats) for r in rosters]
+        scoring = lineups if lineups is not None else rosters
+        week_tot = [_team_week(r, week, totals, cats) for r in scoring]
         pairings = (
             round_robin_pairings(n, wi) if schedule
             else [(a, b) for a in range(n) for b in range(a + 1, n)]

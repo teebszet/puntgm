@@ -184,6 +184,35 @@ def test_grading_is_all_play_all_and_zero_sum():
     assert total_matchups == pytest.approx(sum(g["matchups"] for g in graded) / 2)
 
 
+def test_lineups_default_to_the_whole_roster():
+    """The seam task 3.14 adds must be inert until it is used, or every number already
+    recorded moves underneath it."""
+    settings = DraftSettings(categories=["pts", "reb", "blk"], n_teams=3, rounds=2)
+    rosters = [["star1", "scrub1"], ["star2", "scrub2"], ["even1", "even2"]]
+    store = _grading_store()
+    assert score_rosters(store, SEASON, rosters, settings) == score_rosters(
+        store, SEASON, rosters, settings, lineups=rosters
+    )
+
+
+def test_benched_players_score_nothing():
+    """A bench slot has to actually cost the team its production, otherwise the positional
+    constraint is decoration."""
+    settings = DraftSettings(categories=["pts", "reb", "blk"], n_teams=2, rounds=2)
+    store = _grading_store()
+    rosters = [["star1", "star2"], ["star1", "star2"]]
+    # Identical rosters tie everything; benching one side's second player must break the tie
+    # against them, and by exactly what that player produces.
+    tied = score_rosters(store, SEASON, rosters, settings)
+    assert tied[0]["cat_wins"] == pytest.approx(tied[0]["cat_games"] / 2)
+
+    benched = score_rosters(
+        store, SEASON, rosters, settings, lineups=[["star1"], ["star1", "star2"]]
+    )
+    assert benched[0]["cat_wins"] < tied[0]["cat_wins"]
+    assert benched[1]["cat_wins"] > tied[1]["cat_wins"]
+
+
 def test_a_stronger_roster_grades_better():
     graded = score_rosters(
         _grading_store(), SEASON, [["star1", "star2"], ["scrub1", "scrub2"]], _SETTINGS
