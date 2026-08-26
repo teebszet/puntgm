@@ -598,6 +598,46 @@ field (-3.81 -> -4.12pp). `future_slices` sharpens H₀'s commitment to its own 
 room — which pays when that model is right and costs when it is wrong. That is a coherent
 mechanism rather than a coincidence, and it points at the model rather than the optimizer.
 
+### Generalized: three seasons x both objectives (2026-08-26)
+
+The single-season table above is one of six. `scripts/room_decomposition.py` was run over
+2023-24, 2024-25 and 2025-26 x `most_categories` and `each_category` -- 48 arm-cells, each still
+2000 seasons x 12 seats against its own null under common random numbers. Mean category delta
+over the six runs, with the range across them:
+
+```
+cell   field    idle   arm       cat delta (mean)          range        seats>     runs with cat > 0
+paper  g_score  no     h_score        +1.63pp     [+1.19, +2.20]     56/72                  6/6
+paper  g_score  no     h_paper        +3.94pp     [+3.56, +4.27]     68/72                  6/6
+idle   g_score  yes    h_score        +1.83pp     [+0.64, +3.03]     58/72                  6/6
+idle   g_score  yes    h_paper        +3.38pp     [+2.78, +4.08]     71/72                  6/6
+field  adp      no     h_score        -2.22pp     [-3.81, -1.34]      7/72                  0/6
+field  adp      no     h_paper        -2.03pp     [-4.12, -0.91]      8/72                  0/6
+both   adp      yes    h_score        -1.19pp     [-1.74, -0.48]     14/72                  0/6
+both   adp      yes    h_paper        -1.87pp     [-3.37, -0.59]     10/72                  0/6
+```
+
+**The sign is unanimous: 48 of 48 arm-cells agree with the single-season read.** Every G-score-field
+cell is positive on all three metrics in all six runs; every ADP-field cell is negative in all six.
+Adding idle weeks never changes a sign -- it moves the mean by 0.20pp for `h_score` and -0.56pp for
+`h_paper`, both inside the run-to-run range. Swapping the field changes the sign every time.
+
+The seat counts hold at scale too: **253 of 288 seat-cells ahead in a G-score field, 39 of 288 in an
+ADP field.** This project has been burned by single-season deltas that reversed (task 3.8), which is
+why the 2025-26 result was not acted on until this ran. It did not reverse.
+
+One thing the wider grid softens. In the single 2025-26 `most_categories` run `h_paper` looked
+*worse* than `h_score` in an ADP field (-4.12 vs -3.81pp), read here as "commitment costs when the
+model is wrong". The G-score half of that claim strengthens: `h_paper` beats `h_score` in the
+`paper` cell in **6 of 6** runs, by +2.31pp on average. The ADP half does not survive as stated --
+in the pure `field` cell the two arms swap places run to run (`h_paper` ahead 3 of 6, mean
+difference +0.19pp, i.e. nothing). It only holds in the `both` cell, ADP field *with* idle weeks,
+where `h_paper` is behind in 5 of 6 (mean -0.68pp). So the honest version is narrower than the
+one-run version: the paper correction is a clear gain in the room the paper describes, and is not
+distinguishable from `h_score` in an ADP field.
+
+Runs: `runs/room-decomposition/{2023-24,2024-25,2025-26}-{most_categories,each_category}.json`.
+
 ### The mechanism, from the code
 
 `HScoreEngine` prices the opposing side's unknown picks with `_weighted_future(avail, neutral)` —
