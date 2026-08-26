@@ -16,7 +16,14 @@ from fantasy_gm.draft.objective import (
     prob_at_least,
     score_objective,
 )
-from fantasy_gm.draft.settings import DraftSettings, Objective, RosterSlot
+from fantasy_gm.draft.settings import (
+    DEFAULT_SLOTS,
+    DraftSettings,
+    Objective,
+    RosterSlot,
+    eligible_positions,
+    slot_eligibility,
+)
 from fantasy_gm.draft.xscore import xscore_basis
 from tests.test_xscore import SEASON, _line, _seed
 
@@ -92,6 +99,55 @@ def test_assignment_respects_ineligibility():
     assignment, total = solve_assignment(mat)
     assert assignment[0] == 1
     assert total == pytest.approx(8.0)
+
+
+class _Listed:
+    """Stand-in for the store's ``PlayerPosition`` — only ``slots()`` is consumed."""
+
+    def __init__(self, *tokens):
+        self._tokens = tokens
+
+    def slots(self):
+        return self._tokens
+
+
+def test_listed_positions_expand_into_the_slot_vocabulary():
+    """The store speaks G/F/C; the slots speak PG/SG/SF/PF/C. Without the expansion the two
+    do not intersect at all."""
+    assert eligible_positions(("G",)) == frozenset({"PG", "SG"})
+    assert eligible_positions(("F",)) == frozenset({"SF", "PF"})
+    assert eligible_positions(("C",)) == frozenset({"C"})
+    assert eligible_positions(("G", "F")) == frozenset({"PG", "SG", "SF", "PF"})
+
+
+def test_unknown_position_token_costs_the_label_not_the_player():
+    assert eligible_positions(("X",)) == frozenset()
+    assert eligible_positions(("G", "X")) == frozenset({"PG", "SG"})
+
+
+def test_every_listed_position_places_into_a_real_roster():
+    """Regression for the defect this adapter exists to fix: against the store's own
+    vocabulary ``assign_to_slots`` placed centres and left every guard and forward unplaced."""
+    slots = [RosterSlot.of(s) for s in DEFAULT_SLOTS]
+    listed = {
+        "guard": eligible_positions(("G",)),
+        "forward": eligible_positions(("F",)),
+        "centre": eligible_positions(("C",)),
+        "swing": eligible_positions(("G", "F")),
+    }
+    placed, unplaced = assign_to_slots(listed, list(listed), slots)
+    assert unplaced == []
+    assert set(placed) == set(listed)
+
+
+def test_unlisted_players_are_surfaced_rather_than_defaulted():
+    """A player the store cannot place must reach the caller as such. Defaulting him to
+    ineligible would delete him; defaulting him to UTIL would hand him flexibility the listed
+    players do not have."""
+    positions = {"a": _Listed("G"), "b": _Listed("X")}
+    eligible, unlisted = slot_eligibility(positions, ["a", "b", "c"])
+    assert eligible == {"a": frozenset({"PG", "SG"})}
+    assert unlisted == ["b", "c"]
 
 
 def test_multi_eligible_player_fits_where_a_specialist_cannot():

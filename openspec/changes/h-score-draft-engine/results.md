@@ -659,3 +659,90 @@ built, pinned, and dead; the other is `draft/assignment.py` (task 3.14).
    ADP. It is a *value* ranking, so it sits closer to a G-score board than a real market does; a
    real ADP field would be expected to widen this gap rather than close it.
 3. Neither room has positional eligibility or a positional assignment term (task 3.14).
+
+
+## Task 3.14 step 0 — can this experiment be run at all? (2026-08-26)
+
+`GER-8` reads as a one-module change: `draft/assignment.py` has no callers, so give it one.
+Reading the code first turned up two things that change what the task *is*.
+
+### `assignment.py` would have placed nobody
+
+`RosterSlot` speaks the fine Yahoo vocabulary — PG, SG, SF, PF, C. The only position source
+this project has is NBA `playerindex`, which is coarse: 575 rows spelled G (241), F (181),
+C (62), G-F (37), F-C (26), C-F (17), F-G (11). `PlayerPosition.slots()` splits on the hyphen
+and hands those tokens through unchanged, and `RosterSlot.accepts` intersects them with the
+fine set. The intersection is empty for every guard and every forward. Against a real
+thirteen-slot roster:
+
+```
+listed = {'p1': {'G'}, 'p2': {'F'}, 'p3': {'C'}, 'p4': {'G','F'}}
+assign_to_slots(listed, players, DEFAULT_SLOTS)
+  placed:   {'p3': 'C'}
+  unplaced: ['p1', 'p2', 'p4']
+```
+
+Centres place only because `C` happens to be spelled the same in both vocabularies. So this is
+not simply the third built-tested-dead component (`assignment.py`, `adp_ranks` /
+`survival_probability`, and now the eligibility path) — it is one that *could not have worked*
+if something had called it. Its tests pass because they construct fine positions by hand.
+
+`eligible_positions` and `slot_eligibility` in `settings.py` do the expansion, pinned by a
+regression test that places one of each listed type into `DEFAULT_SLOTS`.
+
+**What the fix costs, stated before any measurement.** The expansion is looser than the format
+it models: Yahoo lists true PG/SG/SF/PF per player, we let any listed guard fill either guard
+slot. Our positional constraint is therefore weaker than a real league's, which biases the
+measured effect of positional assignment **towards zero**. A null result would be bounded
+below by the coarseness of the input and would not be evidence about the method. Real
+eligibility arrives with the Yahoo API (GER-5).
+
+Second caveat: the store holds **one undated snapshot** of positions, taken 2026-08-17. Every
+row shares that `known_from`. Replaying 2023-24 therefore uses 2026 listings.
+
+### Nothing in this repo starts a lineup
+
+`papersim._roster_week` and `replay._team_week` both aggregate the **entire thirteen-man
+roster**, every week. There is no starting lineup in the draft, in either grader, or anywhere
+else.
+
+So wiring assignment into `_evaluate` and changing nothing else would have H₀ optimising the
+best legal ten while the grader counts all thirteen — optimising a quantity nothing measures.
+It would lose, and the loss would be indistinguishable from a finding. That is the
+measure-the-harness-null lesson one layer up: the objective and the grader have to agree about
+what a team scores before a term added to one can be read off the other.
+
+Positional assignment is therefore three changes in order — eligibility adapter (done), lineup
+grading, then the objective term — and the objective term lands last.
+
+The lineup is set from **pre-season expected value, not the week's realized box scores.**
+Assigning on realized production would be an oracle, and two numbers in this file were already
+inflated by quietly reading the future. It costs realism, since real managers do set lineups
+on news, and that is the honest direction to err.
+
+### Scarcity: the whole experiment runs through centre
+
+`scripts/position_coverage.py`, against the 156-man scored pool the drafts actually use:
+
+```
+season     pool  listed  unlisted     PG     SG     SF     PF      C   binding
+2023-24     156     147         9     79     79     74     74     31   C 31/24 (1.29x)
+2024-25     156     148         8     81     81     71     71     30   C 30/24 (1.25x)
+2025-26     156     151         5     80     80     77     77     31   C 31/24 (1.29x)
+```
+
+`DEFAULT_SLOTS` forces 12 PG, 12 SG, 12 SF, 12 PF and **24 C** across twelve teams (only
+single-position slots impose demand; flex slots impose none, so this is a lower bound on
+scarcity). Guards and forwards run about six times over-supplied — those slots cannot bind.
+**Centre sits at 1.25–1.29× forced demand, and it is the only position that binds.**
+
+That scopes the result before it is measured: whatever positional assignment is worth in our
+data, it is worth it through centre scarcity, and a position-blind board that under-drafts
+centres leaving `C` slots empty is the mechanism. Worth stating now so the finding is not
+later described as something more general than the input can support.
+
+Coverage is 147/148/151 of 156. The 5-9 unlisted players are returned as `unlisted` rather
+than defaulted: treating them as ineligible would delete real players from lineups, treating
+them as UTIL-eligible would hand them flexibility the listed players do not have, and either
+choice is a thumb on the scale of this exact experiment. The last unchecked pool-membership
+mismatch here (`derive_adp_order`, task 3.16) was worth more than the effect under test.
