@@ -400,6 +400,69 @@ def test_future_pick_uncertainty_shrinks_as_the_draft_progresses():
     assert abs(p_late - 0.5) > abs(p_early - 0.5)
 
 
+def test_positional_engine_takes_the_player_it_can_actually_start():
+    """The mechanism task 3.14 exists for. One roster spot left, ``PG`` already filled, and a
+    ``C`` slot still open: the blind engine takes the best player on the board, the positional
+    engine takes the only one it can put in the empty slot. A player who cannot be started
+    contributes nothing to a team that starts a lineup."""
+    players = {
+        "owned_guard": {"blk": 1.0, "pts": 14, "reb": 6},
+        "great_guard": {"blk": 1.4, "pts": 22, "reb": 9},
+        "ok_centre": {"blk": 1.1, "pts": 13, "reb": 7},
+        "opp_guard": {"blk": 1.0, "pts": 15, "reb": 7},
+        "opp_centre": {"blk": 1.0, "pts": 15, "reb": 7},
+        "filler_guard": {"blk": 0.9, "pts": 10, "reb": 5},
+        "filler_centre": {"blk": 0.9, "pts": 10, "reb": 5},
+    }
+    guards = ("owned_guard", "great_guard", "opp_guard", "filler_guard")
+    basis = _basis_with(players)
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"],
+        slots=[RosterSlot.of("PG"), RosterSlot.of("C")],
+        n_teams=2,
+        rounds=2,
+        objective=Objective.EACH_CATEGORY,
+    )
+    eligibility = {
+        pid: eligible_positions(("G",) if pid in guards else ("C",)) for pid in players
+    }
+    state = DraftState(
+        my_roster=["owned_guard"],
+        opponent_rosters=[["opp_guard", "opp_centre"]],
+        taken={"owned_guard", "opp_guard", "opp_centre"},
+    )
+
+    blind = HScoreEngine(basis, settings, steps=4).evaluate_candidates(state)
+    aware = HScoreEngine(
+        basis, settings, steps=4, positional=True, eligibility=eligibility
+    ).evaluate_candidates(state)
+
+    assert blind[0].player_id == "great_guard"
+    assert aware[0].player_id == "ok_centre"
+    # A second guard is not merely ranked lower — he is worth nothing, because starting him
+    # means benching the guard already in the only PG slot and leaving C empty.
+    assert next(c for c in aware if c.player_id == "great_guard").value == pytest.approx(
+        0.0, abs=1e-4
+    )
+
+
+def test_positional_is_inert_without_eligibility():
+    """A flag that silently half-applies is worse than one that is off. Positional mode with
+    no position data must reproduce the blind engine exactly, not place nobody and score every
+    roster as empty."""
+    players = {
+        "a": {"blk": 1.0, "pts": 14, "reb": 6},
+        "b": {"blk": 1.4, "pts": 22, "reb": 9},
+        "c": {"blk": 1.1, "pts": 13, "reb": 7},
+    }
+    basis = _basis_with(players)
+    state = DraftState(opponent_rosters=[[]])
+    blind = _engine(basis).evaluate_candidates(state)
+    empty = _engine(basis, positional=True, eligibility={}).evaluate_candidates(state)
+    assert [c.player_id for c in blind] == [c.player_id for c in empty]
+    assert [c.value for c in blind] == [c.value for c in empty]
+
+
 def test_objective_choice_changes_the_pick():
     """A specialist that locks one category vs an all-rounder that nudges three. Which is
     better is exactly what the objective decides."""

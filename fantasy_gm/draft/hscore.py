@@ -37,6 +37,7 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from fantasy_gm.draft.assignment import starting_lineup
 from fantasy_gm.draft.objective import category_probabilities, score_objective
 from fantasy_gm.draft.settings import DraftSettings
 from fantasy_gm.draft.xscore import XScoreBasis
@@ -115,6 +116,8 @@ class HScoreEngine:
         future_from_shortlist: bool = True,
         normalise_weights: bool = False,
         future_slices: bool = False,
+        positional: bool = False,
+        eligibility: dict[str, frozenset[str]] | None = None,
     ):
         self.basis = basis
         self.settings = settings or DraftSettings()
@@ -129,6 +132,12 @@ class HScoreEngine:
         self.future_from_shortlist = future_from_shortlist
         self.normalise_weights = normalise_weights
         self.future_slices = future_slices
+        # Task 3.14. Off by default: turning it on changes what a team is worth, so it is only
+        # comparable against a grader that also starts a lineup (`score_rosters(lineups=...)`,
+        # `simulate_standings(lineups=...)`). Running it against the shipped grader would have
+        # the engine optimise a quantity nothing measures.
+        self.positional = positional and bool(eligibility)
+        self.eligibility = eligibility or {}
         self._warm: list[float] | None = None
 
     # --- roster aggregation --------------------------------------------------
@@ -299,6 +308,33 @@ class HScoreEngine:
                 var[c] += max(suf_b[c][start] / z - mu * mu, 0.0) + suf_t[c][start] / z
         return mean, var
 
+    def _started(self, players: list[str], weights: list[float]) -> list[str]:
+        """The subset of ``players`` that fills a starting slot, under strategy ``weights``.
+
+        The assignment reward is the same strategy-weighted standardised score the future-pick
+        softmax uses, so "who do I start?" is answered in the currency the optimizer is
+        already reasoning in: a manager punting turnovers should not be starting the player
+        who is only there for turnovers. That makes the lineup **weight-dependent**, which is
+        why this runs inside :meth:`_evaluate` rather than being hoisted out of the gradient
+        loop like everything else weight-independent. Measured at 89us a solve, which is
+        affordable; the shortcut, if it ever stops being affordable, is a neutral-weight
+        lineup, not fewer gradient steps.
+
+        Known limitation: an argmax assignment is piecewise-constant in the weights, so the
+        finite-difference gradient mostly sees no lineup change at all and occasionally sees a
+        jump. The optimizer is not being given a smooth view of this term.
+        """
+        cats = self.settings.categories
+        value = {
+            pid: sum(w * self.basis.category_score(pid, c)
+                     for w, c in zip(weights, cats, strict=True))
+            for pid in players
+        }
+        placed = starting_lineup(
+            players, self.eligibility, self.settings.starting_slots, value
+        )
+        return list(placed)
+
     # --- the objective -------------------------------------------------------
 
     def _opponent_totals(
@@ -339,6 +375,7 @@ class HScoreEngine:
         my_future: int,
         opp_future_profile: tuple[dict[str, float], dict[str, float]] | None,
         weights: list[float],
+        my_players: list[str] | None = None,
     ) -> tuple[float, list[float]]:
         """Objective and per-category win probabilities under strategy ``weights``.
 
@@ -348,7 +385,18 @@ class HScoreEngine:
         and the softmax over the pool dominates its cost.
         """
         cats = self.settings.categories
-        base_mean, base_var = my_totals
+        if self.positional and my_players is not None:
+            # Only the started players count, and only the still-open starting slots can be
+            # filled by a future pick. Under a static lineup the rounds past the tenth are
+            # genuinely worth nothing this season, which is a real consequence of the grader
+            # rather than a shortcut: our bench scores zero because we never re-set a lineup
+            # on news. A real manager's bench is worth more than that, and this understates
+            # the late rounds for both arms alike.
+            started = self._started(my_players, weights)
+            base_mean, base_var = self._totals(started)
+            my_future = min(my_future, len(self.settings.starting_slots) - len(started))
+        else:
+            base_mean, base_var = my_totals
         my_mean = dict(base_mean)
         my_var = dict(base_var)
 
@@ -400,6 +448,7 @@ class HScoreEngine:
         my_future: int,
         opp_future_profile: tuple[dict[str, float], dict[str, float]] | None,
         start: list[float],
+        my_players: list[str] | None = None,
     ) -> tuple[float, list[float], list[float]]:
         """Adam on the strategy weights, numeric gradient."""
         n = len(self.settings.categories)
@@ -409,7 +458,7 @@ class HScoreEngine:
         b1, b2, eps, h = 0.9, 0.999, 1e-8, 1e-3
 
         best_val, best_probs = self._evaluate(
-            my_totals, opponents, available, my_future, opp_future_profile, w
+            my_totals, opponents, available, my_future, opp_future_profile, w, my_players
         )
         best_w = list(w)
 
@@ -423,10 +472,12 @@ class HScoreEngine:
                 up[i] += h
                 dn[i] -= h
                 gu, _ = self._evaluate(
-                    my_totals, opponents, available, my_future, opp_future_profile, up
+                    my_totals, opponents, available, my_future, opp_future_profile, up,
+                    my_players,
                 )
                 gd, _ = self._evaluate(
-                    my_totals, opponents, available, my_future, opp_future_profile, dn
+                    my_totals, opponents, available, my_future, opp_future_profile, dn,
+                    my_players,
                 )
                 grad.append((gu - gd) / (2 * h))
             for i in range(n):
@@ -440,7 +491,7 @@ class HScoreEngine:
             if self.normalise_weights:
                 w = _renormalise(w, n)
             val, probs = self._evaluate(
-                my_totals, opponents, available, my_future, opp_future_profile, w
+                my_totals, opponents, available, my_future, opp_future_profile, w, my_players
             )
             if val > best_val:
                 best_val, best_probs, best_w = val, probs, list(w)
@@ -528,15 +579,16 @@ class HScoreEngine:
         # this, so "how much does this pick actually move the matchup?" is legible.
         base_val, _ = self._evaluate(
             self._totals(state.my_roster), opponents, future_universe,
-            my_future_after + 1, opp_profile, start,
+            my_future_after + 1, opp_profile, start, state.my_roster,
         )
 
         out: list[Candidate] = []
         for pid in pool:
             rest = [p for p in future_universe if p != pid]
+            with_pick = [*state.my_roster, pid]
             val, probs, w = self._optimise_weights(
-                self._totals([*state.my_roster, pid]), opponents, rest,
-                my_future_after, opp_future_for(rest), start,
+                self._totals(with_pick), opponents, rest,
+                my_future_after, opp_future_for(rest), start, with_pick,
             )
             out.append(
                 Candidate(
