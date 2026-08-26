@@ -446,6 +446,39 @@ def test_positional_engine_takes_the_player_it_can_actually_start():
     )
 
 
+def test_positional_objective_still_has_a_gradient_to_climb():
+    """An argmax assignment is piecewise-constant in the strategy weights, so the
+    finite-difference gradient could in principle see nothing and leave the optimizer sitting
+    on its start vector. Measured rather than assumed: it still moves, and it moves somewhere
+    the blind engine does not."""
+    basis = _basis_with(_duplicate_pool(), pool_size=20)
+    names = list(basis.pool)
+    eligibility = {
+        pid: eligible_positions(("G",) if i % 3 == 0 else ("F",) if i % 3 == 1 else ("C",))
+        for i, pid in enumerate(names)
+    }
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"],
+        slots=[RosterSlot.of(x) for x in ("PG", "SF", "C", "UTIL", "BN")],
+        n_teams=2,
+        rounds=5,
+        objective=Objective.MOST_CATEGORIES,
+    )
+    state = DraftState(
+        my_roster=[names[0]],
+        opponent_rosters=[[names[1], names[2]]],
+        taken={names[0], names[1], names[2]},
+    )
+    aware = HScoreEngine(
+        basis, settings, steps=12, positional=True, eligibility=eligibility
+    ).evaluate_candidates(state)[0]
+    blind = HScoreEngine(basis, settings, steps=12).evaluate_candidates(state)[0]
+
+    start = 1.0
+    assert any(abs(w - start) > 0.25 for w in aware.weights.values())
+    assert aware.weights != blind.weights
+
+
 def test_positional_is_inert_without_eligibility():
     """A flag that silently half-applies is worse than one that is off. Positional mode with
     no position data must reproduce the blind engine exactly, not place nobody and score every
