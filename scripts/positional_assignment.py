@@ -30,7 +30,13 @@ six times over-supplied. Whatever this measures, it measures it through centre.
 
 Usage::
 
-    python scripts/positional_assignment.py <season> <most_categories|each_category> [out.json]
+    python scripts/positional_assignment.py <season> <most_categories|each_category> \
+        [out.json] [g_score|adp]
+
+The default ``g_score`` field is the paper's room, where H0 already leads. ``adp`` is the room
+where H0 *loses* (task 3.15, 0/6 runs) -- and since 3.14 exists to explain that deficit, the
+adp pass is the one that bears on it. Measuring only the g_score room answers a different
+question: whether positional assignment adds where H0 is already ahead.
 """
 
 from __future__ import annotations
@@ -56,7 +62,9 @@ CELLS = (
 )
 
 
-def main(season: str, objective_name: str, out_path: str | None = None) -> None:
+def main(
+    season: str, objective_name: str, out_path: str | None = None, field: str = "g_score"
+) -> None:
     store = Store(Config().db_path)
     objective = Objective(objective_name)
 
@@ -64,7 +72,7 @@ def main(season: str, objective_name: str, out_path: str | None = None) -> None:
         return run_paper_sim(
             store, season, objective=objective, arm=arm, n_seasons=N_SEASONS, seed=SEED,
             engine_steps=ENGINE_STEPS, positional=positional,
-            engine_positional=engine_positional,
+            engine_positional=engine_positional, field=field,
         )
 
     # The null depends only on the grading, not on the engine flag — the G-score arm has no
@@ -80,6 +88,7 @@ def main(season: str, objective_name: str, out_path: str | None = None) -> None:
         rows.append({
             "season": season,
             "objective": objective.value,
+            "field": field,
             "cell": cell,
             "positional_grading": positional,
             "engine_positional": engine_positional,
@@ -125,4 +134,9 @@ def main(season: str, objective_name: str, out_path: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
+    main(
+        sys.argv[1],
+        sys.argv[2],
+        sys.argv[3] if len(sys.argv) > 3 else None,
+        sys.argv[4] if len(sys.argv) > 4 else "g_score",
+    )
