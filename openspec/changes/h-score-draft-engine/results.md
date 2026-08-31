@@ -714,11 +714,180 @@ model of a field it still cannot exploit buys nothing.
 Two named components of the published H0 remain built, pinned by tests, and unreachable:
 `draft/assignment.py` (task 3.14, positional assignment) and `adp_ranks` / `survival_probability`
 (task 3.5, scarcity). The survival half was **not** wired here -- how survival should enter the
-objective is a design decision, not a connection. 3.14 is the larger of the two and is now the
-leading remaining explanation.
+objective is a design decision, not a connection. 3.14 is the larger of the two and was the
+leading remaining explanation **until it was measured and came back negative 12/12 — see below.**
 
 **Carried caveat, unchanged from 3.15:** the ADP order is the proxy (`_adp_order`, the store's own
 z-value ranking), not real Yahoo ADP. This experiment fed the engine the *same* proxy the bots draft
 from, so it is a clean test of the wiring; it is not a test against a real market.
 
 Runs: `runs/opponent-board/2025-26-{most_categories,each_category}.json`. 305 tests green, ruff clean.
+
+## Task 3.14 step 0 — can this experiment be run at all? (2026-08-26)
+
+`GER-8` reads as a one-module change: `draft/assignment.py` has no callers, so give it one.
+Reading the code first turned up two things that change what the task *is*.
+
+### `assignment.py` would have placed nobody
+
+`RosterSlot` speaks the fine Yahoo vocabulary — PG, SG, SF, PF, C. The only position source
+this project has is NBA `playerindex`, which is coarse: 575 rows spelled G (241), F (181),
+C (62), G-F (37), F-C (26), C-F (17), F-G (11). `PlayerPosition.slots()` splits on the hyphen
+and hands those tokens through unchanged, and `RosterSlot.accepts` intersects them with the
+fine set. The intersection is empty for every guard and every forward. Against a real
+thirteen-slot roster:
+
+```
+listed = {'p1': {'G'}, 'p2': {'F'}, 'p3': {'C'}, 'p4': {'G','F'}}
+assign_to_slots(listed, players, DEFAULT_SLOTS)
+  placed:   {'p3': 'C'}
+  unplaced: ['p1', 'p2', 'p4']
+```
+
+Centres place only because `C` happens to be spelled the same in both vocabularies. So this is
+not simply the third built-tested-dead component (`assignment.py`, `adp_ranks` /
+`survival_probability`, and now the eligibility path) — it is one that *could not have worked*
+if something had called it. Its tests pass because they construct fine positions by hand.
+
+`eligible_positions` and `slot_eligibility` in `settings.py` do the expansion, pinned by a
+regression test that places one of each listed type into `DEFAULT_SLOTS`.
+
+**What the fix costs, stated before any measurement.** The expansion is looser than the format
+it models: Yahoo lists true PG/SG/SF/PF per player, we let any listed guard fill either guard
+slot. Our positional constraint is therefore weaker than a real league's, which biases the
+measured effect of positional assignment **towards zero**. A null result would be bounded
+below by the coarseness of the input and would not be evidence about the method. Real
+eligibility arrives with the Yahoo API (GER-5).
+
+Second caveat: the store holds **one undated snapshot** of positions, taken 2026-08-17. Every
+row shares that `known_from`. Replaying 2023-24 therefore uses 2026 listings.
+
+### Nothing in this repo starts a lineup
+
+`papersim._roster_week` and `replay._team_week` both aggregate the **entire thirteen-man
+roster**, every week. There is no starting lineup in the draft, in either grader, or anywhere
+else.
+
+So wiring assignment into `_evaluate` and changing nothing else would have H₀ optimising the
+best legal ten while the grader counts all thirteen — optimising a quantity nothing measures.
+It would lose, and the loss would be indistinguishable from a finding. That is the
+measure-the-harness-null lesson one layer up: the objective and the grader have to agree about
+what a team scores before a term added to one can be read off the other.
+
+Positional assignment is therefore three changes in order — eligibility adapter (done), lineup
+grading, then the objective term — and the objective term lands last.
+
+The lineup is set from **pre-season expected value, not the week's realized box scores.**
+Assigning on realized production would be an oracle, and two numbers in this file were already
+inflated by quietly reading the future. It costs realism, since real managers do set lineups
+on news, and that is the honest direction to err.
+
+### Scarcity: the whole experiment runs through centre
+
+`scripts/position_coverage.py`, against the 156-man scored pool the drafts actually use:
+
+```
+season     pool  listed  unlisted     PG     SG     SF     PF      C   binding
+2023-24     156     147         9     79     79     74     74     31   C 31/24 (1.29x)
+2024-25     156     148         8     81     81     71     71     30   C 30/24 (1.25x)
+2025-26     156     151         5     80     80     77     77     31   C 31/24 (1.29x)
+```
+
+`DEFAULT_SLOTS` forces 12 PG, 12 SG, 12 SF, 12 PF and **24 C** across twelve teams (only
+single-position slots impose demand; flex slots impose none, so this is a lower bound on
+scarcity). Guards and forwards run about six times over-supplied — those slots cannot bind.
+**Centre sits at 1.25–1.29× forced demand, and it is the only position that binds.**
+
+That scopes the result before it is measured: whatever positional assignment is worth in our
+data, it is worth it through centre scarcity, and a position-blind board that under-drafts
+centres leaving `C` slots empty is the mechanism. Worth stating now so the finding is not
+later described as something more general than the input can support.
+
+Coverage is 147/148/151 of 156. The 5-9 unlisted players are returned as `unlisted` rather
+than defaulted: treating them as ineligible would delete real players from lineups, treating
+them as UTIL-eligible would hand them flexibility the listed players do not have, and either
+choice is a thumb on the scale of this exact experiment. The last unchecked pool-membership
+mismatch here (`derive_adp_order`, task 3.16) was worth more than the effect under test.
+
+## Task 3.14 — positional assignment does not close H₀'s deficit; the objective term costs it, 12/12 (2026-08-31)
+
+Three cells (`blind` / `grade-only` / `full`), three seasons × both objectives, **in both
+fields** — 2000 seasons × 12 seats per cell, each differenced against **its own null** (the
+same seat drafted by the static G-score board, same room, common random numbers). `full` minus
+`grade-only` isolates the objective term: same grading, same null, so the difference is
+attributable to `HScoreEngine(positional=True)` and nothing else.
+
+Runs: `runs/positional/*.json` (g_score field), `runs/positional/adp/*.json` (ADP field).
+Reproduce with `python scripts/positional_assignment.py <season> <objective> <out.json> [field]`.
+
+### The objective term, `full` − `grade-only`
+
+```
+field     season   objective         title Δ    cat Δ   matchup Δ   seats ahead
+g_score   2023-24  each_category     -15.23    -3.65     -12.37      11 ->  4
+g_score   2023-24  most_categories   -13.77    -1.57      -6.23      12 ->  9
+g_score   2024-25  each_category      -9.38    -0.36      +1.82      10 -> 10
+g_score   2024-25  most_categories    -4.79    -0.47      -2.64      10 ->  9
+g_score   2025-26  each_category     -12.09    -3.49      -9.80      12 ->  8
+g_score   2025-26  most_categories   -16.18    -1.45      -4.71      11 ->  9
+adp       2023-24  each_category     -14.13    -4.56     -17.19       1 ->  0
+adp       2023-24  most_categories   -15.43    -1.75      -7.38       0 ->  0
+adp       2024-25  each_category     -19.13    -4.53     -12.93       5 ->  0
+adp       2024-25  most_categories    -3.06    +0.11      -2.65       2 ->  6
+adp       2025-26  each_category     -23.11    -3.85      -7.78       7 ->  5
+adp       2025-26  most_categories   -10.45    -1.36      -2.83       5 ->  6
+```
+
+**12/12 negative on title rate. 11/12 on category rate** (the exception, +0.11pp, is inside the
+run-to-run range). 11/12 on matchup rate. Seat counts fall in 9 of 12. The sign does not depend
+on the field, the season, or the objective.
+
+### Why the ADP pass is the one that bears on the task
+
+3.14 exists to explain H₀'s **deficit**, and 3.15 established that the deficit lives in the ADP
+field (H₀ ahead 6/6 in a G-score field, behind 0/6 in an ADP field). The first six runs were all
+G-score — they answered "does positional assignment add where H₀ is already ahead?", which is a
+different question. The ADP pass answers the asked one, and answers it the same way.
+
+Stated before the ADP pass was read: *"I expect it to come back negative too."* It did.
+
+### Lineup grading alone is close to free; the cost is the objective
+
+`grade-only` minus `blind`, on **category rate**, is small and unsigned: −1.70 to +0.61pp in
+the G-score field, −0.95 to +3.75pp in the ADP field. On title rate it costs in the G-score
+field (−4.70 to −13.30pp) but *gains* in the ADP field in 2025-26 (+22.6 / +16.8pp) — which is
+the opposite of what a position-blind board being punished by positional grading would look
+like. Either way the grading is not where the loss comes from. That control is exactly what
+separates the finding from the artifact, and it clears the grading.
+
+### What this does and does not establish
+
+It establishes that **wiring `assignment.py` into the objective, as specified, makes H₀ worse in
+every cell measured**. It does not establish that positional assignment is worthless in general:
+
+* Our eligibility expansion is **looser than Yahoo's** (any listed guard fills either guard
+  slot), which biases the measurable effect toward zero. The bias explains a null; it does not
+  explain a consistent negative.
+* Positions come from **one undated snapshot** (2026-08-17), so 2023-24 is replayed with 2026
+  listings.
+* Only **centre binds** (1.25–1.29× forced demand); guards and forwards run ~6× over-supplied.
+  Any effect here runs through centre scarcity.
+* Under a static lineup, **rounds 11–13 are worth zero in expectation** — the draft is
+  effectively ten rounds. It lands on both arms and the null carries it, so the difference is
+  clean while the absolute rates are not comparable to the rest of this file.
+
+The likeliest reading of the sign: capping the future-pick block at still-open starting slots
+throws away real value, because a bench that scores zero in the grader is still where a
+thirteen-man roster's depth lives, and the objective now refuses to buy it.
+
+### Consequence — GER-8 closes unexplained
+
+Three candidate explanations for H₀'s ADP-field deficit have now been measured and all three are
+dead: **availability** (3.15 — the field owns the sign flip, not idle weeks), **the opponent
+model** (3.16 — telling H₀ the field's real ordering made it worse in 7/8 cells), and
+**positional assignment** (this task — worse in 12/12). Nothing on the list is left, and I am
+not reaching for a fourth.
+
+**H₀ goes cold.** The G-score board is what ships; H₀ is not a product and a week of replays has
+not made it one. `assignment.py` stays behind the default-off `positional=` / `engine_positional=`
+flags, with this measurement as the reason it is off.

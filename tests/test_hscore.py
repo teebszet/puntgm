@@ -9,14 +9,21 @@ import random
 import pytest
 
 from fantasy_gm.data.store import Store
-from fantasy_gm.draft.assignment import assign_to_slots, solve_assignment
+from fantasy_gm.draft.assignment import assign_to_slots, solve_assignment, starting_lineup
 from fantasy_gm.draft.hscore import DraftState, HScoreEngine, OpponentModel
 from fantasy_gm.draft.objective import (
     category_win_prob,
     prob_at_least,
     score_objective,
 )
-from fantasy_gm.draft.settings import DraftSettings, Objective, RosterSlot
+from fantasy_gm.draft.settings import (
+    DEFAULT_SLOTS,
+    DraftSettings,
+    Objective,
+    RosterSlot,
+    eligible_positions,
+    slot_eligibility,
+)
 from fantasy_gm.draft.xscore import xscore_basis
 from tests.test_xscore import SEASON, _line, _seed
 
@@ -92,6 +99,108 @@ def test_assignment_respects_ineligibility():
     assignment, total = solve_assignment(mat)
     assert assignment[0] == 1
     assert total == pytest.approx(8.0)
+
+
+def _pos(**listed):
+    return {pid: eligible_positions(tokens) for pid, tokens in listed.items()}
+
+
+def test_starting_lineup_benches_by_value_within_each_position_not_across_them():
+    """Value alone does not decide who starts, and that is the point. Six guards, five
+    forwards and two centres, ranked in exactly that order by value: the two *least* valuable
+    players on the roster start anyway, because ``C C`` demands them, while a more valuable
+    sixth guard sits — guards can reach only five of the ten slots."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(6)},
+                **{f"f{i}": ("F",) for i in range(5)},
+                **{f"c{i}": ("C",) for i in range(2)})
+    value = {pid: 100.0 - i for i, pid in enumerate(elig)}
+    placed = starting_lineup(list(elig), elig, settings.starting_slots, value)
+
+    assert len(placed) == len(settings.starting_slots)
+    assert {"c0", "c1"} <= set(placed)                       # least valuable, started anyway
+    assert "g5" not in placed                                # more valuable, benched anyway
+    # Within a position, value still decides.
+    for prefix, n_starting in (("g", 5), ("f", 3)):
+        group = sorted((p for p in elig if p.startswith(prefix)), key=lambda p: -value[p])
+        assert set(group[:n_starting]) <= set(placed)
+        assert not set(group[n_starting:]) & set(placed)
+
+
+def test_a_slot_nobody_can_fill_stays_empty():
+    """The mechanism under test: centre is the only binding position in our pool, so a roster
+    short of centres fields fewer than a full lineup and eats the difference."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(8)},
+                **{f"f{i}": ("F",) for i in range(4)},
+                c0=("C",))
+    value = dict.fromkeys(elig, 1.0)
+    placed = starting_lineup(list(elig), elig, settings.starting_slots, value)
+    assert len(placed) == len(settings.starting_slots) - 1
+    assert sorted(placed.values()).count("C") == 1
+
+
+def test_unlisted_players_never_consume_a_slot():
+    """An unplaceable player must bench himself, not a legal team-mate. Forcing him into the
+    matrix lets him take a column he cannot fill once the padding runs out."""
+    settings = DraftSettings()
+    elig = _pos(**{f"g{i}": ("G",) for i in range(5)},
+                **{f"f{i}": ("F",) for i in range(5)},
+                **{f"c{i}": ("C",) for i in range(2)})
+    roster = [*elig, "unlisted_a", "unlisted_b", "unlisted_c", "unlisted_d"]
+    value = dict.fromkeys(roster, 1.0)
+    placed = starting_lineup(roster, elig, settings.starting_slots, value)
+    assert len(placed) == len(settings.starting_slots)
+    assert not {"unlisted_a", "unlisted_b", "unlisted_c", "unlisted_d"} & set(placed)
+
+
+class _Listed:
+    """Stand-in for the store's ``PlayerPosition`` — only ``slots()`` is consumed."""
+
+    def __init__(self, *tokens):
+        self._tokens = tokens
+
+    def slots(self):
+        return self._tokens
+
+
+def test_listed_positions_expand_into_the_slot_vocabulary():
+    """The store speaks G/F/C; the slots speak PG/SG/SF/PF/C. Without the expansion the two
+    do not intersect at all."""
+    assert eligible_positions(("G",)) == frozenset({"PG", "SG"})
+    assert eligible_positions(("F",)) == frozenset({"SF", "PF"})
+    assert eligible_positions(("C",)) == frozenset({"C"})
+    assert eligible_positions(("G", "F")) == frozenset({"PG", "SG", "SF", "PF"})
+
+
+def test_unknown_position_token_costs_the_label_not_the_player():
+    assert eligible_positions(("X",)) == frozenset()
+    assert eligible_positions(("G", "X")) == frozenset({"PG", "SG"})
+
+
+def test_every_listed_position_places_into_a_real_roster():
+    """Regression for the defect this adapter exists to fix: against the store's own
+    vocabulary ``assign_to_slots`` placed centres and left every guard and forward unplaced."""
+    slots = [RosterSlot.of(s) for s in DEFAULT_SLOTS]
+    listed = {
+        "guard": eligible_positions(("G",)),
+        "forward": eligible_positions(("F",)),
+        "centre": eligible_positions(("C",)),
+        "swing": eligible_positions(("G", "F")),
+    }
+    placed, unplaced = assign_to_slots(listed, list(listed), slots)
+    assert unplaced == []
+    assert set(placed) == set(listed)
+
+
+def test_unlisted_players_are_surfaced_rather_than_defaulted():
+    """A player the store cannot place must reach the caller as such. Defaulting him to
+    ineligible would delete him; defaulting him to UTIL would hand him flexibility the listed
+    players do not have."""
+    positions = {"a": _Listed("G"), "b": _Listed("X")}
+    eligible, unlisted = slot_eligibility(positions, ["a", "b", "c"])
+    assert eligible == {"a": frozenset({"PG", "SG"})}
+    assert unlisted == ["b", "c"]
 
 
 def test_multi_eligible_player_fits_where_a_specialist_cannot():
@@ -289,6 +398,102 @@ def test_future_pick_uncertainty_shrinks_as_the_draft_progresses():
     p_early = _engine(basis, rounds=8, steps=0).evaluate_candidates(state)[0].win_probs["pts"]
     p_late = _engine(basis, rounds=3, steps=0).evaluate_candidates(state)[0].win_probs["pts"]
     assert abs(p_late - 0.5) > abs(p_early - 0.5)
+
+
+def test_positional_engine_takes_the_player_it_can_actually_start():
+    """The mechanism task 3.14 exists for. One roster spot left, ``PG`` already filled, and a
+    ``C`` slot still open: the blind engine takes the best player on the board, the positional
+    engine takes the only one it can put in the empty slot. A player who cannot be started
+    contributes nothing to a team that starts a lineup."""
+    players = {
+        "owned_guard": {"blk": 1.0, "pts": 14, "reb": 6},
+        "great_guard": {"blk": 1.4, "pts": 22, "reb": 9},
+        "ok_centre": {"blk": 1.1, "pts": 13, "reb": 7},
+        "opp_guard": {"blk": 1.0, "pts": 15, "reb": 7},
+        "opp_centre": {"blk": 1.0, "pts": 15, "reb": 7},
+        "filler_guard": {"blk": 0.9, "pts": 10, "reb": 5},
+        "filler_centre": {"blk": 0.9, "pts": 10, "reb": 5},
+    }
+    guards = ("owned_guard", "great_guard", "opp_guard", "filler_guard")
+    basis = _basis_with(players)
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"],
+        slots=[RosterSlot.of("PG"), RosterSlot.of("C")],
+        n_teams=2,
+        rounds=2,
+        objective=Objective.EACH_CATEGORY,
+    )
+    eligibility = {
+        pid: eligible_positions(("G",) if pid in guards else ("C",)) for pid in players
+    }
+    state = DraftState(
+        my_roster=["owned_guard"],
+        opponent_rosters=[["opp_guard", "opp_centre"]],
+        taken={"owned_guard", "opp_guard", "opp_centre"},
+    )
+
+    blind = HScoreEngine(basis, settings, steps=4).evaluate_candidates(state)
+    aware = HScoreEngine(
+        basis, settings, steps=4, positional=True, eligibility=eligibility
+    ).evaluate_candidates(state)
+
+    assert blind[0].player_id == "great_guard"
+    assert aware[0].player_id == "ok_centre"
+    # A second guard is not merely ranked lower — he is worth nothing, because starting him
+    # means benching the guard already in the only PG slot and leaving C empty.
+    assert next(c for c in aware if c.player_id == "great_guard").value == pytest.approx(
+        0.0, abs=1e-4
+    )
+
+
+def test_positional_objective_still_has_a_gradient_to_climb():
+    """An argmax assignment is piecewise-constant in the strategy weights, so the
+    finite-difference gradient could in principle see nothing and leave the optimizer sitting
+    on its start vector. Measured rather than assumed: it still moves, and it moves somewhere
+    the blind engine does not."""
+    basis = _basis_with(_duplicate_pool(), pool_size=20)
+    names = list(basis.pool)
+    eligibility = {
+        pid: eligible_positions(("G",) if i % 3 == 0 else ("F",) if i % 3 == 1 else ("C",))
+        for i, pid in enumerate(names)
+    }
+    settings = DraftSettings(
+        categories=["pts", "reb", "blk"],
+        slots=[RosterSlot.of(x) for x in ("PG", "SF", "C", "UTIL", "BN")],
+        n_teams=2,
+        rounds=5,
+        objective=Objective.MOST_CATEGORIES,
+    )
+    state = DraftState(
+        my_roster=[names[0]],
+        opponent_rosters=[[names[1], names[2]]],
+        taken={names[0], names[1], names[2]},
+    )
+    aware = HScoreEngine(
+        basis, settings, steps=12, positional=True, eligibility=eligibility
+    ).evaluate_candidates(state)[0]
+    blind = HScoreEngine(basis, settings, steps=12).evaluate_candidates(state)[0]
+
+    start = 1.0
+    assert any(abs(w - start) > 0.25 for w in aware.weights.values())
+    assert aware.weights != blind.weights
+
+
+def test_positional_is_inert_without_eligibility():
+    """A flag that silently half-applies is worse than one that is off. Positional mode with
+    no position data must reproduce the blind engine exactly, not place nobody and score every
+    roster as empty."""
+    players = {
+        "a": {"blk": 1.0, "pts": 14, "reb": 6},
+        "b": {"blk": 1.4, "pts": 22, "reb": 9},
+        "c": {"blk": 1.1, "pts": 13, "reb": 7},
+    }
+    basis = _basis_with(players)
+    state = DraftState(opponent_rosters=[[]])
+    blind = _engine(basis).evaluate_candidates(state)
+    empty = _engine(basis, positional=True, eligibility={}).evaluate_candidates(state)
+    assert [c.player_id for c in blind] == [c.player_id for c in empty]
+    assert [c.value for c in blind] == [c.value for c in empty]
 
 
 def test_objective_choice_changes_the_pick():

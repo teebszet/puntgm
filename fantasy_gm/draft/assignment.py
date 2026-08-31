@@ -130,3 +130,34 @@ def assign_to_slots(
         else:
             placed[pid] = slots[col].name
     return placed, unplaced
+
+
+def starting_lineup(
+    roster: list[str],
+    eligibility: dict[str, frozenset[str]],
+    slots,
+    value: dict[str, float],
+) -> dict[str, str]:
+    """The best legal starting lineup for ``roster`` — ``{player_id: slot_name}``.
+
+    ``slots`` should be the *starting* slots only; whoever is left over is the bench, and the
+    bench scores nothing. ``value`` is the scalar each started player is worth, and the
+    assignment maximises the total of it, so this answers "which ten of my thirteen do I
+    start?" and "who covers centre?" in one solve rather than two heuristics.
+
+    **A slot with nobody legal for it stays empty and scores zero.** That is not a failure
+    mode to route around — it is the whole mechanism under test. Centre runs at 1.25-1.29x
+    forced demand in our pool (``scripts/position_coverage.py``), so a position-blind board
+    that takes the best available every round can genuinely finish a draft unable to fill both
+    ``C`` slots, and the cost of that is exactly what positional assignment is supposed to buy.
+
+    Players with no listed position are dropped before the solve rather than handed ``-inf``
+    against every slot. Forcing them into the matrix would let them consume a real slot they
+    cannot legally fill once they outnumber the padding, silently benching a legal player
+    instead of themselves.
+    """
+    startable = [p for p in roster if eligibility.get(p)]
+    if not startable or not slots:
+        return {}
+    placed, _ = assign_to_slots(eligibility, startable, slots, rewards=value)
+    return placed

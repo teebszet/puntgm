@@ -54,6 +54,7 @@ from datetime import date
 from statistics import fmean, median, pstdev
 
 from fantasy_gm.config import CATEGORY_DIRECTION, DEFAULT_CATEGORIES, PERCENTAGE_CATEGORIES
+from fantasy_gm.draft.assignment import starting_lineup
 from fantasy_gm.draft.hscore import HScoreEngine, OpponentModel
 from fantasy_gm.draft.opponents import AdpBot, derive_adp_order
 from fantasy_gm.draft.replay import (
@@ -63,7 +64,7 @@ from fantasy_gm.draft.replay import (
     snake_draft,
     static_order_strategy,
 )
-from fantasy_gm.draft.settings import DraftSettings, Objective
+from fantasy_gm.draft.settings import DraftSettings, Objective, slot_eligibility
 from fantasy_gm.draft.xscore import (
     DEFAULT_KAPPA,
     CategoryBasis,
@@ -266,12 +267,25 @@ def simulate_standings(
     rng: random.Random,
     n_weeks: int = SEASON_WEEKS,
     universe: list[str] | None = None,
+    lineups: list[list[str]] | None = None,
 ) -> tuple[list[float], list[float]]:
     """One simulated season. Returns ``(category_wins, matchup_wins)`` per seat.
 
     Each player draws ``n_weeks`` weeks with replacement from their own real weekly lines, and
     a team's week is the sum over its roster — so a team's week-to-week swing is the real,
     measured swing of the players on it, correlations within a player's own week included.
+
+    ``lineups`` restricts scoring to a **starting lineup** per seat, the bench contributing
+    nothing (task 3.14). Default ``None`` keeps the shipped behaviour — every one of the
+    thirteen scores every week — so every number already in `results.md` reproduces. The
+    lineup is fixed for the season rather than re-set weekly, and it is chosen from pre-season
+    expected value: re-assigning on each simulated week's realized lines would be an oracle,
+    and it would be a *worse* oracle here than elsewhere, because the weeks are resampled and
+    a manager cannot see a resample coming. It understates a real manager, who does move
+    people on news; that error lands on both arms and the null carries it.
+
+    Drawing is unaffected — the common-random-number universe is still built over full
+    rosters — so a lineup arm and its null stay paired week for week.
 
     ``universe`` is the **common random numbers** hook, and it is not optional in practice. The
     quantity being estimated is a *difference* between two arms whose rosters overlap in twelve
@@ -292,7 +306,8 @@ def simulate_standings(
     cat_wins = [0.0] * n
     matchup_wins = [0.0] * n
     for wi in range(n_weeks):
-        week_tot = [_roster_week(r, drawn, wi, cats) for r in rosters]
+        scoring = lineups if lineups is not None else rosters
+        week_tot = [_roster_week(r, drawn, wi, cats) for r in scoring]
         for a, b in round_robin_pairings(n, wi):
             won_a = 0.0
             for c in cats:
@@ -395,7 +410,8 @@ def _run_seat(job: tuple) -> SeatResult:
     pickle it — the twelve seats are wholly independent and the machine has cores idle."""
     (
         seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-        opponent_model, n_teams, field_order, model_the_field,
+        opponent_model, n_teams, field_order, model_the_field, eligibility,
+        engine_positional,
     ) = job
 
     if field_order is None:
@@ -415,17 +431,27 @@ def _run_seat(job: tuple) -> SeatResult:
         engine = HScoreEngine(
             basis, settings, steps=engine_steps, opponent_model=opponent_model,
             opponent_board=field_order if model_the_field else None,
-            **ARMS[arm],
+            positional=engine_positional, eligibility=eligibility, **ARMS[arm],
         )
         strategies[seat] = hscore_strategy(engine)
 
     rosters = snake_draft(strategies, board, settings)
+    # Every seat is graded on a starting lineup or none of them is. The bots keep drafting
+    # position-blind, which is the point: whatever it costs them, it costs the null seat too,
+    # and the null is what the arm is differenced against.
+    lineups = None
+    if eligibility is not None:
+        value = {p: basis.total(p) for p in board}
+        lineups = [
+            list(starting_lineup(r, eligibility, settings.starting_slots, value))
+            for r in rosters
+        ]
     rng = random.Random(seed * 1000 + seat)
     titles = 0.0
     cat_num = cat_den = mu_num = mu_den = 0.0
     for _ in range(n_seasons):
         cat_wins, matchup_wins = simulate_standings(
-            rosters, panel, settings, rng, universe=board
+            rosters, panel, settings, rng, universe=board, lineups=lineups
         )
         standing = (
             cat_wins if settings.objective is Objective.EACH_CATEGORY else matchup_wins
@@ -466,6 +492,9 @@ def run_paper_sim(
     field: str = "g_score",
     include_idle_weeks: bool = False,
     model_the_field: bool = False,
+    positional: bool = False,
+    engine_positional: bool = True,
+    positions_asof: str = "2026-08-17",
 ) -> PaperSimResult:
     """One arm against eleven opponents, over every draft seat.
 
@@ -490,6 +519,18 @@ def run_paper_sim(
     a no-op in a G-score field, where the two boards are already the same. In an ADP field it
     is the whole experiment: the decomposition found that H₀'s deficit is entirely about who
     else is drafting, and this asks whether *telling it who else is drafting* is the fix.
+
+    ``positional`` turns on task 3.14 **grading**: every seat fields a starting lineup and the
+    bench scores nothing. Players the store has no position for are dropped from the pool, so
+    both arms draft the same board; inventing eligibility for them would put a thumb on the
+    scale of this exact experiment.
+
+    ``engine_positional`` decides separately whether the H₀ arm *optimises* over that lineup.
+    Both on is the change; grading on with the engine off is the control that says how much of
+    any gap is the objective term rather than the grading, and it is the cell that tells a
+    finding apart from an artifact. The engine flag does nothing without the grading flag —
+    an engine keeping flex slots open while the grader still counts the bench would be
+    optimising a quantity nothing measures, so that combination is refused rather than run.
     """
     if model_the_field and field == "g_score":
         raise ValueError(
@@ -514,18 +555,33 @@ def run_paper_sim(
     # would leave a thirteen-round twelve-team draft twelve picks short.
     eligible = set(panel.eligible())
     ranked = rosterable_pool(store, season, pool_size=pool_size * 3)
-    pool = [p for p in ranked if p in eligible][:pool_size]
+    keep = [p for p in ranked if p in eligible]
+
+    listed: dict[str, frozenset[str]] = {}
+    if positional:
+        # Players the store never listed are dropped *before* the pool is truncated, not after,
+        # so a positional run still drafts from a full ``pool_size`` board. Truncating first
+        # would quietly hand the positional arms a smaller pool than the blind ones and make
+        # the two incomparable. Dropping rather than defaulting is the point: inventing an
+        # eligibility for an unlisted player puts a thumb on the scale of this exact
+        # experiment (the `derive_adp_order` lesson, task 3.16).
+        listed, _unlisted = slot_eligibility(store.player_positions_asof(positions_asof), keep)
+        keep = [p for p in keep if p in listed]
+
+    pool = keep[:pool_size]
     if len(pool) < n_teams * n_rounds:
         raise ValueError(f"{season}: pool of {len(pool)} cannot fill {n_teams * n_rounds} picks")
     basis = basis_from_panel(panel, pool, settings.categories, kappa=kappa, mode=variance_mode)
     board = sorted(basis.pool, key=lambda p: (-basis.total(p), p))
+    eligibility = {p: listed[p] for p in board} if positional else None
 
     field_order = derive_adp_order(store, season) if field == "adp" else None
 
     seats = seats if seats is not None else list(range(n_teams))
     jobs = [
         (seat, arm, basis, panel, board, settings, n_seasons, seed, engine_steps,
-         opponent_model, n_teams, field_order, model_the_field)
+         opponent_model, n_teams, field_order, model_the_field, eligibility,
+         bool(positional and engine_positional))
         for seat in seats
     ]
     if len(jobs) == 1:
