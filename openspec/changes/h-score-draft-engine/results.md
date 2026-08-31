@@ -746,3 +746,86 @@ than defaulted: treating them as ineligible would delete real players from lineu
 them as UTIL-eligible would hand them flexibility the listed players do not have, and either
 choice is a thumb on the scale of this exact experiment. The last unchecked pool-membership
 mismatch here (`derive_adp_order`, task 3.16) was worth more than the effect under test.
+
+## Task 3.14 — positional assignment does not close H₀'s deficit; the objective term costs it, 12/12 (2026-08-31)
+
+Three cells (`blind` / `grade-only` / `full`), three seasons × both objectives, **in both
+fields** — 2000 seasons × 12 seats per cell, each differenced against **its own null** (the
+same seat drafted by the static G-score board, same room, common random numbers). `full` minus
+`grade-only` isolates the objective term: same grading, same null, so the difference is
+attributable to `HScoreEngine(positional=True)` and nothing else.
+
+Runs: `runs/positional/*.json` (g_score field), `runs/positional/adp/*.json` (ADP field).
+Reproduce with `python scripts/positional_assignment.py <season> <objective> <out.json> [field]`.
+
+### The objective term, `full` − `grade-only`
+
+```
+field     season   objective         title Δ    cat Δ   matchup Δ   seats ahead
+g_score   2023-24  each_category     -15.23    -3.65     -12.37      11 ->  4
+g_score   2023-24  most_categories   -13.77    -1.57      -6.23      12 ->  9
+g_score   2024-25  each_category      -9.38    -0.36      +1.82      10 -> 10
+g_score   2024-25  most_categories    -4.79    -0.47      -2.64      10 ->  9
+g_score   2025-26  each_category     -12.09    -3.49      -9.80      12 ->  8
+g_score   2025-26  most_categories   -16.18    -1.45      -4.71      11 ->  9
+adp       2023-24  each_category     -14.13    -4.56     -17.19       1 ->  0
+adp       2023-24  most_categories   -15.43    -1.75      -7.38       0 ->  0
+adp       2024-25  each_category     -19.13    -4.53     -12.93       5 ->  0
+adp       2024-25  most_categories    -3.06    +0.11      -2.65       2 ->  6
+adp       2025-26  each_category     -23.11    -3.85      -7.78       7 ->  5
+adp       2025-26  most_categories   -10.45    -1.36      -2.83       5 ->  6
+```
+
+**12/12 negative on title rate. 11/12 on category rate** (the exception, +0.11pp, is inside the
+run-to-run range). 11/12 on matchup rate. Seat counts fall in 9 of 12. The sign does not depend
+on the field, the season, or the objective.
+
+### Why the ADP pass is the one that bears on the task
+
+3.14 exists to explain H₀'s **deficit**, and 3.15 established that the deficit lives in the ADP
+field (H₀ ahead 6/6 in a G-score field, behind 0/6 in an ADP field). The first six runs were all
+G-score — they answered "does positional assignment add where H₀ is already ahead?", which is a
+different question. The ADP pass answers the asked one, and answers it the same way.
+
+Stated before the ADP pass was read: *"I expect it to come back negative too."* It did.
+
+### Lineup grading alone is close to free; the cost is the objective
+
+`grade-only` minus `blind`, on **category rate**, is small and unsigned: −1.70 to +0.61pp in
+the G-score field, −0.95 to +3.75pp in the ADP field. On title rate it costs in the G-score
+field (−4.70 to −13.30pp) but *gains* in the ADP field in 2025-26 (+22.6 / +16.8pp) — which is
+the opposite of what a position-blind board being punished by positional grading would look
+like. Either way the grading is not where the loss comes from. That control is exactly what
+separates the finding from the artifact, and it clears the grading.
+
+### What this does and does not establish
+
+It establishes that **wiring `assignment.py` into the objective, as specified, makes H₀ worse in
+every cell measured**. It does not establish that positional assignment is worthless in general:
+
+* Our eligibility expansion is **looser than Yahoo's** (any listed guard fills either guard
+  slot), which biases the measurable effect toward zero. The bias explains a null; it does not
+  explain a consistent negative.
+* Positions come from **one undated snapshot** (2026-08-17), so 2023-24 is replayed with 2026
+  listings.
+* Only **centre binds** (1.25–1.29× forced demand); guards and forwards run ~6× over-supplied.
+  Any effect here runs through centre scarcity.
+* Under a static lineup, **rounds 11–13 are worth zero in expectation** — the draft is
+  effectively ten rounds. It lands on both arms and the null carries it, so the difference is
+  clean while the absolute rates are not comparable to the rest of this file.
+
+The likeliest reading of the sign: capping the future-pick block at still-open starting slots
+throws away real value, because a bench that scores zero in the grader is still where a
+thirteen-man roster's depth lives, and the objective now refuses to buy it.
+
+### Consequence — GER-8 closes unexplained
+
+Three candidate explanations for H₀'s ADP-field deficit have now been measured and all three are
+dead: **availability** (3.15 — the field owns the sign flip, not idle weeks), **the opponent
+model** (3.16 — telling H₀ the field's real ordering made it worse in 7/8 cells), and
+**positional assignment** (this task — worse in 12/12). Nothing on the list is left, and I am
+not reaching for a fourth.
+
+**H₀ goes cold.** The G-score board is what ships; H₀ is not a product and a week of replays has
+not made it one. `assignment.py` stays behind the default-off `positional=` / `engine_positional=`
+flags, with this measurement as the reason it is off.
