@@ -12,12 +12,13 @@ Opponents pick from an ADP ordering with bounded noise. That matches the publish
 tendencies would be higher value in one particular draft and worth nothing in general, so it is
 deliberately out of scope.
 
-**ADP source.** Yahoo's `draft_analysis` was the intended feed, but the Fantasy API is now
-application-gated with manual review, so it cannot be relied on for replay. `derive_adp_order`
-falls back to the store's own value ranking — the same proxy `simulate.py` already uses for its
-snake drafts. Real market ADP differs from a value ranking in exactly the interesting way (the
-market is wrong, which is where value comes from), so replay numbers built on the proxy should
-be read as a lower bound on the edge, not an estimate of it.
+**ADP source.** Yahoo's `draft_analysis` feed is now reachable with the OAuth token the
+live draft sync already requires, and is ingested into the store's `adp` table
+(`adp_order_from_market`). The value-ranking fallback remains the default until a task
+opts in: real market ADP differs from a value ranking in exactly the interesting way (the
+market is wrong, which is where value comes from), so any comparison run on the market
+order must be labeled as such, and the proxy-based numbers stand as the lower-bound
+baseline they were measured as.
 """
 
 from __future__ import annotations
@@ -35,6 +36,38 @@ def derive_adp_order(store, season: str) -> list[str]:
     from fantasy_gm.data.simulate import _adp_order
 
     return _adp_order(store, season)
+
+
+def adp_order_from_market(
+    store, season: str, source: str = "yahoo", as_of: str | None = None,
+    restrict_to: list[str] | None = None,
+) -> list[str] | None:
+    """The real market ordering from the store's ADP table, or None when none is stored.
+
+    Returns players priced by the market (in ADP order) followed by every unpriced pool
+    member, who the market has not ranked at all — appended, not dropped, and never given a
+    synthetic position. ``restrict_to`` limits both halves to a replay's pool so the bots
+    draft from the same universe the boards under test draw from.
+
+    This is the field shape an actual draft room produces, which the value-ranking proxy only
+    approximates (the market is wrong in structured ways — that is where value comes from).
+    """
+    known = store.adp_asof(season, as_of or "9999-12-31", source=source)
+    if not known:
+        return None
+    pool = list(restrict_to) if restrict_to is not None else None
+    if pool is None:
+        pool = [r["player_id"] for r in store.conn.execute(
+            "SELECT DISTINCT player_id FROM player_logs WHERE season = ? "
+            "ORDER BY player_id", (season,)
+        )]
+    pool_set = set(pool)
+    priced = sorted(
+        (pid for pid in known if pid in pool_set), key=lambda p: (known[p].adp, p)
+    )
+    priced_set = set(priced)
+    unpriced = [p for p in pool if p not in priced_set]
+    return priced + unpriced
 
 
 def adp_ranks(order: list[str]) -> dict[str, float]:

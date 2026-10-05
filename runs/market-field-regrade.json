@@ -1,0 +1,97 @@
+{
+  "season": "2025-26",
+  "as_of": "2025-10-20",
+  "seed": 7,
+  "rotations": 12,
+  "field": "market_order_2026-27_yahoo_adp",
+  "assumption": "production repeats (graded on 2025-26 realized weekly totals)",
+  "pool_size": 156,
+  "market_priced_in_pool": 126,
+  "top_overlap": 156,
+  "rooms": {
+    "null_same_board": {
+      "g_projected": {
+        "cat": 0.5559175084175084,
+        "matchup": 0.6025757575757575,
+        "n": 59400
+      },
+      "null_same_board": {
+        "cat": 0.5559175084175084,
+        "matchup": 0.6025757575757575,
+        "n": 59400
+      }
+    },
+    "z_pergame": {
+      "g_projected": {
+        "cat": 0.58756734006734,
+        "matchup": 0.6561363636363636,
+        "n": 59400
+      },
+      "z_pergame": {
+        "cat": 0.47859427609427607,
+        "matchup": 0.42613636363636365,
+        "n": 59400
+      }
+    },
+    "z_total_projected": {
+      "g_projected": {
+        "cat": 0.5559175084175084,
+        "matchup": 0.6025757575757575,
+        "n": 59400
+      },
+      "z_total_projected": {
+        "cat": 0.5559175084175084,
+        "matchup": 0.6025757575757575,
+        "n": 59400
+      }
+    },
+    "z_replacement": {
+      "g_projected": {
+        "cat": 0.5774579124579124,
+        "matchup": 0.6462121212121212,
+        "n": 59400
+      },
+      "z_replacement": {
+        "cat": 0.48024410774410775,
+        "matchup": 0.4215151515151515,
+        "n": 59400
+      }
+    },
+    "z_steelman": {
+      "g_projected": {
+        "cat": 0.5524915824915825,
+        "matchup": 0.5977272727272728,
+        "n": 59400
+      },
+      "z_steelman": {
+        "cat": 0.5591077441077441,
+        "matchup": 0.6107575757575757,
+        "n": 59400
+      }
+    },
+    "z_total_naive": {
+      "g_projected": {
+        "cat": 0.5519107744107744,
+        "matchup": 0.5925,
+        "n": 59400
+      },
+      "z_total_naive": {
+        "cat": 0.5563636363636364,
+        "matchup": 0.6,
+        "n": 59400
+      }
+    },
+    "adp_market": {
+      "g_projected": {
+        "cat": 0.5804713804713805,
+        "matchup": 0.6384090909090909,
+        "n": 59400
+      },
+      "adp_market": {
+        "cat": 0.5096885521885521,
+        "matchup": 0.5160606060606061,
+        "n": 59400
+      }
+    }
+  }
+}
