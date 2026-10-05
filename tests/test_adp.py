@@ -21,6 +21,7 @@ from fantasy_gm.projections.adp import (
     fetch_draft_analysis,
     ingest_adp,
     ingest_adp_file,
+    load_draft_analysis_file,
     normalize_name,
     parse_draft_analysis,
 )
@@ -152,10 +153,51 @@ def test_ingest_from_a_saved_payload_file(tmp_path):
     assert result.stored == 1
 
 
-def test_the_live_fetch_names_its_missing_dependency():
-    """A stub that raises is a visible gap; one that returns [] is a silent one."""
-    with pytest.raises(NotImplementedError, match="4.1"):
-        fetch_draft_analysis("466.l.1")
+def test_live_fetch_stops_on_empty_page_and_saves(tmp_path, monkeypatch):
+    """Pagination stops on the empty tail page; the capture round-trips through disk."""
+    captured_urls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+            self.status_code = 200
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, headers=None, timeout=None):
+        captured_urls.append(url)
+        start = int(url.split("start=")[1].split(";")[0])
+        # One player per page, two pages total; the page beyond the end comes back empty.
+        if start >= 50:
+            return FakeResponse({})
+        return FakeResponse(_payload(
+            {"id": str(1000 + start), "name": f"Player {start}", "pick": "1.0"}
+        ))
+
+    monkeypatch.setattr("requests.get", fake_get)
+    save = tmp_path / "capture.json"
+    rows = fetch_draft_analysis("478.l.25733", "token", count=25, limit=500,
+                                save_path=save)
+    assert len(rows) == 2
+    # Three requests: start=0 and 25 (filled), start=50 (empty → stop). No start=75.
+    assert [u.split("start=")[1].split(";")[0] for u in captured_urls] == ["0", "25", "50"]
+    # round-trip: reload the saved capture and get the same rows
+    again = load_draft_analysis_file(save)
+    assert [(r.name, r.average_pick) for r in again] == [(r.name, r.average_pick) for r in rows]
+
+
+def test_saved_paged_capture_loads(tmp_path):
+    """A capture written by the fetch reloads through the same loader."""
+    payload = {"pages": [_payload({"id": "1", "name": "A", "pick": "1.5"}),
+                         _payload({"id": "2", "name": "B", "pick": "2.5"})]}
+    path = tmp_path / "capture.json"
+    path.write_text(json.dumps(payload))
+    rows = load_draft_analysis_file(path)
+    assert [r.name for r in rows] == ["A", "B"]
 
 
 # --- explicit absence --------------------------------------------------------
