@@ -237,6 +237,13 @@ class StateAwareStaticServer:
             def __init__(self, *a, **kw):
                 super().__init__(*a, directory=str(directory), **kw)
 
+            def end_headers(self) -> None:  # noqa: N802 - stdlib naming
+                # Everything this serves is a live document (page edits, watcher state).
+                # Without this, browsers heuristically cache the HTML and keep showing a
+                # stale page after an edit -- bit the form validation once (2026-10-07).
+                self.send_header("Cache-Control", "no-store")
+                super().end_headers()
+
             def do_GET(self) -> None:  # noqa: N802 - stdlib naming
                 if self.path.split("?")[0] == "/state.json":
                     body = self._state_body()
@@ -280,7 +287,7 @@ class StateAwareStaticServer:
                 start = get("start").strip()
                 if not league or not __import__("re").fullmatch(r"\d+\.l\.\d+", league):
                     self._reply(400, {"ok": False,
-                                      "error": "league must look like 26357.l.12345"})
+                                      "error": "league must look like 478.l.2638432 (the page adds the 478.l. prefix itself)"})
                     return
                 if not seat.isdigit() or not 1 <= int(seat) <= 12:
                     self._reply(400, {"ok": False, "error": "seat must be 1-12"})
