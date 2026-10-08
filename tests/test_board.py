@@ -18,6 +18,7 @@ from fantasy_gm.draft.board import (
     PUNT_BUILDS,
     AvailabilityMode,
     Board,
+    RateBasis,
     all_builds,
     biggest_movers,
     board_json,
@@ -486,3 +487,99 @@ def test_neutral_mode_does_not_consume_status():
     assert all(r.status is None for r in board.rows)
     assert board.status_as_of is None
     assert board.status_counts == {}
+
+
+# --- R4: the projected rate basis ---------------------------------------------
+
+
+def _projected_store() -> Store:
+    """The pool store plus a bench player whom the 2026-27 depth chart promotes into a lead
+    role on a new team — a move the ranked season cannot see and the derived model prices
+    (R4/D3). His ranked-season minutes wobble so the model's fits have spread to learn from:
+    with every role constant the role-weight arithmetic degenerates, the same way it would in
+    a league where nobody ever sat a night.
+    """
+    import random
+
+    store = _pool_store()
+    rng = random.Random(7)
+    for day_i in range(28):
+        d = (START + timedelta(days=day_i)).isoformat()
+        store.upsert_player_logs([PlayerGameLog(
+            f"g{day_i}", SEASON, d, "bench", "Bench", "AAA",
+            _line(pts=5, reb=2, ast=1, stl=0.3, blk=0.2, fg3m=0.5, tov=0.8,
+                  fgm=1.8, fga=4.0, ftm=1.0, fta=1.4))])
+        store.add_usage_role([UsageRole(
+            "bench", d, round(max(12.0 + rng.gauss(0, 2.0), 4.0), 1), 5.4, False, 8)])
+    store.add_forward_roster(
+        [ForwardRoster("bench", "2026-27", "CCC", 1, known_from="2026-08-17")])
+    return store
+
+
+def test_the_default_basis_is_measured_and_builds_todays_board():
+    """No flag must change nothing: same pool, same totals, same provenance line (R4)."""
+    store = _pool_store()
+    plain = build_board(store, SEASON, pool_size=4, as_of=AS_OF)
+    flagged = build_board(store, SEASON, pool_size=4, as_of=AS_OF, rate_basis="measured")
+    assert [r.player_id for r in plain.rows] == [r.player_id for r in flagged.rows]
+    assert [r.total for r in plain.rows] == [r.total for r in flagged.rows]
+    assert plain.basis == flagged.basis
+    assert plain.rate_basis == RateBasis.MEASURED
+    assert plain.projected_as_of is None
+    assert board_json(plain)["rate_basis"] == "measured"
+    assert board_json(plain)["projected_as_of"] is None
+    assert "Category rates are measured, not projected forward." in plain.basis
+
+
+def test_projected_basis_moves_a_player_whose_forward_role_changed():
+    """The point of the projected basis: the mover's rates follow his 2026-27 depth chart —
+    production the measured basis cannot see (R4/D3)."""
+    store = _projected_store()
+    measured = build_board(store, SEASON, pool_size=5, availability=AvailabilityMode.NEUTRAL,
+                           forward_season="2026-27")
+    projected = build_board(store, SEASON, pool_size=5, availability=AvailabilityMode.NEUTRAL,
+                            forward_season="2026-27",
+                            rate_basis="projected", as_of="2026-10-16")
+    was = next(r for r in measured.rows if r.player_id == "bench")
+    now = next(r for r in projected.rows if r.player_id == "bench")
+    assert was.rate_source is None  # measured rates come from the ranked season
+    assert now.rate_source == "projected:2026-10-16"
+    # promoted from a ~12-minute bench role to a stated depth-1 slot: more projected
+    # minutes, so his scoring impact rises against the same pool
+    assert now.categories["pts"] > was.categories["pts"]
+
+
+def test_projected_basis_line_names_the_projection_date_and_the_caveat():
+    """The projected basis is labeled wherever it renders: the projection date plus the
+    2.11 unproven-edge caveat, and board_json carries both fields for the site."""
+    board = build_board(_projected_store(), SEASON, pool_size=5,
+                        availability=AvailabilityMode.PROJECTED, as_of="2026-10-16",
+                        forward_season="2026-27", rate_basis="projected")
+    assert "as of 2026-10-16" in board.basis
+    assert "unproven" in board.basis
+    assert "priced per-game outside the ranked season" in board.basis
+    j = board_json(board)
+    assert j["rate_basis"] == "projected"
+    assert j["projected_as_of"] == "2026-10-16"
+
+
+def test_unknown_rate_basis_is_rejected():
+    with pytest.raises(ValueError, match="unknown rate basis"):
+        build_board(_pool_store(), SEASON, pool_size=4, rate_basis="vibes")
+
+
+def test_projected_rates_cannot_combine_with_realized_availability():
+    with pytest.raises(ValueError, match="cannot combine"):
+        build_board(_pool_store(), SEASON, pool_size=4,
+                    availability=AvailabilityMode.REALIZED, rate_basis="projected")
+
+
+def test_projected_rates_need_a_forward_season_and_an_as_of():
+    with pytest.raises(ValueError, match="forward season"):
+        build_board(_pool_store(), SEASON, pool_size=4,
+                    availability=AvailabilityMode.NEUTRAL,
+                    rate_basis="projected", as_of="2026-10-16")
+    with pytest.raises(ValueError, match="as-of"):
+        build_board(_projected_store(), SEASON, pool_size=5,
+                    availability=AvailabilityMode.NEUTRAL,
+                    forward_season="2026-27", rate_basis="projected")

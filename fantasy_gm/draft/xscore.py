@@ -316,6 +316,29 @@ def kappa_sensitivity(
     return out
 
 
+def league_percentage_rates(
+    store, season: str, categories: list[str], pool: list[str],
+    lines: dict[str, list[dict]] | None = None,
+) -> dict[str, float]:
+    """Pooled makes/attempts per percentage category over the pool's ranked-season lines.
+
+    The one environment every player's percentage impact is measured against — including
+    baseline-priced and projected players, whose own seasons' environments are never
+    re-derived (a board measured against a mix of environments would not be comparable
+    across its own rows).
+    """
+    lines = lines if lines is not None else _player_games(store, season, played_only=True)
+    rates: dict[str, float] = {}
+    for c in categories:
+        if c not in PERCENTAGE_CATEGORIES:
+            continue
+        mk, at = PERCENTAGE_CATEGORIES[c]
+        made = sum(g.get(mk, 0.0) for p in pool for g in lines.get(p, ()))
+        att = sum(g.get(at, 0.0) for p in pool for g in lines.get(p, ()))
+        rates[c] = made / att if att > 0 else 0.0
+    return rates
+
+
 def measure_per_game_stats(
     store,
     season: str,
@@ -361,12 +384,7 @@ def measure_per_game_stats(
     lines = _player_games(store, season, played_only=True)
     pool = rosterable_pool(store, season, pool_size=pool_size, forward_season=forward_season)
 
-    league_rates: dict[str, float] = {}
-    for c in pcts:
-        mk, at = PERCENTAGE_CATEGORIES[c]
-        made = sum(g.get(mk, 0.0) for p in pool for g in lines.get(p, ()))
-        att = sum(g.get(at, 0.0) for p in pool for g in lines.get(p, ()))
-        league_rates[c] = made / att if att > 0 else 0.0
+    league_rates = league_percentage_rates(store, season, pcts, pool, lines=lines)
 
     stats: dict[str, dict[str, PeriodStats]] = {}
     for pid in pool:

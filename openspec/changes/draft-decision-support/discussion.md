@@ -116,3 +116,40 @@ the real league says:
 - **Consume-side gap fixed.** No production surface passed `forward_season`, so the pool
   the four need never materialized; `FORWARD_SEASON=2026-27` now wired through `build_gm`
   (draft sessions + watcher), `cmd_board --forward-season` and `build_site.py`.
+
+## 2026-10-08 — build note: the projected basis shipped (tasks 3.1–3.2)
+
+Committed on `change/draft-decision-support` (suite 387 passed, ruff clean on touched files
+at that sha). What shipped:
+
+- **3.1 — the flag.** `build_board(..., rate_basis=)` accepts `measured` (default) or
+  `projected` (a `RateBasis` StrEnum next to `AvailabilityMode`); `cmd_board --basis` and
+  `build_gm(rate_basis=)` thread it through, `board_json` gains `rate_basis` +
+  `projected_as_of`. Under `projected`, `_projected_per_game` prices the pool's per-game
+  rates from `DerivedProjectionSource` — counting cats straight from the model's per-game
+  estimates, percentage cats in impact form against the ranked season's pooled league rate
+  (the one environment every row shares; component spread propagates conservatively).
+  Provenance tags land in `rate_sources`/row `rate_source`: `projected:<as_of>`,
+  `prior:<as_of>`, `override:<as_of>`, with `baseline:<season>` remaining for players the
+  model cannot price.
+- **The label.** The basis line's head names the count priced outside the ranked season;
+  the projected clause carries the projection date and the 2.11 caveat verbatim ("a model
+  whose minutes edge over naive carry-forward is unproven (backtest inconclusive)"). The
+  measured line is byte-identical to today's.
+- **3.2 — the tests.** A bench player promoted to a stated depth-1 role on a new team for
+  2026-27: his rates follow the new depth (pts impact −1.06 → −0.80 in the fixture), all
+  rows carry `projected:<as_of>`, the line names the date + caveat, and the no-flag board
+  is identical to the explicit-measured board (rows, totals, provenance line). Unknown
+  basis, projected+realized, and missing forward-season/as-of are all rejected.
+
+One honest correction to the recovered plan: "standardisation stays measured" was wrong as
+stated — the standardisation bases are recomputed over the stats actually ranked, which is
+the only internally coherent choice (scoring projected rates against a measured distribution
+would shift every row by a basis gap that varies by player). The pool — who is ranked — is
+unchanged. Comments and docstrings now say what the code does.
+
+### Requirement → delivery map (3.1–3.2 update)
+
+| Requirement | Kind | Delivered by | Read at |
+|---|---|---|---|
+| Forward basis available and labeled | new | task 3.1 (`rate_basis` on `build_board`/`build_gm`, `--basis` on `cmd_board`; label = basis line date + caveat) | tests `test_board.py::test_projected_basis_*` (6) + full suite 387 passed at the §3 commit sha; caveat text pinned in `Board.basis` |

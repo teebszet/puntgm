@@ -28,9 +28,9 @@
 
 ## 3. Forward basis option (R4)
 
-- [ ] 3.1 `--basis projected` on `board`/`build_gm`: `DerivedProjectionSource` feeds
+- [x] 3.1 `--basis projected` on `board`/`build_gm`: `DerivedProjectionSource` feeds
       per-game rates; basis line carries projection date + 2.11 caveat. Default unchanged
-- [ ] 3.2 Test: projected basis reacts to a 2026-27 team change (mover's minutes follow the
+- [x] 3.2 Test: projected basis reacts to a 2026-27 team change (mover's minutes follow the
       new depth); measured basis bit-identical to today under no flag
 
 ## 4. Recommendation columns (R5)

@@ -14,7 +14,7 @@ from fantasy_gm.data.cache import RawCache
 from fantasy_gm.data.simulate import simulate_league
 from fantasy_gm.data.store import Store
 from fantasy_gm.data.synthetic import seed_synthetic_season
-from fantasy_gm.draft.board import PUNT_BUILDS, AvailabilityMode
+from fantasy_gm.draft.board import PUNT_BUILDS, AvailabilityMode, RateBasis
 from fantasy_gm.engine.engine import DecisionEngine
 from fantasy_gm.log.reclog import RecommendationLog
 
@@ -720,10 +720,15 @@ def cmd_board(args: argparse.Namespace) -> int:
     config = Config()
     store = _store(config)
     availability = AvailabilityMode(args.availability)
+    rate_basis = RateBasis(args.basis)
     as_of = args.as_of
     if availability is AvailabilityMode.PROJECTED and not as_of:
         print("--availability projected needs --as-of (a date before the season starts, so "
               "the availability fit sees no part of the season being ranked)", file=sys.stderr)
+        return 1
+    if rate_basis is RateBasis.PROJECTED and not as_of:
+        print("--basis projected needs --as-of (the date the projection is made from, before "
+              "the forward season starts so the model sees none of it)", file=sys.stderr)
         return 1
 
     try:
@@ -732,11 +737,11 @@ def cmd_board(args: argparse.Namespace) -> int:
             punt = tuple(c.strip() for c in args.punt.split(",") if c.strip())
             boards = [build_board(store, args.season, punt,
                                   availability=availability, as_of=as_of,
-                                  forward_season=forward_season)]
+                                  forward_season=forward_season, rate_basis=rate_basis)]
         elif args.build == "all":
             boards = all_builds(store, args.season,
                                 availability=availability, as_of=as_of,
-                                forward_season=forward_season)
+                                forward_season=forward_season, rate_basis=rate_basis)
         else:
             if args.build not in PUNT_BUILDS:
                 print(f"unknown build {args.build!r}; known: {', '.join(PUNT_BUILDS)}",
@@ -744,7 +749,7 @@ def cmd_board(args: argparse.Namespace) -> int:
                 return 1
             boards = [build_board(store, args.season, PUNT_BUILDS[args.build],
                                   build=args.build, availability=availability, as_of=as_of,
-                                  forward_season=forward_season)]
+                                  forward_season=forward_season, rate_basis=rate_basis)]
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -969,6 +974,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="season unplaceable players are placed by roster depth on and "
                          "baseline-priced for (R2/R3, default: config FORWARD_SEASON); "
                          "pass an empty string to rank the ranked season's pool only")
+    bd.add_argument("--basis", default=RateBasis.MEASURED,
+                    choices=[b.value for b in RateBasis],
+                    help="where per-game rates come from: measured — the ranked season's "
+                         "game logs (default); projected — the derived minutes/role model "
+                         "carries usage onto the forward-season roster (edge unproven, "
+                         "labeled on every render)")
     bd.add_argument("--top", type=int, default=30)
     bd.add_argument("--movers", action="store_true",
                     help="also show where this board most disagrees with z-score")

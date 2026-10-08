@@ -58,12 +58,13 @@ import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from fantasy_gm.config import DEFAULT_CATEGORIES
+from fantasy_gm.config import DEFAULT_CATEGORIES, PERCENTAGE_CATEGORIES
 from fantasy_gm.draft.xscore import (
     CategoryBasis,
     PeriodStats,
     VarianceMode,
     XScoreBasis,
+    league_percentage_rates,
     measure_per_game_stats,
     measure_period_stats,
     scheduled_games_per_week,
@@ -75,6 +76,11 @@ from fantasy_gm.valuation import player_values
 # The games-played floor a baseline season must clear to price a player the ranked season
 # cannot (R3) — the same floor rosterable_pool uses for eligibility.
 BASELINE_MIN_GAMES = 10
+
+# The rate bases a board can rank on (R4). ``measured`` — the default — reads ranked-season
+# game logs (with last-healthy baselines); ``projected`` hands the per-game rates to the
+# derived minutes/role model, which carries each player's role onto his forward roster.
+RATE_BASES = ("measured", "projected")
 
 
 class AvailabilityMode(StrEnum):
@@ -93,6 +99,20 @@ class AvailabilityMode(StrEnum):
 
     REALIZED = "realized"
     NEUTRAL = "neutral"
+    PROJECTED = "projected"
+
+
+class RateBasis(StrEnum):
+    """Where a board's per-game rates come from (R4/D3).
+
+    * :attr:`MEASURED` — the ranked season's game logs, with last-healthy baselines behind
+      them (R3). The default: every number on the board was measured, nothing modeled.
+    * :attr:`PROJECTED` — the derived minutes/role model carries each player's usage onto
+      his forward-season roster, so a team change the ranked season cannot see moves the
+      rate. Opt-in; pool and standardisation stay measured either way.
+    """
+
+    MEASURED = "measured"
     PROJECTED = "projected"
 
 
@@ -166,6 +186,10 @@ class Board:
     availability: AvailabilityMode = AvailabilityMode.PROJECTED
     availability_as_of: str | None = None
     forward_season: str | None = None
+    rate_basis: RateBasis = RateBasis.MEASURED
+    """The per-game rate source, per R4/D3 (measured default; projected opt-in)."""
+    projected_as_of: str | None = None
+    """The date projected rates were measured on — set only under ``projected``."""
     status_as_of: str | None = None
     """The date platform status was read at — set only when the mode consumes status."""
     status_counts: dict[str, int] = field(default_factory=dict)
@@ -189,11 +213,26 @@ class Board:
                 if self.forward_season else ""
             )
             + (
-                f", {len(self.rate_sources)} of those priced per-game from their last "
-                "healthy season (named per row)"
+                (
+                    f", {len(self.rate_sources)} of those priced per-game from their last "
+                    "healthy season (named per row)"
+                    if self.rate_basis == RateBasis.MEASURED
+                    else
+                    f", {len(self.rate_sources)} priced per-game outside the ranked season "
+                    "by the derived model or a baseline (named per row)"
+                )
                 if self.rate_sources else ""
             )
             + "."
+        )
+        projected_rates = (
+            ""
+            if self.rate_basis == RateBasis.MEASURED
+            else
+            " Per-game rates are the derived minutes/role model's projection as of "
+            f"{self.projected_as_of}, carried onto each player's forward-season roster — a "
+            "model whose minutes edge over naive carry-forward is unproven (backtest "
+            "inconclusive)."
         )
         if self.availability is AvailabilityMode.REALIZED:
             return (
@@ -205,7 +244,7 @@ class Board:
             return (
                 f"{head} Compounded to a week over the league's scheduled games per week with "
                 "no availability term at all, so a player who missed half the season is ranked "
-                "as if durable. Ablation, not a recommendation."
+                f"as if durable. Ablation, not a recommendation.{projected_rates}"
             )
         status = ""
         if self.status_as_of:
@@ -221,12 +260,17 @@ class Board:
                     f" Platform status (yahoo, as of {self.status_as_of}) carried no "
                     "designation when this board was built."
                 )
+        rates = (
+            "Category rates are measured, not projected forward."
+            if self.rate_basis == RateBasis.MEASURED
+            else ""
+        )
         return (
             f"{head} Compounded to a week over the league's scheduled games per week, each "
             "played with an expected-availability probability projected as of "
             f"{self.availability_as_of} — a beta-binomial rate shrunk toward the pool, not "
             "last season's realized games. No count of the games this player actually went on "
-            "to play enters the rank. Category rates are measured, not projected forward."
+            f"to play enters the rank. {rates}{projected_rates}"
             + status
         )
 
@@ -311,6 +355,74 @@ def project_availability(
     return out
 
 
+def _projected_per_game(
+    store,
+    pool: list[str],
+    categories: list[str],
+    season: str,
+    forward_season: str,
+    as_of: str,
+) -> dict[str, tuple[str, dict[str, PeriodStats]]]:
+    """Per-game category stats from the derived minutes/role model (R4/D3).
+
+    The model projects each pool player's forward-season per-game lines onto the roster
+    his ``forward_season`` record carries — team, stated depth, offseason moves — which is
+    exactly the "rosters changed" term a measured board cannot see. The fit reads nothing
+    after ``as_of`` by construction (:mod:`fantasy_gm.projections.derived`).
+
+    Percentage categories are never projected directly (A8): the source emits makes and
+    attempts, and the board's impact form ``(rate − league%) × attempts`` is taken against
+    the ranked season's pooled league rate — the same single environment baselines are
+    measured against, so rows stay comparable across rate sources. Component spread
+    propagates as ``sqrt(std_make² + rate²·std_att²)``, cross-term deliberately ignored
+    (makes and attempts are strongly positively correlated, so this *widens* the band —
+    conservative, and documented rather than hidden).
+
+    Returns ``{player_id: (provenance tag, per-cat stats)}`` for every pool player the
+    model prices — ``projected:<as_of>`` for a modeled line, ``prior:<as_of>`` for a
+    rookie prior, ``override:<as_of>`` for a hand-set one. Players the model cannot price
+    (no history, not incoming) are simply absent: their measured or baseline rates stand,
+    and provenance keeps saying so.
+    """
+    from fantasy_gm.projections.derived import DerivedProjectionSource
+    from fantasy_gm.projections.source import ProjectionBasis
+
+    league = league_percentage_rates(store, season, categories, pool)
+    projections = DerivedProjectionSource(store, categories=categories).project(
+        forward_season, as_of, player_ids=pool,
+    )
+    counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
+    pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
+    tag_of = {
+        ProjectionBasis.MODELED: "projected",
+        ProjectionBasis.PRIOR: "prior",
+        ProjectionBasis.OVERRIDE: "override",
+    }
+    out: dict[str, tuple[str, dict[str, PeriodStats]]] = {}
+    for pid, p in projections.items():
+        per_cat: dict[str, PeriodStats] = {}
+        for c in counting:
+            e = p.estimates.get(c)
+            if e is None:
+                per_cat = {}
+                break
+            per_cat[c] = PeriodStats(e.per_game_mean, e.per_game_std, periods=0)
+        if per_cat:
+            for c in pcts:
+                mk, at = PERCENTAGE_CATEGORIES[c]
+                m, a = p.estimates.get(mk), p.estimates.get(at)
+                if m is None or a is None:
+                    per_cat = {}
+                    break
+                rate = league.get(c, 0.0)
+                mean = m.per_game_mean - rate * a.per_game_mean
+                std = (m.per_game_std**2 + (rate * a.per_game_std) ** 2) ** 0.5
+                per_cat[c] = PeriodStats(mean, std, periods=0)
+        if per_cat:
+            out[pid] = (f"{tag_of.get(p.basis, 'projected')}:{as_of}", per_cat)
+    return out
+
+
 def _capped(g, factor: float):
     """A rate-capped copy of a GamesProjection.
 
@@ -381,6 +493,7 @@ def _basis(
     availability: AvailabilityMode,
     as_of: str | None,
     forward_season: str | None = None,
+    rate_basis: str = "measured",
 ) -> tuple[XScoreBasis, dict[str, object], dict[str, Availability | None],
            dict[str, str], list[str]]:
     """Build the standardisation basis under one availability treatment.
@@ -389,7 +502,9 @@ def _basis(
     effective-dated platform status the board consumed — empty outside ``projected``, which
     is the only mode that prices availability (``realized`` grades a finished season,
     ``neutral`` is the no-availability ablation). ``rate_sources`` names every player priced
-    outside the ranked season.
+    outside the ranked season — ``baseline:<season>`` for a last-healthy baseline, or
+    ``projected:``/``prior:``/``override:`` + the projection date under the projected rate
+    basis (R4).
     """
     from statistics import fmean, median, pstdev
 
@@ -411,6 +526,21 @@ def _basis(
             store, season, categories, pool_size, forward_season=forward_season,
             min_games=BASELINE_MIN_GAMES, sources=sources,
         )
+        if rate_basis == "projected":
+            # R4/D3: hand the per-game rates to the derived minutes/role model, which
+            # projects usage onto the player's forward-season roster. The pool stays
+            # measured — who is ranked does not move — and the standardisation bases below
+            # are recomputed over the stats actually ranked, so every row is compared
+            # inside the basis it was priced in.
+            if not forward_season:
+                raise ValueError("projected rates need a forward season to project onto")
+            if not as_of:
+                raise ValueError("projected rates need an as-of date (the projection date)")
+            for pid, (tag, per_cat) in _projected_per_game(
+                store, pool, categories, season, forward_season, as_of,
+            ).items():
+                per_game[pid] = per_cat
+                sources[pid] = tag
         n_sched = scheduled_games_per_week(store, season)
         if availability is AvailabilityMode.PROJECTED:
             if not as_of:
@@ -454,6 +584,7 @@ def build_board(
     limit: int | None = None,
     with_zscore: bool = True,
     forward_season: str | None = None,
+    rate_basis: str = "measured",
 ) -> Board:
     """Rank the pool by G-score over the categories left after ``punt``.
 
@@ -470,6 +601,13 @@ def build_board(
     designations (task 2.1) cap the availability rate, rows carry the status and its dated
     note, and every player nothing could price is reported in ``Board.unpriced`` rather than
     silently dropped.
+
+    ``rate_basis`` picks the per-game rate source (R4/D3): ``measured`` — the ranked season,
+    with the task-2.2 last-healthy baseline behind it; ``projected`` — the derived
+    minutes/role model carries current usage onto the forward roster (the rates are measured
+    on ``as_of`` and projected onto the player's 2026-27 team). The pool is unchanged either
+    way; under ``projected`` the standardisation is recomputed over the projected stats, so
+    the rank stays internally coherent in the basis it describes.
     """
     punt = tuple(punt)
     unknown = [c for c in punt if c not in DEFAULT_CATEGORIES]
@@ -478,10 +616,16 @@ def build_board(
     scored = [c for c in DEFAULT_CATEGORIES if c not in punt]
     if not scored:
         raise ValueError("cannot punt every category")
+    if rate_basis not in RATE_BASES:
+        raise ValueError(f"unknown rate basis {rate_basis!r} (known: {RATE_BASES})")
+    if rate_basis == "projected" and availability is AvailabilityMode.REALIZED:
+        raise ValueError("projected rates rank a season not yet played; `realized` "
+                         "grades a finished season — the two cannot combine")
+    rate_basis = RateBasis(rate_basis)
 
     basis, projections, statuses, sources, pool = _basis(
         store, season, scored, pool_size, kappa, mode, availability, as_of,
-        forward_season=forward_season,
+        forward_season=forward_season, rate_basis=rate_basis,
     )
     ranked = sorted(
         (
@@ -549,6 +693,8 @@ def build_board(
         availability=availability,
         availability_as_of=as_of,
         forward_season=forward_season,
+        rate_basis=rate_basis,
+        projected_as_of=as_of if rate_basis == "projected" else None,
         status_as_of=as_of if statuses else None,
         status_counts=status_counts,
         rate_sources=dict(sources),
@@ -600,6 +746,8 @@ def board_json(board: Board, top: int | None = None) -> dict:
         "availability": str(board.availability),
         "availability_as_of": board.availability_as_of,
         "forward_season": board.forward_season,
+        "rate_basis": str(board.rate_basis),
+        "projected_as_of": board.projected_as_of,
         "status_as_of": board.status_as_of,
         "unpriced": [list(u) for u in board.unpriced],
         "basis": board.basis,

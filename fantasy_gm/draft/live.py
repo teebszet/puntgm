@@ -615,6 +615,7 @@ def build_gm(
     store, season: str, as_of: str, *, market_season: str = "2026-27",
     market_source: str = "yahoo", pool_size: int = 156,
     forward_season: str | None = FORWARD_SEASON,
+    rate_basis: str = "measured",
 ):
     """Everything a draft session needs, built once, before the first pick.
 
@@ -628,12 +629,17 @@ def build_gm(
     The board is built on the ``forward_season`` roster (default: config's FORWARD_SEASON):
     players the ranked season cannot place — a season lost to injury, a rookie — enter the
     pool by derived depth and price per-game from their last healthy season (R2/R3).
+
+    ``rate_basis`` passes through to the board (R4/D3): ``measured`` — the ranked season's
+    rates, the default; ``projected`` — the derived minutes/role model carries usage onto
+    the forward roster, labeled with its projection date and unproven-edge caveat on every
+    render.
     """
     from fantasy_gm.draft.board import AvailabilityMode, build_board
     from fantasy_gm.draft.opponents import adp_order_from_market
 
     board = build_board(store, season, availability=AvailabilityMode.PROJECTED, as_of=as_of,
-                        forward_season=forward_season)
+                        forward_season=forward_season, rate_basis=rate_basis)
     pool = [r.player_id for r in board.rows]
     market = adp_order_from_market(store, market_season, source=market_source,
                                    restrict_to=pool) or []
