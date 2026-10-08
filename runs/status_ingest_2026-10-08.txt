@@ -1,0 +1,91 @@
+status ingest — effective from 2026-10-08, source yahoo
+  500 row(s) parsed -> 87 designation(s) stored; 0 unresolved name(s); 0 unmapped status value(s); 0 noted-but-undesignated; 52 ignored roster state(s)
+    ignored (roster state, not health): John Konchar, Russell Westbrook, Nicolas Batum, Jonas Valančiūnas, Guerschon Yabusele, Lonzo Ball, Tyrese Martin, Vince Williams Jr., Cameron Payne, Kevin Love … (+42 more)
+  draft pool 883 (as of 2026-10-08): 87 carry a designation — ACTIVE 1, OUT 15, QUESTIONABLE 71, none 796
+  QUESTIONABLE/OUT:
+    Aaron Wiggins — QUESTIONABLE [from 2026-10-06] — Lips
+    Adem Bona — QUESTIONABLE [from 2026-10-07] — Foot
+    Al Horford — QUESTIONABLE [from 2026-10-07] — Rest
+    Alex Sarr — QUESTIONABLE [from 2026-10-05] — Foot
+    Allen Graves — QUESTIONABLE [from 2026-10-05] — Groin
+    Andrew Wiggins — QUESTIONABLE [from 2026-10-07] — Illness
+    Anfernee Simons — QUESTIONABLE [from 2026-10-07] — Undisclosed
+    Anthony Black — QUESTIONABLE [from 2026-10-07] — Ankle
+    Ariel Hukporti — OUT [from 2026-10-06] — Achilles
+    Austin Reaves — QUESTIONABLE [from 2026-10-07] — Ankle
+    Ben Simmons — QUESTIONABLE [from 2026-10-06] — Undisclosed
+    Bradley Beal — QUESTIONABLE [from 2026-10-07] — Knee
+    Brandin Podziemski — QUESTIONABLE [from 2026-10-07] — Rest
+    Brandon Ingram — OUT [from 2026-09-28] — Achilles
+    Brandon Miller — QUESTIONABLE [from 2026-10-06] — Leg
+    Brice Sensabaugh — QUESTIONABLE [from 2026-10-07] — Hip
+    CJ McCollum — QUESTIONABLE [from 2026-10-05] — Nose
+    Chet Holmgren — QUESTIONABLE [from 2026-10-07] — Rest
+    Coby White — QUESTIONABLE [from 2026-10-05] — Calf
+    Collin Sexton — QUESTIONABLE [from 2026-10-07] — Lower Body
+    Day'Ron Sharpe — QUESTIONABLE [from 2026-10-08] — Shoulder
+    De'Anthony Melton — QUESTIONABLE [from 2026-10-07] — Rest
+    Dereck Lively II — QUESTIONABLE [from 2026-10-08] — Foot
+    Dominick Barlow — QUESTIONABLE [from 2026-10-07] — Back
+    Donte DiVincenzo — OUT [from 2026-10-05] — Achilles
+    Draymond Green — QUESTIONABLE [from 2026-10-07] — Rest
+    Dru Smith — QUESTIONABLE [from 2026-10-01] — Calf
+    Gary Payton II — QUESTIONABLE [from 2026-10-07] — Rest
+    Georges Niang — QUESTIONABLE [from 2026-10-07] — Rest
+    Grant Williams — QUESTIONABLE [from 2026-10-08] — Hamstring
+    Gui Santos — QUESTIONABLE [from 2026-10-07] — Rest
+    Isaiah Hartenstein — QUESTIONABLE [from 2026-10-07] — Ankle
+    Isaiah Stewart — QUESTIONABLE [from 2026-10-07] — Ankle
+    Jalen Duren — QUESTIONABLE [from 2026-10-07] — Rest
+    Jalen Suggs — QUESTIONABLE [from 2026-10-07] — Illness
+    Jamir Watkins — OUT [from 2026-10-08] — Knee
+    Jamison Battle — QUESTIONABLE [from 2026-10-05] — Back
+    Jaylin Williams — QUESTIONABLE [from 2026-10-07] — Heel
+    Jimmy Butler III — OUT [from 2026-10-02] — Knee
+    Joel Embiid — QUESTIONABLE [from 2026-10-05] — Rest
+    Johnny Furphy — OUT [from 2026-10-08] — Knee
+    Jonathan Isaac — QUESTIONABLE [from 2026-10-06] — Knee
+    Jordan Miller — OUT [from 2026-10-08] — Shoulder
+    Jose Alvarado — QUESTIONABLE [from 2026-10-05] — Knee
+    Jusuf Nurkić — OUT [from 2026-10-07] — Foot
+    Kawhi Leonard — QUESTIONABLE [from 2026-10-05] — Not Injury Related
+    Keegan Murray — QUESTIONABLE [from 2026-10-06] — Undisclosed
+    Keshad Johnson — OUT [from 2026-10-07] — Hamstring
+    Kobe Sanders — QUESTIONABLE [from 2026-10-07] — Hip
+    Kon Knueppel — QUESTIONABLE [from 2026-10-08] — Hamstring
+    Kristaps Porziņģis — QUESTIONABLE [from 2026-10-06] — Undisclosed
+    Kyle Filipowski — QUESTIONABLE [from 2026-10-07] — Back
+    Larry Nance Jr. — QUESTIONABLE [from 2026-10-07] — Hamstring
+    Lauri Markkanen — QUESTIONABLE [from 2026-10-07] — Neck
+    LeBron James — QUESTIONABLE [from 2026-10-05] — Rest
+    Luguentz Dort — QUESTIONABLE [from 2026-10-05] — Knee
+    Luka Dončić — QUESTIONABLE [from 2026-10-07] — Undisclosed
+    Malik Monk — QUESTIONABLE [from 2026-10-06] — Rest
+    Mark Williams — OUT [from 2026-10-08] — Shoulder
+    Matisse Thybulle — QUESTIONABLE [from 2026-10-07] — Rest
+    Max Strus — OUT [from 2026-10-05] — Foot
+    Micah Peavy — QUESTIONABLE [from 2026-10-08] — Ankle
+    Michael Porter Jr. — QUESTIONABLE [from 2026-10-08] — Wrist
+    Mikel Brown Jr. — QUESTIONABLE [from 2026-10-08] — Ankle
+    Miles Bridges — QUESTIONABLE [from 2026-10-08] — Ankle
+    Morez Johnson — QUESTIONABLE [from 2026-10-07] — Lower Leg
+    Moses Moody — OUT [from 2026-09-29] — Knee
+    Mouhamed Gueye — QUESTIONABLE [from 2026-10-08] — Foot
+    Nic Claxton — QUESTIONABLE [from 2026-10-05] — Hamstring
+    Noah Penda — QUESTIONABLE [from 2026-10-07] — Hamstring
+    Pelle Larsson — QUESTIONABLE [from 2026-10-07] — Illness
+    Santi Aldama — QUESTIONABLE [from 2026-10-08] — Undisclosed
+    Shaedon Sharpe — OUT [from 2026-10-08] — Knee
+    Spencer Jones — QUESTIONABLE [from 2026-10-07] — Hamstring
+    Stephen Curry — QUESTIONABLE [from 2026-10-07] — Rest
+    T.J. McConnell — QUESTIONABLE [from 2026-10-07] — Undisclosed
+    Tobias Harris — QUESTIONABLE [from 2026-10-05] — Calf
+    Trayce Jackson-Davis — QUESTIONABLE [from 2026-10-06] — Head
+    Tre Jones — QUESTIONABLE [from 2026-10-07] — Hip
+    Tristan Vukcevic — OUT [from 2026-10-01] — Hip
+    Tyrese Maxey — QUESTIONABLE [from 2026-10-05] — Rest
+    Walker Kessler — QUESTIONABLE [from 2026-10-07] — Finger
+    Yanic Konan Niederhäuser — OUT [from 2026-09-28] — Foot
+    Yaxel Lendeborg — QUESTIONABLE [from 2026-10-07] — Rest
+    Zach Collins — QUESTIONABLE [from 2026-10-07] — Toe
+    Ziaire Williams — QUESTIONABLE [from 2026-10-07] — Rest
