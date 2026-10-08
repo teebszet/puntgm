@@ -16,7 +16,19 @@ One process, two modes:
   -- the watcher loop, plus a localhost HTTP server answering /state.json from memory
   (dev/testing convenience only: binds 127.0.0.1; the Funnel proxy reaches the page
   through the separate ``serve`` process reading the same state file, so the public
-  page viewer can never execute anything).
+  page viewer can never execute anything). The watcher detaches into its own session
+  (setsid) at startup and records its pid in the state file, so re-arming can find and
+  replace it precisely.
+
+* ``... reset-state --out <state.json> --league <key> [--seat N] [--interval S]
+  [--start UTC]`` -- runner helper: overwrite the state file with a fresh 'armed'
+  state (no picks, no recs), killing nothing.
+
+Arm lifecycle (2026-10-08 redesign): clicking Arm makes the serve process kill every
+watcher and reset the state file immediately, then leave trigger.json for the launchd
+runner, which kills any survivors and resets the state again before spawning the new
+watcher. Exactly one watcher exists at any time, and the page never shows a previous
+draft's picks after an arm.
 
 Everything the watcher knows lands in the state file after every change: picks in
 order, discrepancy lines (never silently reconciled -- see live.reconcile), the latest
@@ -27,6 +39,10 @@ the terminal watcher would print.
 from __future__ import annotations
 
 import json
+import os
+import re
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -37,16 +53,21 @@ from pathlib import Path
 
 STATE_VERSION = 1
 
+# pgrep/ps marker identifying watcher processes (not serve, not the page).
+WATCHER_MARKER = "draft_watch_service.py watch"
 
-def new_state(league: str, seat: int, interval: float, started_at: str) -> dict:
+
+def new_state(league: str, seat: int, interval: float, started_at: str,
+              start_utc: str | None = None, status: str = "starting") -> dict:
     return {
         "version": STATE_VERSION,
         "league": league,
         "seat": seat,
         "interval_s": interval,
-        "status": "starting",
+        "status": status,
         "started_at": started_at,
         "updated_at": started_at,
+        "start_utc": start_utc,
         "board_players": None,
         "pick_count": 0,
         "picks": [],
@@ -55,6 +76,7 @@ def new_state(league: str, seat: int, interval: float, started_at: str) -> dict:
         "recommendation": None,
         "error": None,
         "heartbeat_at": started_at,
+        "watcher_pid": None,
     }
 
 
@@ -77,10 +99,145 @@ def log_line(state: dict, text: str) -> None:
     del state["events"][:-200]
 
 
+# --- arm-time helpers: fresh state + watcher cleanup -------------------------------
+
+def reset_state(state_file: str | Path, league: str, seat: int, interval: float,
+                start_utc: str | None = None) -> dict:
+    """Overwrite the state file with a fresh 'armed' state for a new draft.
+
+    Arming must clear the previous draft's picks immediately (2026-10-08: the page
+    kept showing the last draft's 153 picks until the new watcher's first write --
+    which, before the setsid fix, never came). Call this the moment an arm is
+    accepted, before the watcher starts.
+    """
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    state = new_state(league, seat, interval, now, start_utc=start_utc, status="armed")
+    when = f", starts {start_utc} UTC" if start_utc else ", starting within a minute"
+    log_line(state, f"armed: league {league} seat {seat}{when} — previous draft cleared")
+    write_state(state_file, state)
+    return state
+
+
+def _pid_cmdline(pid: int) -> str:
+    try:
+        out = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip()
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def kill_watchers(state_file: str | Path, grace: float = 2.0) -> list[int]:
+    """Terminate every watcher process; return the pids that were signalled.
+
+    Candidates come from two places so neither can be fooled alone: the recorded
+    ``watcher_pid`` in the state file (exact process this page watched) and a
+    pgrep sweep (covers watchers started before this field existed or by hand).
+    Every candidate is verified by cmdline before signalling, so a recycled pid
+    can never be killed, and the serve process itself is never a candidate (its
+    cmdline says ``serve``, not ``watch``).
+    """
+    candidates: set[int] = set()
+    try:
+        prev = json.loads(Path(state_file).read_text())
+        recorded = prev.get("watcher_pid")
+        if isinstance(recorded, int) and recorded > 1:
+            candidates.add(recorded)
+    except (OSError, ValueError):
+        pass
+    try:
+        out = subprocess.run(["pgrep", "-f", WATCHER_MARKER],
+                             capture_output=True, text=True, timeout=5)
+        candidates.update(int(p) for p in out.stdout.split())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+    me = os.getpid()
+    killed: list[int] = []
+    for pid in sorted(candidates):
+        if pid <= 1 or pid == me:
+            continue
+        if WATCHER_MARKER not in _pid_cmdline(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + grace
+    while killed and time.monotonic() < deadline:
+        if not any(_pid_alive(p) for p in killed):
+            break
+        time.sleep(0.1)
+    for pid in killed:  # grace over: survivors get SIGKILL
+        if _pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    return killed
+
+
+def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
+    """Arm a draft: validate, kill any running watcher, write trigger.json and
+    reset the state file to a fresh 'armed' state -- all before the reply, so the
+    page switches to the new draft the moment Arm is clicked (the runner only
+    consumes the trigger on its next tick, up to 60s later).
+
+    ``params`` maps form names to single strings; returns (http_code, payload).
+    """
+    state_file = Path(state_file)
+    league = str(params.get("league") or "").strip()
+    seat = str(params.get("seat") or "1")
+    interval = str(params.get("interval") or "15")
+    start = str(params.get("start") or "").strip()
+    if not league or not re.fullmatch(r"\d+\.l\.\d+", league):
+        return 400, {"ok": False,
+                     "error": "league must look like 478.l.2638432 (the page adds the 478.l. prefix itself)"}
+    if not seat.isdigit() or not 1 <= int(seat) <= 12:
+        return 400, {"ok": False, "error": "seat must be 1-12"}
+    if not interval.isdigit() or not 5 <= int(interval) <= 120:
+        return 400, {"ok": False, "error": "interval must be 5-120 seconds"}
+    if start and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", start[:16]):
+        return 400, {"ok": False, "error": "start must be UTC YYYY-MM-DDTHH:MM"}
+
+    killed = kill_watchers(state_file)
+    trigger_path = state_file.parent / "trigger.json"
+    tmp = Path(str(trigger_path) + ".tmp")
+    tmp.write_text(json.dumps({
+        "league": league, "seat": int(seat), "interval": int(interval),
+        "start_utc": start[:16],
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }, indent=1))
+    tmp.replace(trigger_path)
+    reset_state(state_file, league, int(seat), int(interval),
+                start_utc=start[:16] if start else None)
+    return 200, {"ok": True, "trigger": str(trigger_path), "killed_watchers": killed}
+
+
 # --- watch mode -------------------------------------------------------------------
 
 def run_watch(league: str, seat: int, interval: float, state_path: Path,
               serve_port: int | None, stop_file: Path) -> int:
+    # Detach from the spawner's process group FIRST: launchd kills a job's whole
+    # process group when the job exits (no AbandonProcessGroup), which silently
+    # killed every nohup-spawned watcher before its first write (2026-10-08 --
+    # arming a new draft then showed the previous draft forever). setsid moves us
+    # to our own session, immune to that kill no matter who spawned us.
+    try:
+        os.setsid()
+    except OSError:
+        pass  # already a session leader (e.g. run interactively); nothing to detach
     from fantasy_gm.config import Config
     from fantasy_gm.data.store import Store
     from fantasy_gm.draft.live import (
@@ -89,6 +246,7 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
 
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     state = new_state(league, seat, interval, started)
+    state["watcher_pid"] = os.getpid()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     # Snapshot the previous run's state before this run's first write overwrites it,
     # so the resume below sees the recorded draft rather than the fresh empty state.
@@ -161,6 +319,7 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         if stop_file.exists():
             log_line(state, "stop requested; watcher exits (page goes stale on purpose)")
             state["status"] = "stopped"
+            state["watcher_pid"] = None
             write_state(state_path, state)
             stop_file.unlink()
             return 0
@@ -299,43 +458,16 @@ class StateAwareStaticServer:
                 self.wfile.write(body)
 
             def _do_trigger(self) -> None:
-                """Write trigger.json for the runner launchd job to consume.
-
-                The browser never touches the filesystem; it POSTs the form values and
-                this endpoint validates and persists them. The runner (fired every 60s)
-                picks the file up, waits for the start time and starts the watcher.
-                """
+                """Arm via handle_trigger: kill running watchers, write trigger.json
+                for the runner launchd job, and reset the state file so the page
+                shows the NEW draft immediately (the runner only consumes the
+                trigger on its next tick, up to 60s later)."""
                 from urllib.parse import parse_qs, urlparse
 
                 q = parse_qs(urlparse(self.path).query)
-                get = lambda k: (q.get(k) or [""])[0]  # noqa: E731 - tiny local helper
-                league = get("league").strip()
-                seat = get("seat") or "1"
-                interval = get("interval") or "15"
-                start = get("start").strip()
-                if not league or not __import__("re").fullmatch(r"\d+\.l\.\d+", league):
-                    self._reply(400, {"ok": False,
-                                      "error": "league must look like 478.l.2638432 (the page adds the 478.l. prefix itself)"})
-                    return
-                if not seat.isdigit() or not 1 <= int(seat) <= 12:
-                    self._reply(400, {"ok": False, "error": "seat must be 1-12"})
-                    return
-                if not interval.isdigit() or not 5 <= int(interval) <= 120:
-                    self._reply(400, {"ok": False, "error": "interval must be 5-120 seconds"})
-                    return
-                if start and not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", start[:16]):
-                    self._reply(400, {"ok": False,
-                                      "error": "start must be UTC YYYY-MM-DDTHH:MM"})
-                    return
-                trigger_path = state_file.parent / "trigger.json"
-                tmp = Path(str(trigger_path) + ".tmp")
-                tmp.write_text(json.dumps({
-                    "league": league, "seat": int(seat), "interval": int(interval),
-                    "start_utc": start[:16],
-                    "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                }, indent=1))
-                tmp.replace(trigger_path)
-                self._reply(200, {"ok": True, "trigger": str(trigger_path)})
+                params = {k: (v or [""])[0] for k, v in q.items()}
+                code, payload = handle_trigger(params, state_file)
+                self._reply(code, payload)
 
             def do_POST(self) -> None:  # noqa: N802 - stdlib naming
                 """Only /trigger (arm the runner) and /stop (sentinel file). Nothing else."""
@@ -419,6 +551,17 @@ def main() -> int:
         stop_file = (Path(rest[rest.index("--stop-file") + 1])
                      if "--stop-file" in rest else Path(str(state_path) + ".stop"))
         return run_watch(league, seat, interval, state_path, serve_port, stop_file)
+    if mode == "reset-state" and "--out" in rest and "--league" in rest:
+        # Runner helper: write a fresh 'armed' state at trigger-consume time so the
+        # page never shows a previous draft, even when the trigger didn't come
+        # through the page's own /trigger endpoint.
+        out = Path(_flag(rest, "--out") or "")
+        league = _flag(rest, "--league") or ""
+        seat = int(_flag(rest, "--seat") or 1)
+        interval = float(_flag(rest, "--interval") or 15)
+        start = _flag(rest, "--start")
+        reset_state(out, league, seat, interval, start_utc=start or None)
+        return 0
     print(USAGE)
     return 1
 
