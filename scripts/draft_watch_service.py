@@ -156,6 +156,7 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
 
     seen = 0
     placeholder_logged = False
+    last_rec_printed_picks = -1
     while True:
         if stop_file.exists():
             log_line(state, "stop requested; watcher exits (page goes stale on purpose)")
@@ -199,15 +200,24 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
              "name": p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id)}
             for p in draft_state.picks
         ]
-        if draft_state.is_my_pick():
+        # Recs run every poll, not only on our turn: between our picks the card is a
+        # preview -- top of the board with survival projected to OUR next pick (the
+        # survival math was always relative to my_seat; the card now says so).
+        my_next = draft_state.my_next_pick()
+        if my_next is not None:
             rec = recommend(store, "2025-26", draft_state, pool, board=gm["board"],
                             adp_order=gm["adp_order"], names=names, budget_s=8.0)
-            rendered = "\n".join(
-                f"  {c.name}  value {c.total:.2f}  vs safe {c.value_over_safe:+.2f}  "
-                f"surv {c.survival:.0%}" for c in rec.candidates
-            ) or "  no candidates"
-            print(f"Pick {rec.pick_number} -- seat {rec.on_the_clock} on the clock\n{rendered}",
-                  flush=True)
+            # Print the full rec block only when it changed meaningfully: our turn, or a
+            # new pick landed since the last print (a per-poll print is near-duplicate
+            # noise across 30-90s clocks).
+            if draft_state.is_my_pick() or state["pick_count"] != last_rec_printed_picks:
+                rendered = "\n".join(
+                    f"  {c.name}  value {c.total:.2f}  vs safe {c.value_over_safe:+.2f}  "
+                    f"surv {c.survival:.0%}" for c in rec.candidates
+                ) or "  no candidates"
+                print(f"Pick {rec.pick_number} -- seat {rec.on_the_clock} on the clock\n{rendered}",
+                      flush=True)
+                last_rec_printed_picks = state["pick_count"]
             state["recommendation"] = {
                 "pick_number": rec.pick_number,
                 "on_the_clock": rec.on_the_clock,
@@ -215,6 +225,8 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
                 "mode": rec.mode,
                 "degraded": rec.degraded,
                 "note": rec.note,
+                "for_me": draft_state.is_my_pick(),
+                "my_next_pick": my_next,
                 "candidates": [
                     {
                         "name": c.name,

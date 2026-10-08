@@ -52,6 +52,25 @@ def test_picks_until_my_next_when_on_the_clock():
     assert state.picks_until_my_next() == 14
 
 
+def test_my_next_pick_forward_snake_and_end():
+    def with_picks(k, my_seat=1):
+        state = DraftState(league_key="t", n_teams=12, my_seat=my_seat)
+        for i in range(1, k + 1):
+            state.picks.append(Pick(number=i, player_id=f"p{i}",
+                                    team_seat=_seat_of(i, 12), source="manual"))
+        return state
+    # seat 1's picks: 1, 24, 25, 48, 49 ... (snake turns); last is #145
+    assert with_picks(0).my_next_pick() == 1
+    assert with_picks(4).my_next_pick() == 24       # 5-12 belong to seats 5-12
+    assert with_picks(19).my_next_pick() == 24      # mid round 2, seat 5 on the clock
+    assert with_picks(24).my_next_pick() == 25
+    assert with_picks(144).my_next_pick() == 145    # seat 1 on the clock at 145
+    assert with_picks(145).my_next_pick() is None   # seat 1 done; others finish 146-156
+    # seat 5: picks 5 and 20
+    assert with_picks(4, my_seat=5).my_next_pick() == 5
+    assert with_picks(5, my_seat=5).my_next_pick() == 20
+
+
 def test_add_pick_derives_seat_and_rejects_duplicates():
     state = DraftState(league_key="t", n_teams=4, my_seat=2)
     state.add_pick("a", "Alice", "manual")

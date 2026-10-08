@@ -88,6 +88,14 @@ class DraftState:
     def is_my_pick(self) -> bool:
         return self.on_the_clock == self.my_seat
 
+    def my_next_pick(self) -> int | None:
+        """The next pick number belonging to my_seat; None once the draft is over."""
+        n = self.n_teams
+        for k in range(self.pick_number, n * self.n_rounds + 1):
+            if _seat_of(k, n) == self.my_seat:
+                return k
+        return None
+
     def roster_of(self, seat: int) -> list[str]:
         return [p.player_id for p in self.picks if p.team_seat == seat]
 
