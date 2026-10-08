@@ -25,7 +25,7 @@ import shutil
 from datetime import date
 from pathlib import Path
 
-from fantasy_gm.config import Config
+from fantasy_gm.config import FORWARD_SEASON, Config
 from fantasy_gm.data.store import Store
 from fantasy_gm.draft.board import PUNT_BUILDS, board_json, build_board
 
@@ -45,7 +45,8 @@ def build_all(store, as_of: str, pool_size: int) -> dict:
     builds = []
     for name in PUNT_BUILDS:
         board = build_board(
-            store, PRODUCTION_SEASON, build=name, as_of=as_of, pool_size=pool_size
+            store, PRODUCTION_SEASON, build=name, as_of=as_of, pool_size=pool_size,
+            forward_season=FORWARD_SEASON,
         )
         payload = board_json(board)
         for row in payload["rows"]:

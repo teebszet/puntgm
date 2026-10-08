@@ -25,9 +25,10 @@ from fantasy_gm.draft.board import (
     export,
     project_availability,
     render_markdown,
+    render_table,
 )
 from fantasy_gm.draft.xscore import PeriodStats
-from fantasy_gm.models import Game, PlayerGameLog, UsageRole
+from fantasy_gm.models import Availability, ForwardRoster, Game, PlayerGameLog, UsageRole
 
 SEASON = "2025-26"
 START = date(2025, 10, 20)  # a Monday
@@ -370,3 +371,118 @@ def test_basis_line_names_forward_roster_placement():
                         availability=AvailabilityMode.NEUTRAL, forward_season="2026-27")
     assert "2026-27" in board.basis
     assert board_json(board)["forward_season"] == "2026-27"
+
+
+# --- R3: platform status caps the availability rate; baseline rates ------------
+
+
+def _baseline_store() -> Store:
+    """Ranked season with priced players, a returnee with zero 2025-26 logs but a healthy
+    2024-25 sample, and a newcomer no season can price."""
+    store = _pool_store()
+    for gi in range(20):
+        d = (date(2024, 11, 1) + timedelta(days=gi)).isoformat()
+        store.upsert_games([Game(f"o{gi}", "2024-25", d, "AAA", "BBB")])
+        store.upsert_player_logs([
+            PlayerGameLog(f"o{gi}", "2024-25", d, "returnee", "Returnee", "AAA",
+                          _line(pts=22, reb=4, ast=8))])
+        store.add_usage_role([UsageRole("returnee", d, 34.0, 16.0, True, 1)])
+    store.add_forward_roster([
+        ForwardRoster("returnee", "2026-27", "IND", 2, known_from="2026-08-17"),
+        ForwardRoster("newcomer", "2026-27", "SAS", 3, known_from="2026-08-17"),
+    ])
+    return store
+
+
+def test_a_lost_season_is_priced_from_the_last_healthy_one_and_named_on_the_row():
+    board = build_board(_baseline_store(), SEASON, pool_size=6,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF,
+                        forward_season="2026-27")
+    row = next(r for r in board.rows if r.player_id == "returnee")
+    assert row.rate_source == "baseline:2024-25"
+    assert row.categories["pts"] > 0  # priced from the healthy season, not zeros
+    assert "1 of those priced per-game from their last healthy season" in board.basis
+    assert "baseline:2024-25" in board_json(board)["basis"] or \
+        "last healthy season" in board_json(board)["basis"]
+    assert board_json(board)["rows"][
+        [r["player_id"] for r in board_json(board)["rows"]].index("returnee")
+    ]["rate_source"] == "baseline:2024-25"
+
+
+def test_a_player_nothing_can_price_is_reported_not_dropped():
+    board = build_board(_baseline_store(), SEASON, pool_size=6,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF,
+                        forward_season="2026-27")
+    assert [pid for pid, _name, _reason in board.unpriced] == ["newcomer"]
+    assert "no usable 2025-26 sample" in board.unpriced[0][2]
+    assert all(r.player_id != "newcomer" for r in board.rows)  # not ranked
+    assert "unpriced (1)" in render_table(board)  # but never silently vanished
+
+
+def test_season_ending_out_zeroes_expected_games_and_names_the_note():
+    store = _pool_store()
+    store.add_availability([Availability(
+        "scorer", "OUT", "2025-10-15", "yahoo", 1.0, "torn achilles — out for season")])
+    board = build_board(store, SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    row = next(r for r in board.rows if r.player_id == "scorer")
+    assert row.status == "OUT"
+    assert row.status_note == "torn achilles — out for season"
+    assert row.availability_rate == 0.0
+    assert row.expected_games == 0.0
+    assert board.status_as_of == AS_OF
+    assert board.status_counts == {"OUT": 1}
+    assert f"Platform status (yahoo, as of {AS_OF})" in board.basis
+    assert "OUT 1" in board.basis
+    exported = board_json(board)
+    assert exported["status_as_of"] == AS_OF
+    assert next(r for r in exported["rows"] if r["player_id"] == "scorer")["status_note"]
+
+
+def test_short_term_out_halves_the_measured_rate():
+    store = _pool_store()
+    plain = build_board(store, SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    plain_rate = next(r for r in plain.rows if r.player_id == "scorer").availability_rate
+    store.add_availability([Availability(
+        "scorer", "OUT", "2025-10-15", "yahoo", 0.9, "sprained ankle — out 2-3 weeks")])
+    board = build_board(store, SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    row = next(r for r in board.rows if r.player_id == "scorer")
+    assert row.availability_rate == pytest.approx(plain_rate * 0.5)
+    assert row.expected_games == pytest.approx(
+        next(r for r in plain.rows if r.player_id == "scorer").expected_games * 0.5)
+
+
+def test_questionable_shaves_a_quarter_and_active_never_raises():
+    store = _pool_store()
+    plain = build_board(store, SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    plain_rate = next(r for r in plain.rows if r.player_id == "scorer").availability_rate
+    store.add_availability([Availability(
+        "scorer", "QUESTIONABLE", "2025-10-15", "yahoo", 0.9, "game-time decision")])
+    board = build_board(store, SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    row = next(r for r in board.rows if r.player_id == "scorer")
+    assert row.availability_rate == pytest.approx(plain_rate * 0.75)
+
+    # a designation the platform marks healthy must not price the player above measured
+    store.add_availability([Availability(
+        "boards", "ACTIVE", "2025-10-15", "yahoo", 0.9, "cleared to play")])
+    raised = build_board(store, SEASON, pool_size=4,
+                         availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    assert next(r for r in raised.rows if r.player_id == "boards").availability_rate \
+        == pytest.approx(next(
+            r for r in plain.rows if r.player_id == "boards").availability_rate)
+
+
+def test_neutral_mode_does_not_consume_status():
+    """Neutral is the no-availability ablation: showing an OUT badge while ranking the
+    player as if durable would be the worst of both. Status rides the projected mode only."""
+    store = _pool_store()
+    store.add_availability([Availability(
+        "scorer", "OUT", "2025-10-15", "yahoo", 1.0, "out for season")])
+    board = build_board(store, SEASON, pool_size=4, availability=AvailabilityMode.NEUTRAL)
+    assert all(r.status is None for r in board.rows)
+    assert board.status_as_of is None
+    assert board.status_counts == {}

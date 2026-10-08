@@ -32,6 +32,12 @@ PRIMARY_SEASON = "2025-26"
 VALIDATION_SEASONS = ["2024-25", "2023-24"]
 ALL_SEASONS = [PRIMARY_SEASON, *VALIDATION_SEASONS]
 
+# The season being drafted INTO (the forward basis): players the ranked season cannot place
+# sit by derived depth on this season's projected rosters (R2), and when that season carries
+# no usable sample their rates price from the last healthy one (R3). Declared here so every
+# surface — CLI board, draft session, site build — ranks the same pool on draft night.
+FORWARD_SEASON = "2026-27"
+
 # --- Scoring categories (standard H2H 9-cat) ---------------------------------
 # direction: +1 = higher is better, -1 = lower is better (turnovers).
 CATEGORY_DIRECTION: dict[str, int] = {

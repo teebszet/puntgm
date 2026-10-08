@@ -1,0 +1,45 @@
+{
+  "capture": "data/raw_cache/yahoo_status_478_l_25733.json",
+  "fetched_at": "2026-10-08T15:56:13Z",
+  "ingested_effective_from": "2026-10-08",
+  "ingest_summary": {
+    "rows_parsed": 500,
+    "stored": 87,
+    "unresolved": 0,
+    "unmapped": 0,
+    "noted": 0,
+    "ignored_roster_state": 52,
+    "designations_in_pool": {
+      "ACTIVE": 1,
+      "OUT": 15,
+      "QUESTIONABLE": 71
+    },
+    "pool_size": 883
+  },
+  "injured_four_coverage": {
+    "Tyrese Haliburton": {
+      "player_id": "1630169",
+      "designation": null,
+      "known_from": null,
+      "note": null
+    },
+    "Damian Lillard": {
+      "player_id": "203081",
+      "designation": null,
+      "known_from": null,
+      "note": null
+    },
+    "Kyrie Irving": {
+      "player_id": "202681",
+      "designation": null,
+      "known_from": null,
+      "note": null
+    },
+    "Jayson Tatum": {
+      "player_id": "1628369",
+      "designation": null,
+      "known_from": null,
+      "note": null
+    }
+  }
+}

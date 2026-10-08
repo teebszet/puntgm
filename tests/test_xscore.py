@@ -271,3 +271,57 @@ def test_dnp_rows_still_sit_in_the_pool_window_for_ranking_minutes():
     _with_dnp_rows(store, "p", after=12, n=4)
     pool = rosterable_pool(store, SEASON, pool_size=4)
     assert pool == ["p"]  # eligible on 12 played games, ranked on 30.0 minutes
+
+
+# --- R3: baseline pricing leaves usable samples untouched ----------------------
+
+
+def _baseline_fixture():
+    """A ranked season with priced players, plus a returnee with zero 2025-26 logs and a
+    healthy 2024-25 sample, placed in the pool by forward-roster depth."""
+    from datetime import date, timedelta
+
+    from fantasy_gm.data.store import Store
+    from fantasy_gm.models import ForwardRoster, Game, PlayerGameLog, UsageRole
+
+    store = Store(":memory:")
+    for gi in range(28):
+        d = (date(2025, 11, 1) + timedelta(days=gi)).isoformat()
+        store.upsert_games([Game(f"g{gi}", SEASON, d, "AAA", "BBB")])
+        store.upsert_player_logs([
+            PlayerGameLog(f"g{gi}", SEASON, d, "scorer", "Scorer", "AAA", {"pts": 30.0}),
+            PlayerGameLog(f"g{gi}", SEASON, d, "filler", "Filler", "BBB", {"pts": 8.0}),
+        ])
+        store.add_usage_role([UsageRole("scorer", d, 34.0, 18.0, True, 1),
+                              UsageRole("filler", d, 20.0, 8.0, False, 3)])
+    for gi in range(20):  # the returnee's last healthy season
+        d = (date(2024, 11, 1) + timedelta(days=gi)).isoformat()
+        store.upsert_games([Game(f"o{gi}", "2024-25", d, "AAA", "BBB")])
+        store.upsert_player_logs(
+            [PlayerGameLog(f"o{gi}", "2024-25", d, "returnee", "Returnee", "AAA",
+                           {"pts": 22.0, "ast": 8.0})])
+        store.add_usage_role([UsageRole("returnee", d, 34.0, 16.0, True, 1)])
+    store.add_forward_roster([
+        ForwardRoster("returnee", "2026-27", "IND", 2, known_from="2026-08-17"),
+    ])
+    return store
+
+
+def test_a_lost_season_prices_rates_from_the_last_healthy_one_and_names_it():
+    """R2's injury edge, rate half: zero 2025-26 logs must not price zero — the 2024-25
+    per-game rates carry him, and the provenance names the season (the Haliburton case)."""
+    store = _baseline_fixture()
+    stats, pool = measure_per_game_stats(store, SEASON)
+    sources: dict[str, str] = {}
+    stats2, pool2 = measure_per_game_stats(store, SEASON, forward_season="2026-27",
+                                           sources=sources)
+
+    # the ranked season alone cannot place him; the forward pool does
+    assert "returnee" not in pool
+    assert "returnee" in pool2
+    # his rates are his healthy season's, named as baseline provenance
+    assert stats2["returnee"]["pts"].mean == pytest.approx(22.0)
+    assert stats2["returnee"]["ast"].mean == pytest.approx(8.0)
+    assert sources == {"returnee": "baseline:2024-25"}
+    # and a player with a usable ranked sample is priced identically either way (Tatum's case)
+    assert stats2["scorer"]["pts"].mean == stats["scorer"]["pts"].mean

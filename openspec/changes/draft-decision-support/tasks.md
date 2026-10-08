@@ -11,19 +11,19 @@
 
 ## 2. Live-data pricing (R3) — status ingest + last-healthy baseline
 
-- [ ] 2.1 Ingest platform per-player status into `availability` (`source=yahoo`,
+- [x] 2.1 Ingest platform per-player status into `availability` (`source=yahoo`,
       effective-dated): extend the saved-payload Yahoo import to extract status (+ dated
       editorial notes for display); the CLI prints per-player coverage. Verify the payload
       carries status at implementation; report loudly if it does not
-- [ ] 2.2 Last-healthy-baseline pricing: when the ranked season has no usable sample, rates
+- [x] 2.2 Last-healthy-baseline pricing: when the ranked season has no usable sample, rates
       come from the most recent season above the games-played floor; placement follows the
       derived-depth rule (R2's injury edge). Test: Haliburton (zero 2025-26 logs) enters
       the pool priced from 2024-25 rates + OUT status; Tatum's rates are unchanged (usable
       sample)
-- [ ] 2.3 Provenance + display: basis lines and rows name each applied source (status row,
+- [x] 2.3 Provenance + display: basis lines and rows name each applied source (status row,
       baseline season, projected model); the dated news headline renders as context; a
       player neither sample nor baseline can price is reported as unpriced with the reason
-- [ ] 2.4 Coverage check on the four (Haliburton, Lillard, Tatum, Kyrie): after ingest,
+- [x] 2.4 Coverage check on the four (Haliburton, Lillard, Tatum, Kyrie): after ingest,
       verify status rows + basis lines; record their pricing in runs/
 
 ## 3. Forward basis option (R4)

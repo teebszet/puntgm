@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from fantasy_gm.config import ALL_SEASONS, PRIMARY_SEASON, Config
+from fantasy_gm.config import ALL_SEASONS, FORWARD_SEASON, PRIMARY_SEASON, Config
 from fantasy_gm.data.cache import RawCache
 from fantasy_gm.data.simulate import simulate_league
 from fantasy_gm.data.store import Store
@@ -406,6 +406,105 @@ def cmd_adp(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """Ingest Yahoo per-player status as effective-dated availability (dds 2.1), then print
+    per-player coverage so a silent gap cannot hide."""
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from fantasy_gm.projections.status import (
+        OUT as STATUS_OUT,
+    )
+    from fantasy_gm.projections.status import (
+        QUESTIONABLE,
+        ingest_status,
+        load_status_file,
+        status_for_pool,
+    )
+
+    if args.live:
+        from fantasy_gm.projections.status import fetch_league_player_metadata
+
+        token = Path("data/yahoo_access_token.txt").read_text().strip()
+        capture = f"data/raw_cache/yahoo_status_{args.live.replace('.', '_')}.json"
+        print(f"Fetching live player metadata for {args.live} (limit {args.limit}) ...")
+        rows = fetch_league_player_metadata(args.live, token, limit=args.limit,
+                                            save_path=capture)
+        print(f"  captured {len(rows)} player rows to {capture}")
+    else:
+        if not args.file:
+            print("--file or --live is required", file=sys.stderr)
+            return 1
+        capture = args.file
+        rows = load_status_file(capture)
+
+    # Shape check on the raw capture, before parsing can quietly degrade: if the payload
+    # never mentions status_full, Yahoo stopped carrying it (or out=metadata was dropped) —
+    # that must be loud, because "no designation" would then silently read as healthy.
+    if '"status_full"' not in Path(capture).read_text():
+        print(f"WARNING: {capture} carries no status_full fields — the metadata payload "
+              "shape changed or out=metadata returned nothing. Nothing was ingested.",
+              file=sys.stderr)
+        return 1
+
+    config = Config()
+    store = _store(config)
+    known_from = args.known_from or datetime.now(UTC).date().isoformat()
+    result = ingest_status(store, rows, known_from, source=args.source)
+    print(f"status ingest — effective from {known_from}, source {args.source}")
+    print(f"  {result.rows} row(s) parsed -> {result.stored} designation(s) stored; "
+          f"{len(result.unresolved)} unresolved name(s); "
+          f"{len(result.unmapped)} unmapped status value(s); "
+          f"{len(result.noted)} noted-but-undesignated; "
+          f"{len(result.ignored)} ignored roster state(s)")
+    for name, raw in result.unmapped:
+        print(f"    unmapped: {name} — {raw!r}")
+    for name in result.unresolved[:10]:
+        print(f"    unresolved: {name}")
+    for name in result.noted[:10]:
+        print(f"    noted, no status: {name}")
+    if result.ignored:
+        print("    ignored (roster state, not health): "
+              + ", ".join(result.ignored[:10])
+              + (f" … (+{len(result.ignored) - 10} more)" if len(result.ignored) > 10 else ""))
+    if result.stored == 0:
+        print("  no designation stored (a fully healthy league is a valid outcome — "
+              "the board's measured rates stand)")
+        return 0
+
+    # --- per-player coverage over the draftable universe -----------------------
+    names: dict[str, str] = {}
+    for r in store.conn.execute(
+        "SELECT player_id, player_name, MAX(game_date) FROM player_logs "  # noqa: S608
+        "WHERE game_date <= ? GROUP BY player_id",
+        (known_from,),
+    ):
+        names[r["player_id"]] = r["player_name"]
+    for p in store.incoming_players_asof(args.season, known_from):
+        names[p.player_id] = p.player_name
+    pool = store.draft_pool_asof(args.season, known_from)
+    statuses = status_for_pool(store, pool, known_from)
+    counts: dict[str, int] = {}
+    flagged: list[tuple[str, object]] = []
+    for pid in pool:
+        s = statuses.get(pid)
+        if s is None:
+            counts["none"] = counts.get("none", 0) + 1
+            continue
+        counts[s.status] = counts.get(s.status, 0) + 1
+        if s.status in (QUESTIONABLE, STATUS_OUT):
+            flagged.append((names.get(pid, pid), s))
+    covered = len(pool) - counts.get("none", 0)
+    print(f"  draft pool {len(pool)} (as of {known_from}): {covered} carry a designation — "
+          + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    if flagged:
+        print("  QUESTIONABLE/OUT:")
+        for name, s in sorted(flagged, key=lambda t: t[0]):
+            note = f" — {s.note}" if s.note else ""
+            print(f"    {name} — {s.status} [from {s.known_from}]{note}")
+    return 0
+
+
 def cmd_manage(args: argparse.Namespace) -> int:
     """Give every team in a simulated league a baseline manager, so the wire drains."""
     from fantasy_gm.data.manage import apply_baseline_management
@@ -628,20 +727,24 @@ def cmd_board(args: argparse.Namespace) -> int:
         return 1
 
     try:
+        forward_season = args.forward_season or None
         if args.punt:
             punt = tuple(c.strip() for c in args.punt.split(",") if c.strip())
             boards = [build_board(store, args.season, punt,
-                                  availability=availability, as_of=as_of)]
+                                  availability=availability, as_of=as_of,
+                                  forward_season=forward_season)]
         elif args.build == "all":
             boards = all_builds(store, args.season,
-                                availability=availability, as_of=as_of)
+                                availability=availability, as_of=as_of,
+                                forward_season=forward_season)
         else:
             if args.build not in PUNT_BUILDS:
                 print(f"unknown build {args.build!r}; known: {', '.join(PUNT_BUILDS)}",
                       file=sys.stderr)
                 return 1
             boards = [build_board(store, args.season, PUNT_BUILDS[args.build],
-                                  build=args.build, availability=availability, as_of=as_of)]
+                                  build=args.build, availability=availability, as_of=as_of,
+                                  forward_season=forward_season)]
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -786,6 +889,23 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--limit", type=int, default=500,
                     help="player cap for --live pagination (default 500)")
     ad.set_defaults(func=cmd_adp)
+    st = sub.add_parser("status",
+                        help="ingest Yahoo per-player status as effective-dated "
+                             "availability designations (dds 2.1)")
+    st.add_argument("--file", default=None,
+                    help="saved players;out=metadata JSON (not required with --live)")
+    st.add_argument("--live", default=None, metavar="LEAGUE_KEY",
+                    help="fetch player metadata live from Yahoo instead of reading --file; "
+                         "the fetched capture is saved and then ingested from it")
+    st.add_argument("--season", default=PRIMARY_SEASON,
+                    help="season the coverage print's draftable universe is drawn from")
+    st.add_argument("--known-from", dest="known_from", default=None,
+                    help="fallback effective date for designations without a note "
+                         "timestamp (default: today, UTC)")
+    st.add_argument("--source", default="yahoo")
+    st.add_argument("--limit", type=int, default=500,
+                    help="player cap for --live pagination (default 500)")
+    st.set_defaults(func=cmd_status)
     df = sub.add_parser("draft",
                         help="interactive draft night: live poll + manual entry + recommendations")
     df.add_argument("league", help="Yahoo league key, e.g. 478.l.25733")
@@ -845,6 +965,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="date the availability projection is made from; required for "
                          "--availability projected, and must precede the season to avoid "
                          "lookahead")
+    bd.add_argument("--forward-season", dest="forward_season", default=FORWARD_SEASON,
+                    help="season unplaceable players are placed by roster depth on and "
+                         "baseline-priced for (R2/R3, default: config FORWARD_SEASON); "
+                         "pass an empty string to rank the ranked season's pool only")
     bd.add_argument("--top", type=int, default=30)
     bd.add_argument("--movers", action="store_true",
                     help="also show where this board most disagrees with z-score")

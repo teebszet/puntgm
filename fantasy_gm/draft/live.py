@@ -25,6 +25,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from fantasy_gm.config import FORWARD_SEASON
 from fantasy_gm.draft.opponents import survival_probability
 
 PICK_SOURCE_LIVE = "live"
@@ -613,6 +614,7 @@ def render_recommendation(rec: Recommendation, *, full_categories: bool = False)
 def build_gm(
     store, season: str, as_of: str, *, market_season: str = "2026-27",
     market_source: str = "yahoo", pool_size: int = 156,
+    forward_season: str | None = FORWARD_SEASON,
 ):
     """Everything a draft session needs, built once, before the first pick.
 
@@ -622,11 +624,16 @@ def build_gm(
     H0 engine is deliberately not built: the replay verdict (results.md) measured it
     behind the static board 48/48 cells, so the board is what ships; :func:`recommend`
     accepts an engine when one is ever cleared to run under the clock.
+
+    The board is built on the ``forward_season`` roster (default: config's FORWARD_SEASON):
+    players the ranked season cannot place — a season lost to injury, a rookie — enter the
+    pool by derived depth and price per-game from their last healthy season (R2/R3).
     """
     from fantasy_gm.draft.board import AvailabilityMode, build_board
     from fantasy_gm.draft.opponents import adp_order_from_market
 
-    board = build_board(store, season, availability=AvailabilityMode.PROJECTED, as_of=as_of)
+    board = build_board(store, season, availability=AvailabilityMode.PROJECTED, as_of=as_of,
+                        forward_season=forward_season)
     pool = [r.player_id for r in board.rows]
     market = adp_order_from_market(store, market_season, source=market_source,
                                    restrict_to=pool) or []

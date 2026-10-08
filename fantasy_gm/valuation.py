@@ -66,6 +66,42 @@ def depth_implied_minutes(depth_chart_pos: int) -> float:
                DEPTH_MINUTES_FLOOR)
 
 
+def last_healthy_sample(
+    store, ranked_season: str, pids: list[str], *, min_games: int = 10,
+) -> dict[str, tuple[str, list[dict]]]:
+    """Each player's most recent season *before* ``ranked_season`` with at least
+    ``min_games`` games actually played (the D1 rule) — his last healthy baseline.
+
+    A season lost to injury must zero-rate nobody: the pool places such a player by derived
+    depth (:func:`rosterable_pool`), and pricing needs per-game rates, which a lost season
+    does not carry. Walks seasons backwards and takes the first one each player clears the
+    floor. Returns ``{player_id: (season, stat_lines)}``; a player no season prices is
+    simply absent, which callers surface as unpriced rather than hiding.
+
+    Rates are measured from complete seasons — the board's ``as_of`` discipline guards the
+    availability fit against seeing the season being ranked, not the rate basis of seasons
+    already finished.
+    """
+    if not pids:
+        return {}
+    want = set(pids)
+    seasons = [r["season"] for r in store.conn.execute(
+        "SELECT DISTINCT season FROM player_logs WHERE season < ? ORDER BY season DESC",
+        (ranked_season,),
+    )]
+    out: dict[str, tuple[str, list[dict]]] = {}
+    for season in seasons:
+        games = _player_games(store, season)
+        for pid in list(want):
+            lines = games.get(pid, [])
+            if len(lines) >= min_games:
+                out[pid] = (season, lines)
+                want.discard(pid)
+        if not want:
+            break
+    return out
+
+
 def rosterable_pool(
     store, season: str, pool_size: int = 156, min_games: int = 10,
     games: dict[str, list[dict]] | None = None, as_of: str | None = None,

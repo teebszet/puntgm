@@ -49,7 +49,7 @@ from enum import StrEnum
 from statistics import fmean, median, pstdev
 
 from fantasy_gm.config import CATEGORY_DIRECTION, DEFAULT_CATEGORIES, PERCENTAGE_CATEGORIES
-from fantasy_gm.valuation import _player_games, rosterable_pool
+from fantasy_gm.valuation import _player_games, last_healthy_sample, rosterable_pool
 
 # κ weights period-to-period noise against player-to-player spread. PROVISIONAL: 1.0 gives
 # the two equal weight, which is a choice, not a measurement. `kappa_sensitivity` reports how
@@ -322,6 +322,8 @@ def measure_per_game_stats(
     categories: list[str] | None = None,
     pool_size: int = 156,
     forward_season: str | None = None,
+    min_games: int = 10,
+    sources: dict[str, str] | None = None,
 ) -> tuple[dict[str, dict[str, PeriodStats]], list[str]]:
     """Per-**game** mean and spread per category, over the rosterable pool.
 
@@ -338,7 +340,15 @@ def measure_per_game_stats(
     Rates measure games the player actually played: a DNP row (no recorded minutes) enters the
     availability term, never a per-game mean or pool eligibility (R1/D1). ``forward_season``
     lets the pool place players the ranked season cannot — a rookie, or a season lost to
-    injury — by derived depth on their projected roster.
+    injury — by derived depth on their projected roster, and ``last_healthy_sample`` prices
+    such a player's *rates* from his most recent season above the games floor (R2's injury
+    edge, rate half; the placement half is the pool's derived-depth rule). Rate measurement
+    always reads complete seasons — the board's ``as_of`` lookahead discipline guards the
+    availability fit, not the rate basis.
+
+    ``sources``, when given, is filled with the rate provenance of every player priced
+    outside the ranked season — ``{player_id: "baseline:2024-25"}``; players priced from the
+    ranked season itself get no entry.
 
     ``PeriodStats.periods`` here counts games, not weeks. Compounding these up to a week is
     :func:`fantasy_gm.draft.board.compound_weekly`'s job, and it uses a *scheduled* game count
@@ -375,6 +385,30 @@ def measure_per_game_stats(
                 for g in games
             ])
         stats[pid] = per_cat
+
+    # R2's injury edge (rate half): pool players the ranked season cannot price — a season
+    # lost to injury, a sample below the floor — price per-game rates from their last
+    # healthy season. The percentage impact keeps the ranked season's league rate as its
+    # reference, so every player on the board is measured against one environment rather
+    # than a mix; the baseline season's own environment is not re-derived.
+    unpriced = [p for p in pool if p not in stats]
+    if unpriced:
+        baseline = last_healthy_sample(store, season, unpriced, min_games=min_games)
+        for pid, (_base_season, base_lines) in baseline.items():
+            per_cat: dict[str, PeriodStats] = {}
+            for c in counting:
+                per_cat[c] = _summarise([g.get(c, 0.0) for g in base_lines])
+            for c in pcts:
+                mk, at = PERCENTAGE_CATEGORIES[c]
+                rate = league_rates[c]
+                per_cat[c] = _summarise([
+                    (g.get(mk, 0.0) / g.get(at, 0.0) - rate) * g.get(at, 0.0)
+                    if g.get(at, 0.0) > 0 else 0.0
+                    for g in base_lines
+                ])
+            stats[pid] = per_cat
+            if sources is not None:
+                sources[pid] = f"baseline:{_base_season}"
     return stats, pool
 
 

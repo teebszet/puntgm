@@ -150,3 +150,37 @@ def test_season_lost_to_injury_places_by_depth_not_zero():
     ])
     pool = rosterable_pool(s, SEASON, pool_size=8, forward_season="2026-27")
     assert pool.index("halib") < pool.index("vet")  # depth 2 (34 implied) above 30-minute vet
+
+
+# --- R3: last-healthy baseline -------------------------------------------------
+
+
+def test_last_healthy_sample_takes_the_most_recent_season_above_the_floor():
+    """The baseline season is the most recent one the player actually cleared the games
+    floor in (D1 rule) — a season lost to injury between healthy ones is skipped over."""
+    from fantasy_gm.valuation import last_healthy_sample
+
+    s = Store(":memory:")
+    for season, (year, n_games) in {
+        "2024-25": (2024, 5),   # below the floor for "skipper"
+        "2023-24": (2023, 30),  # his last healthy season
+    }.items():
+        for gi in range(n_games):
+            d = (date(year, 11, 1) + timedelta(days=gi)).isoformat()
+            s.upsert_games([Game(f"{season}{gi}", season, d, "X", "Y")])
+            s.upsert_player_logs([
+                PlayerGameLog(f"{season}{gi}", season, d, "skipper", "Skipper", "X",
+                              _line(pts=20))])
+            s.add_usage_role([UsageRole("skipper", d, 32.0, 15.0, True, 1)])
+    for gi in range(20):  # "returnee" is healthy in 2024-25, the season right before
+        d = (date(2024, 11, 1) + timedelta(days=gi)).isoformat()
+        s.upsert_games([Game(f"r{gi}", "2024-25", d, "X", "Z")])
+        s.upsert_player_logs(
+            [PlayerGameLog(f"r{gi}", "2024-25", d, "returnee", "Returnee", "Z", _line(pts=22))])
+        s.add_usage_role([UsageRole("returnee", d, 34.0, 16.0, True, 1)])
+
+    out = last_healthy_sample(s, "2025-26", ["skipper", "returnee", "nobody"])
+    assert out["skipper"][0] == "2023-24"       # 2024-25's 5 games do not clear the floor
+    assert len(out["skipper"][1]) == 30
+    assert out["returnee"][0] == "2024-25"      # most recent qualifying season
+    assert "nobody" not in out                  # no season prices him — caller reports it

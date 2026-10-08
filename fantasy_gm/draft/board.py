@@ -68,7 +68,13 @@ from fantasy_gm.draft.xscore import (
     measure_period_stats,
     scheduled_games_per_week,
 )
+from fantasy_gm.models import Availability
+from fantasy_gm.projections.status import ACTIVE, rate_factor, status_for_pool
 from fantasy_gm.valuation import player_values
+
+# The games-played floor a baseline season must clear to price a player the ranked season
+# cannot (R3) — the same floor rosterable_pool uses for eligibility.
+BASELINE_MIN_GAMES = 10
 
 
 class AvailabilityMode(StrEnum):
@@ -136,6 +142,14 @@ class BoardRow:
     """``z_rank - rank``. Positive means G-score rates the player *higher* than z-score does —
     i.e. the market, which runs on z-score, is underrating them. Negative is the reverse. This
     column is the difference between the two metrics made legible, and it is the content."""
+    status: str | None = None
+    """Platform designation at the board date (ACTIVE | QUESTIONABLE | OUT), if any. Only the
+    ``projected`` availability mode consumes status, so other modes carry ``None``."""
+    status_note: str | None = None
+    """The dated injury note Yahoo published with the designation — display context only."""
+    rate_source: str | None = None
+    """Where this row's per-game rates came from when not the ranked season
+    (e.g. ``"baseline:2024-25"``); ``None`` means ranked-season rates."""
 
 
 @dataclass(frozen=True)
@@ -152,6 +166,14 @@ class Board:
     availability: AvailabilityMode = AvailabilityMode.PROJECTED
     availability_as_of: str | None = None
     forward_season: str | None = None
+    status_as_of: str | None = None
+    """The date platform status was read at — set only when the mode consumes status."""
+    status_counts: dict[str, int] = field(default_factory=dict)
+    """Designations carried by the pool at ``status_as_of``, by status (non-ACTIVE only)."""
+    rate_sources: dict[str, str] = field(default_factory=dict)
+    """Per-player rate provenance for everyone priced outside the ranked season."""
+    unpriced: tuple[tuple[str, str, str], ...] = ()
+    """``(player_id, name, reason)`` for every pool player nothing could price."""
     rows: list[BoardRow] = field(default_factory=list)
 
     @property
@@ -165,6 +187,11 @@ class Board:
                 f", players without a usable {self.season} sample placed by depth on their "
                 f"{self.forward_season} roster"
                 if self.forward_season else ""
+            )
+            + (
+                f", {len(self.rate_sources)} of those priced per-game from their last "
+                "healthy season (named per row)"
+                if self.rate_sources else ""
             )
             + "."
         )
@@ -180,12 +207,27 @@ class Board:
                 "no availability term at all, so a player who missed half the season is ranked "
                 "as if durable. Ablation, not a recommendation."
             )
+        status = ""
+        if self.status_as_of:
+            if self.status_counts:
+                flagged = ", ".join(f"{s} {n}" for s, n in sorted(self.status_counts.items()))
+                status = (
+                    f" Platform status (yahoo, as of {self.status_as_of}) caps the "
+                    "availability rate where a designation exists — OUT ×0.5 (season-ending "
+                    f"×0), QUESTIONABLE ×0.75, never a raise ({flagged})."
+                )
+            else:
+                status = (
+                    f" Platform status (yahoo, as of {self.status_as_of}) carried no "
+                    "designation when this board was built."
+                )
         return (
             f"{head} Compounded to a week over the league's scheduled games per week, each "
             "played with an expected-availability probability projected as of "
             f"{self.availability_as_of} — a beta-binomial rate shrunk toward the pool, not "
             "last season's realized games. No count of the games this player actually went on "
             "to play enters the rank. Category rates are measured, not projected forward."
+            + status
         )
 
     @property
@@ -207,7 +249,8 @@ def _player_names(store, season: str, player_ids: list[str]) -> dict[str, str]:
 
 
 def project_availability(
-    store, season: str, as_of: str, players: list[str] | None = None
+    store, season: str, as_of: str, players: list[str] | None = None,
+    statuses: dict[str, Availability | None] | None = None,
 ) -> dict[str, object]:
     """``{player_id: GamesProjection}`` from history known at ``as_of``.
 
@@ -221,6 +264,15 @@ def project_availability(
     would silently hand them a rate of 1.0, i.e. rank a player who has never appeared in the
     league as a nailed-on 82-game starter. That is not a conservative default; it put two
     rookies in the top eight of the first board this produced.
+
+    Platform status (task 2.1) then caps the projected rate where a designation exists:
+    OUT season-ending → 0, other OUT → ×0.5, QUESTIONABLE → ×0.75 (see
+    :mod:`fantasy_gm.projections.status`). A designation never *raises* the rate — an ACTIVE
+    row is a statement about tonight, and the beta-binomial already prices recovery
+    conservatively — so an empty designation table changes nothing. ``statuses`` may be
+    passed by a caller that already read them (the board reads once for both pricing and
+    display); otherwise they are read here, so every consumer of this function prices the
+    same world whichever metric ranks them afterwards.
     """
     from fantasy_gm.projections.availability import GamesModel, fit_games
 
@@ -243,7 +295,39 @@ def project_availability(
     for pid in players or []:
         if pid not in out:
             out[pid] = model.project(pid, 0, 0)
+
+    if statuses is None:
+        statuses = status_for_pool(store, list(out), as_of)
+    for pid, avail in statuses.items():
+        if avail is None or avail.status == ACTIVE:
+            continue
+        g = out.get(pid)
+        if g is None:
+            continue
+        factor = rate_factor(avail)
+        if factor == 1.0:
+            continue
+        out[pid] = _capped(g, factor)
     return out
+
+
+def _capped(g, factor: float):
+    """A rate-capped copy of a GamesProjection.
+
+    Expected games scale linearly with the rate; the spread is scaled by the same factor as
+    an approximation — the board's compounding reads the rate alone, so nothing downstream
+    consumes the scaled std.
+    """
+    from fantasy_gm.projections.availability import GamesProjection
+
+    return GamesProjection(
+        player_id=g.player_id,
+        expected_games=g.expected_games * factor,
+        expected_games_std=g.expected_games_std * factor,
+        availability_rate=g.availability_rate * factor,
+        observed_games=g.observed_games,
+        team_games=g.team_games,
+    )
 
 
 def compound_weekly(
@@ -297,11 +381,22 @@ def _basis(
     availability: AvailabilityMode,
     as_of: str | None,
     forward_season: str | None = None,
-) -> tuple[XScoreBasis, dict[str, object]]:
-    """Build the standardisation basis under one availability treatment."""
+) -> tuple[XScoreBasis, dict[str, object], dict[str, Availability | None],
+           dict[str, str], list[str]]:
+    """Build the standardisation basis under one availability treatment.
+
+    Returns ``(basis, projections, statuses, rate_sources, pool)``. ``statuses`` is the
+    effective-dated platform status the board consumed — empty outside ``projected``, which
+    is the only mode that prices availability (``realized`` grades a finished season,
+    ``neutral`` is the no-availability ablation). ``rate_sources`` names every player priced
+    outside the ranked season.
+    """
     from statistics import fmean, median, pstdev
 
     projections: dict[str, object] = {}
+    statuses: dict[str, Availability | None] = {}
+    sources: dict[str, str] = {}
+    pool: list[str] = []
     if availability is AvailabilityMode.REALIZED:
         # Grading a finished season: a week the player missed is a week the manager lost the
         # category, so measuring weekly totals directly is correct and must not change.
@@ -313,13 +408,16 @@ def _basis(
         # `compound_weekly`. Aggregating to weeks first would smuggle realized availability
         # back in through each player's games-per-active-week.
         per_game, pool = measure_per_game_stats(
-            store, season, categories, pool_size, forward_season=forward_season
+            store, season, categories, pool_size, forward_season=forward_season,
+            min_games=BASELINE_MIN_GAMES, sources=sources,
         )
         n_sched = scheduled_games_per_week(store, season)
         if availability is AvailabilityMode.PROJECTED:
             if not as_of:
                 raise ValueError("projected availability needs an --as-of date")
-            projections = project_availability(store, season, as_of, players=pool)
+            statuses = status_for_pool(store, pool, as_of)
+            projections = project_availability(store, season, as_of, players=pool,
+                                               statuses=statuses)
             rates = {p: getattr(g, "availability_rate", 1.0) for p, g in projections.items()}
         else:
             rates = dict.fromkeys(per_game, 1.0)
@@ -340,7 +438,7 @@ def _basis(
         categories=categories, bases=bases, stats=stats, pool=scored_players,
         kappa=kappa, mode=mode,
     )
-    return basis, projections
+    return basis, projections, statuses, sources, pool
 
 
 def build_board(
@@ -365,8 +463,13 @@ def build_board(
     reduced category set and the same pool, so the delta isolates the metric and nothing else.
 
     ``forward_season`` names the season being drafted into (e.g. 2026-27): players the ranked
-    season cannot place are ranked by derived depth on that season's projected roster, and the
-    provenance line records the placement source.
+    season cannot place are ranked by derived depth on that season's projected roster, priced
+    per-game from their last healthy season, and the provenance line records both sources.
+
+    Platform status is consumed in the ``projected`` availability mode: effective-dated
+    designations (task 2.1) cap the availability rate, rows carry the status and its dated
+    note, and every player nothing could price is reported in ``Board.unpriced`` rather than
+    silently dropped.
     """
     punt = tuple(punt)
     unknown = [c for c in punt if c not in DEFAULT_CATEGORIES]
@@ -376,7 +479,7 @@ def build_board(
     if not scored:
         raise ValueError("cannot punt every category")
 
-    basis, projections = _basis(
+    basis, projections, statuses, sources, pool = _basis(
         store, season, scored, pool_size, kappa, mode, availability, as_of,
         forward_season=forward_season,
     )
@@ -397,8 +500,17 @@ def build_board(
         ordered = sorted(zvals.items(), key=lambda kv: (-kv[1], kv[0]))
         z_rank = {pid: i for i, (pid, _) in enumerate(ordered, start=1)}
 
+    # Players the pool holds but nothing could price are reported, never silently dropped
+    # (R3): no ranked-season sample, and no earlier season cleared the baseline floor.
+    unpriced_ids = [pid for pid in pool if pid not in basis.stats]
     ids = [pid for pid, _, _ in ranked]
-    names = _player_names(store, season, ids)
+    names = _player_names(store, season, ids + unpriced_ids)
+    unpriced = tuple(
+        (pid, names.get(pid, pid),
+         f"no usable {season} sample and no earlier season above {BASELINE_MIN_GAMES} games")
+        for pid in unpriced_ids
+    )
+
     rows = [
         BoardRow(
             rank=i,
@@ -416,9 +528,16 @@ def build_board(
             ),
             z_rank=z_rank.get(pid),
             z_delta=(z_rank[pid] - i) if pid in z_rank else None,
+            status=(s.status if (s := statuses.get(pid)) else None),
+            status_note=(s.note or None if (s := statuses.get(pid)) else None),
+            rate_source=sources.get(pid),
         )
         for i, (pid, total, cats) in enumerate(ranked, start=1)
     ]
+    status_counts: dict[str, int] = {}
+    for s in statuses.values():
+        if s is not None and s.status != ACTIVE:
+            status_counts[s.status] = status_counts.get(s.status, 0) + 1
     return Board(
         season=season,
         build=build or _build_name(punt),
@@ -430,6 +549,10 @@ def build_board(
         availability=availability,
         availability_as_of=as_of,
         forward_season=forward_season,
+        status_as_of=as_of if statuses else None,
+        status_counts=status_counts,
+        rate_sources=dict(sources),
+        unpriced=unpriced,
         rows=rows[:limit] if limit else rows,
     )
 
@@ -477,6 +600,8 @@ def board_json(board: Board, top: int | None = None) -> dict:
         "availability": str(board.availability),
         "availability_as_of": board.availability_as_of,
         "forward_season": board.forward_season,
+        "status_as_of": board.status_as_of,
+        "unpriced": [list(u) for u in board.unpriced],
         "basis": board.basis,
         "rows": [
             {
@@ -488,6 +613,9 @@ def board_json(board: Board, top: int | None = None) -> dict:
                 "availability_rate": r.availability_rate,
                 "z_rank": r.z_rank,
                 "z_delta": r.z_delta,
+                "status": r.status,
+                "status_note": r.status_note,
+                "rate_source": r.rate_source,
                 "categories": r.categories,
             }
             for r in rows
@@ -502,16 +630,32 @@ def render_table(board: Board, top: int = 30) -> str:
         f"({len(board.categories)} cats, pool {board.pool_size}, κ={board.kappa})",
         board.basis,
         "",
-        f"{'#':>3}  {'player':<26} {'G':>7}  {'vs z':>6}  {'gp':>5}  top categories",
+        f"{'#':>3}  {'player':<26} {'G':>7}  {'vs z':>6}  {'gp':>5}  {'st':>3}  top categories",
     ]
-    for r in board.rows[:top]:
+    shown = board.rows[:top]
+    for r in shown:
         delta = "—" if r.z_delta is None else f"{r.z_delta:+d}"
         gp = "—" if r.expected_games is None else f"{r.expected_games:.0f}"
+        st = {"OUT": "OUT", "QUESTIONABLE": "QUE", "ACTIVE": "act"}.get(r.status or "", "")
+        name = r.player_name + ("*" if r.rate_source else "")
         best = sorted(r.categories.items(), key=lambda kv: -kv[1])[:3]
         cats = " ".join(f"{c}{v:+.2f}" for c, v in best)
         lines.append(
-            f"{r.rank:>3}  {r.player_name:<26} {r.total:>+7.3f}  {delta:>6}  {gp:>5}  {cats}"
+            f"{r.rank:>3}  {name:<26} {r.total:>+7.3f}  {delta:>6}  {gp:>5}  {st:>3}  {cats}"
         )
+        context = []
+        if r.status_note:
+            context.append(f"{r.status} — {r.status_note}")
+        if r.rate_source:
+            context.append(f"rates priced from {r.rate_source.split(':', 1)[1]}")
+        if context:
+            lines.append(" " * 61 + "· " + " — ".join(context))
+    if any(r.rate_source for r in shown):
+        lines.append("* rates priced from an earlier healthy season")
+    if board.unpriced:
+        lines.append(f"unpriced ({len(board.unpriced)}):")
+        for _pid, name, reason in board.unpriced[:10]:
+            lines.append(f"  {name}: {reason}")
     return "\n".join(lines)
 
 
@@ -532,16 +676,25 @@ def render_markdown(board: Board, top: int = 150) -> str:
         "separately from the variance effect rather than being conflated with it.",
         "",
         "| # | Player | G-score | vs z | exp GP |"
-        + "".join(f" {c} |" for c in board.categories),
-        "|--:|---|--:|--:|--:|" + "--:|" * len(board.categories),
+        + "".join(f" {c} |" for c in board.categories)
+        + " st | note |",
+        "|--:|---|--:|--:|--:|" + "--:|" * len(board.categories) + "---|---|",
     ]
     for r in board.rows[:top]:
         delta = "—" if r.z_delta is None else f"{r.z_delta:+d}"
         gp = "—" if r.expected_games is None else f"{r.expected_games:.0f}"
+        st = {"OUT": "OUT", "QUESTIONABLE": "QUE"}.get(r.status or "", "")
+        note = (r.status_note or "").replace("|", "/")
         cells = "".join(f" {r.categories.get(c, 0.0):+.2f} |" for c in board.categories)
+        star = "*" if r.rate_source else ""
         lines.append(
-            f"| {r.rank} | {r.player_name} | {r.total:+.3f} | {delta} | {gp} |{cells}"
+            f"| {r.rank} | {r.player_name}{star} | {r.total:+.3f} | {delta} | {gp} |{cells}"
+            f" {st} | {note} |"
         )
+    if any(r.rate_source for r in board.rows[:top]):
+        lines.append("")
+        lines.append("\\* rates priced from an earlier healthy season "
+                     "(see `rate_source` in the JSON export)")
     return "\n".join(lines) + "\n"
 
 
