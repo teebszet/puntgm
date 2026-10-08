@@ -19,8 +19,8 @@ view and punt scenarios instead.
 
 | Requirement | Kind | Delivered by | Read at |
 |---|---|---|---|
-| Per-game rates over games actually played | new | task 1.1 | to fill |
-| Draft pool reflects current role | new | task 1.2 | to fill |
+| Per-game rates over games actually played | new | task 1.1 | `fantasy_gm/valuation.py` `_player_games(played_only)` + `fantasy_gm/draft/xscore.py:349` @ 557c77f; suite 356 passed at that sha |
+| Draft pool reflects current role | new | task 1.2 | `fantasy_gm/valuation.py` `rosterable_pool` (season window + depth placement) @ 557c77f; tests `test_valuation.py` ranked-season + depth, run at that sha |
 | News overrides place and price a player | superseded round 1 — replaced by live-data adjustments, see round 1 map | — | — |
 | Forward basis available and labeled | new | task 3.1 | to fill |
 | Recommendations carry market context + columns | new | task 4.2 | to fill |
@@ -64,4 +64,24 @@ round — force-synced.
 | Availability adjusts from ingested platform status, not hand rows | new | task 2.1 | to fill |
 | Last-healthy-baseline pricing for unusable ranked seasons | new | task 2.2 | to fill |
 | Provenance names each source; news display-only; unpriced surfaced | new | task 2.3 | to fill |
-| Draft pool reflects current role — injury-wiped season = no usable sample | corrected | task 2.2 (contradicts: ranked-season minutes would zero-rank an injury-wiped season; test pins placement by derived depth) | to fill |
+| Draft pool reflects current role — injury-wiped season = no usable sample | corrected | task 2.2 (contradicts: ranked-season minutes would zero-rank an injury-wiped season; test pins placement by derived depth) | placement half delivered by task 1.2 @ 557c77f (`rosterable_pool` depth placement; `test_valuation.py` lost-season test); rate half waits on 2.2 |
+
+## 2026-10-08 — build note: basis fixes landed; evidence re-measured
+
+Tasks 1.1–1.3 built and committed at `557c77f` (suite 356 passed at that sha, pushed).
+On the live store: the depth rule places **6** previously-absent players into the pool —
+Kyrie Irving, Damian Lillard, Bradley Beal, Tyrese Haliburton, Fred VanVleet, Walker
+Kessler — at 156 pool size (six lowest minutes-ranked players fall off the bottom).
+They have placement but no rate rows yet; task 2.2 prices them.
+
+**Evidence re-measure (corrects the round-0 context numbers).** Re-running the DNP census
+against the current store does not reproduce the round-0 figures. Measured 2026-10-08:
+all-zero stat rows per season are **800 / 730 / 638** (2023-24 / 2024-25 / 2025-26), of which
+only **118 / 100 / 83** have zero recorded minutes (true DNP rows); the rest are real
+garbage-time games (2–5 minutes, a turnover, no shots) and correctly stay in the rates.
+Giannis Antetokounmpo has **36** 2025-26 rows, none DNP, mean 27.6 pts — the round-0
+"13.9 with rows / 18.6 without" example does not reproduce on this store. The round-0
+counts (2,273 / 2,159 / 1,985 per season; Giannis example) are unlocated — likely a
+different census (possibly zero-weeks from idle-week filling, not DNP rows). The fix is
+spec-correct regardless (a DNP row is a game not played, by definition); the mechanism is
+what changed, not the magnitudes. Design.md context figures stand corrected by this note.
