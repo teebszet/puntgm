@@ -153,3 +153,44 @@ unchanged. Comments and docstrings now say what the code does.
 | Requirement | Kind | Delivered by | Read at |
 |---|---|---|---|
 | Forward basis available and labeled | new | task 3.1 (`rate_basis` on `build_board`/`build_gm`, `--basis` on `cmd_board`; label = basis line date + caveat) | tests `test_board.py::test_projected_basis_*` (6) + full suite 387 passed @ 56ac54f; caveat text pinned in `Board.basis` |
+
+## 2026-10-08 — build note: the column model shipped end-to-end (tasks 4.1–4.4)
+
+One ordered column spec (`COLUMN_SPECS` in `live.py`) is now the single source for both
+renderers. `Candidate` carries `adp` (1-based Yahoo pick number), `adp_dev` (ADP minus
+board rank — negative is the market expecting them earlier than the board does), and
+`neg_cats` (worst-first, only genuinely negative contributions, at most two). Unpriced
+players render explicit absence: `adp`/`adp_dev` are `null` in state.json and `—` on
+screen, never a fake 0.
+
+**Surfaces.** `fantasy-gm draft --columns a,b,c` (validated once, before the draft starts
+— an unknown name is an error that lists the known set; duplicates collapse; an empty
+spec is an error, not the default) and `scripts/dry_run_watch.py --columns`. The watcher
+embeds `column_spec_json()` (the picker menu: key, header, default flag) plus
+`candidate_json()` per candidate into state.json — additive over 4.1: old keys unchanged,
+`adp`/`adp_dev`/`neg_cats`/`column_spec` new. The page renders its table from the embedded
+spec, with a chip picker persisted in `localStorage` under `rec-columns`, re-validated
+against the embedded spec every render (unknown stored keys are dropped; an empty or
+invalid selection falls back to the spec's defaults — a table needs columns). State files
+written by an older watcher (no `column_spec`) still render the fallback fixed table with
+pretty headers, so a stale serve process can never blank the card mid-draft.
+
+**How the page was checked.** No browser automation in this repo, so the page's actual
+`<script>` runs in node under a minimal DOM shim (`.scratch/page_dom_smoke.js`): 13
+assertions across spec-driven defaults, explicit absence, the no-spec fallback, picker
+persistence, bogus-key dropping, and click behavior. It caught one real defect — the
+no-spec path rendered raw keys (`vs_safe`, `top_cats`) as headers instead of the previous
+pretty labels; a header fallback map now covers it.
+
+**Correction recovered from the interrupted session:** the half-built renderer indexed
+`COLUMN_SPECS[k]` as if it were a dict; the fix is the `COLUMN_BY_KEY` lookup the spec is
+built around.
+
+### Requirement → delivery map (4.1–4.4 update)
+
+| Requirement | Kind | Delivered by | Read at |
+|---|---|---|---|
+| Market columns on the candidate + additive page schema | new | `Candidate.adp/adp_dev/neg_cats`, `candidate_json` (nulls when unpriced, neg cats worst-first pairs) | `tests/test_draft_live.py::test_candidate_json_additive_schema` @ this commit; suite 393 passed |
+| Column selection on CLI + watch page, default set fixed | new | `parse_columns` + `fantasy-gm draft --columns` (validated at startup) + `dry_run_watch.py --columns`; page picker persisted in `localStorage` | `test_parse_columns_default_subset_and_duplicates` / `test_parse_columns_reports_unknown`; page smoke (picker persistence + bogus-key drop) |
+| Terminal and page render from the same spec | new | `render_recommendation(rec, columns)` via `COLUMN_BY_KEY`; page renders `rec.column_spec` keys/headers, fallback table when absent | `test_render_recommendation_explicit_absence_and_market_columns`; page smoke (spec + no-spec paths) |
+| Unpriced = explicit absence; unknown columns reported | new | `—` cells + `null` fields for unpriced; `parse_columns` raises naming the unknown set | `test_render_recommendation_explicit_absence_and_market_columns` (— row tokens), `test_parse_columns_reports_unknown` |

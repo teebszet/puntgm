@@ -22,6 +22,7 @@ import json
 import re
 import time
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -441,6 +442,15 @@ class Candidate:
     categories: dict[str, float]       # per-category contribution in basis units
     engine_value: float | None = None  # H0 objective, when the engine fit the clock
     engine_delta: float | None = None
+    adp: int | None = None
+    """Yahoo ADP as a 1-based pick number; ``None`` is explicit absence (R5) — the market
+    never priced this player, and a zero would read as a real ADP of pick 0."""
+    adp_dev: int | None = None
+    """ADP minus board rank: negative means the market expects them earlier than the board
+    does — the injured-four gap made visible (D4). ``None`` with ``adp``."""
+    neg_cats: tuple[tuple[str, float], ...] = ()
+    """The categories this candidate most *negatively* contributes to, worst first, at most
+    two, only genuinely negative contributions (R5). A player who drags nothing renders none."""
 
 
 @dataclass
@@ -459,6 +469,93 @@ class Recommendation:
 
 def _adp_ranks(adp_order: list[str] | None) -> dict[str, int]:
     return {pid: i for i, pid in enumerate(adp_order)} if adp_order else {}
+
+
+def _neg_cats_of(categories: dict[str, float], n: int = 2) -> tuple[tuple[str, float], ...]:
+    """The candidate's worst category contributions, worst first — only genuinely negative
+    ones (a positive contribution is not a drag, however small)."""
+    negs = sorted(((k, v) for k, v in categories.items() if v < 0), key=lambda kv: kv[1])
+    return tuple(negs[:n])
+
+
+# --- the column model (R5/4.2) ---------------------------------------------------
+#
+# One ordered spec both renderers consume (4.3): the terminal builds its fixed-width row
+# from it, and the watch page renders from the same keys and headers (the watcher embeds
+# column_spec_json() in state.json; the page's picker persists the chosen keys in
+# localStorage and validates them against this spec every render).
+
+
+@dataclass(frozen=True)
+class ColumnSpec:
+    """One column of the recommendation card."""
+
+    key: str
+    header: str
+    cell: Callable[[Candidate], str]
+    width: int | None = None   # terminal cell width; None = trailing column, no padding
+    align: str = ">"           # terminal alignment for the header and the cell alike
+
+
+COLUMN_SPECS: tuple[ColumnSpec, ...] = (
+    ColumnSpec("rk", "rk", width=4, cell=lambda c: str(c.board_rank)),
+    ColumnSpec("player", "player", width=24, align="<", cell=lambda c: c.name[:24]),
+    ColumnSpec("value", "value", width=7, cell=lambda c: f"{c.total:.2f}"),
+    ColumnSpec("vs_safe", "vs safe", width=8, cell=lambda c: f"{c.value_over_safe:+.2f}"),
+    ColumnSpec("surv", "surv", width=5, cell=lambda c: f"{c.survival:.0%}"),
+    ColumnSpec("adp", "adp", width=5, cell=lambda c: "—" if c.adp is None else str(c.adp)),
+    ColumnSpec("adp_dev", "adp−rk", width=8,
+               cell=lambda c: "—" if c.adp_dev is None else f"{c.adp_dev:+d}"),
+    ColumnSpec("top_cats", "top cats", align="<",
+               cell=lambda c: " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v
+                                       in sorted(c.categories.items(),
+                                                 key=lambda kv: -kv[1])[:3])),
+    ColumnSpec("neg_cats", "neg cats", align="<",
+               cell=lambda c: " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v in c.neg_cats)),
+)
+DEFAULT_COLUMNS = ("rk", "player", "value", "vs_safe", "surv", "adp", "top_cats", "neg_cats")
+
+COLUMN_BY_KEY: dict[str, ColumnSpec] = {s.key: s for s in COLUMN_SPECS}
+
+
+def parse_columns(spec: str | None) -> tuple[str, ...]:
+    """The requested column keys, validated. ``None`` is the default set; unknown names are
+    reported (4.4) — an unrecognised column is an error, never a silently dropped one, and
+    duplicates collapse to their first occurrence."""
+    if spec is None:
+        return DEFAULT_COLUMNS
+    keys = [s.strip() for s in spec.split(",") if s.strip()]
+    if not keys:
+        raise ValueError("no columns requested")
+    known = [s.key for s in COLUMN_SPECS]
+    unknown = [k for k in keys if k not in known]
+    if unknown:
+        raise ValueError(f"unknown column(s): {', '.join(unknown)} (known: {', '.join(known)})")
+    return tuple(dict.fromkeys(keys))
+
+
+def column_spec_json() -> list[dict]:
+    """The full picker menu for the page: every column, its header, and the default flag."""
+    return [{"key": s.key, "header": s.header, "default": s.key in DEFAULT_COLUMNS}
+            for s in COLUMN_SPECS]
+
+
+def candidate_json(c: Candidate) -> dict:
+    """The state.json form of one candidate — additive over the 4.4 schema (R5): ``adp`` /
+    ``adp_dev`` stay ``null`` when the market never priced the player, and ``neg_cats`` is
+    a list of ``[category, contribution]`` pairs, worst first."""
+    return {
+        "name": c.name,
+        "board_rank": c.board_rank,
+        "total": round(c.total, 2),
+        "value_over_safe": round(c.value_over_safe, 2),
+        "survival": round(c.survival, 3),
+        "categories": {k.split("_")[0]: round(v, 2) for k, v in c.categories.items()},
+        "engine_value": None if c.engine_value is None else round(c.engine_value, 3),
+        "adp": c.adp,
+        "adp_dev": c.adp_dev,
+        "neg_cats": [[k, round(v, 2)] for k, v in c.neg_cats],
+    }
 
 
 def _board_candidates(
@@ -484,11 +581,16 @@ def _board_candidates(
     )
     out: list[Candidate] = []
     for r, surv in zip(rows, survivals, strict=True):
+        adp_i = ranks.get(r.player_id)
+        adp = adp_i + 1 if adp_i is not None else None  # ADP is a 1-based pick number
         out.append(Candidate(
             player_id=r.player_id, name=names.get(r.player_id, r.player_id),
             board_rank=r.rank, total=r.total,
             value_over_safe=(r.total - safe_total) if safe_total is not None else 0.0,
             survival=surv, categories=dict(r.categories),
+            adp=adp,
+            adp_dev=(adp - r.rank) if adp is not None else None,
+            neg_cats=_neg_cats_of(r.categories),
         ))
         if len(out) >= top_n:
             break
@@ -579,8 +681,21 @@ def recommend(
     )
 
 
-def render_recommendation(rec: Recommendation, *, full_categories: bool = False) -> str:
-    """A terminal-sized answer for the person on the clock."""
+def _fmt_cell(text: str, spec: ColumnSpec) -> str:
+    """A cell fixed to the spec's width, aligned per the spec. A trailing column
+    (``width=None``) is not truncated or padded."""
+    if not spec.width:
+        return text
+    text = text[:spec.width - 1]
+    return text.rjust(spec.width - 1) if spec.align == ">" else text.ljust(spec.width - 1)
+
+
+def render_recommendation(
+    rec: Recommendation, columns: tuple[str, ...] = DEFAULT_COLUMNS,
+) -> str:
+    """A terminal-sized answer for the person on the clock, rendered from the column
+    spec (4.3): the same keys and headers the watch page consumes."""
+    specs = [COLUMN_BY_KEY[k] for k in columns]
     lines = []
     clock = rec.on_the_clock
     who = ("YOU ARE ON THE CLOCK" if clock == rec.my_seat
@@ -593,19 +708,15 @@ def render_recommendation(rec: Recommendation, *, full_categories: bool = False)
     if not rec.candidates:
         lines.append("  no candidates")
         return "\n".join(lines)
-    header = f"  {'rk':>3} {'player':<24} {'value':>7} {'vs safe':>8} {'surv':>5}"
-    lines.append(header)
+    lines.append("  " + " ".join(_fmt_cell(s.header, s) for s in specs))
     for c in rec.candidates:
-        engine = ""
+        suffix = ""
         if c.engine_value is not None:
-            engine = f"  H0 {c.engine_value:+.3f} (Δ{c.engine_delta:+.3f})"
-        cats = sorted(c.categories.items(), key=lambda kv: -kv[1])[:3]
-        cat_str = " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v in cats)
-        lines.append(
-            f"  {c.board_rank:>3} {c.name[:24]:<24} {c.total:>7.2f} "
-            f"{c.value_over_safe:>+8.2f} {c.survival:>4.0%}  {cat_str}{engine}"
-        )
+            suffix = f"  H0 {c.engine_value:+.3f} (\u0394{c.engine_delta:+.3f})"
+        cells = " ".join(_fmt_cell(s.cell(c), s) for s in specs).rstrip()
+        lines.append("  " + cells + suffix)
     return "\n".join(lines)
+
 
 
 # --- session builder -----------------------------------------------------------

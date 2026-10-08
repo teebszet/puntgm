@@ -35,12 +35,12 @@
 
 ## 4. Recommendation columns (R5)
 
-- [ ] 4.1 `Candidate` gains `adp`, `adp_dev` (ADP minus board rank), `neg_cats`; explicit
+- [x] 4.1 `Candidate` gains `adp`, `adp_dev` (ADP minus board rank), `neg_cats`; explicit
       absence for unpriced players; page state schema grows additively
-- [ ] 4.2 Column model: `recommend --columns` / watch-page column picker persisted in
+- [x] 4.2 Column model: `recommend --columns` / watch-page column picker persisted in
       localStorage; default set rk, player, value, vs safe, surv, adp, top cats, neg cats
-- [ ] 4.3 Terminal renderer and page table render from the same column spec
-- [ ] 4.4 Test: unpriced player renders explicit absence; picker persists; unknown column
+- [x] 4.3 Terminal renderer and page table render from the same column spec
+- [x] 4.4 Test: unpriced player renders explicit absence; picker persists; unknown column
       names are reported not dropped
 
 ## 5. Category differential view (R6)

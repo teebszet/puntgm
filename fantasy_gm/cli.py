@@ -618,6 +618,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
         apply_manual_pick,
         build_gm,
         load_state,
+        parse_columns,
         poll_draft_results,
         recommend,
         reconcile,
@@ -627,6 +628,11 @@ def cmd_draft(args: argparse.Namespace) -> int:
 
     config = Config()
     store = _store(config)
+    try:
+        columns = parse_columns(args.columns)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     state_path = Path(f"data/draft_{args.league.replace('.', '_')}.json")
     if state_path.exists() and not args.fresh:
         state = load_state(state_path)
@@ -656,7 +662,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
             rec = recommend(store, args.season, state, pool, board=gm["board"],
                             adp_order=gm["adp_order"], names=names,
                             budget_s=args.budget)
-            print(render_recommendation(rec))
+            print(render_recommendation(rec, columns))
             continue
         if cmd == "p":
             if not arg:
@@ -697,7 +703,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
             rec = recommend(store, args.season, state, pool, board=gm["board"],
                             adp_order=gm["adp_order"], names=names,
                             budget_s=args.budget)
-            print(render_recommendation(rec))
+            print(render_recommendation(rec, columns))
             save_state(state, state_path)
             continue
         if cmd == "board":
@@ -922,6 +928,9 @@ def build_parser() -> argparse.ArgumentParser:
     df.add_argument("--rounds", type=int, default=13)
     df.add_argument("--budget", type=float, default=8.0,
                     help="seconds the on-the-clock evaluation may take (4.5)")
+    df.add_argument("--columns", default=None,
+                    help="comma-separated recommendation columns "
+                         "(default: rk,player,value,vs_safe,surv,adp,top_cats,neg_cats)")
     df.add_argument("--fresh", action="store_true", help="ignore any saved draft state")
     df.set_defaults(func=cmd_draft)
 

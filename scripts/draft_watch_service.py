@@ -241,7 +241,13 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     from fantasy_gm.config import Config
     from fantasy_gm.data.store import Store
     from fantasy_gm.draft.live import (
-        DraftState, build_gm, poll_draft_results, recommend, reconcile,
+        DraftState,
+        build_gm,
+        candidate_json,
+        column_spec_json,
+        poll_draft_results,
+        recommend,
+        reconcile,
     )
 
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -386,19 +392,11 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
                 "note": rec.note,
                 "for_me": draft_state.is_my_pick(),
                 "my_next_pick": my_next,
-                "candidates": [
-                    {
-                        "name": c.name,
-                        "board_rank": c.board_rank,
-                        "total": round(c.total, 2),
-                        "value_over_safe": round(c.value_over_safe, 2),
-                        "survival": round(c.survival, 3),
-                        "categories": {k.split("_")[0]: round(v, 2)
-                                       for k, v in c.categories.items()},
-                        "engine_value": None if c.engine_value is None else round(c.engine_value, 3),
-                    }
-                    for c in rec.candidates
-                ],
+                # The page renders this table from the same spec the terminal does (4.3):
+                # the picker menu plus the additive per-candidate fields (adp/adp_dev stay
+                # null when the market never priced the player; neg_cats worst first).
+                "column_spec": column_spec_json(),
+                "candidates": [candidate_json(c) for c in rec.candidates],
             }
         else:
             state["recommendation"] = None

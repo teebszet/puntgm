@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from fantasy_gm.draft.live import (
+    COLUMN_SPECS,
+    DEFAULT_COLUMNS,
     DraftState,
     Pick,
     _seat_of,
@@ -12,6 +14,7 @@ from fantasy_gm.draft.live import (
     build_player_directory,
     load_state,
     normalize_name,
+    parse_columns,
     parse_draft_results,
     reconcile,
     render_recommendation,
@@ -254,6 +257,109 @@ def test_render_recommendation_shows_degrade_and_rows():
     out = render_recommendation(rec)
     assert "DEGRADED" in out and "4.5" in out
     assert "Player One" in out and "+1.25" in out and "40%" in out
+
+
+# --- the column model (4.2-4.4) --------------------------------------------------
+
+
+def _candidate(**kw):
+    from fantasy_gm.draft.live import Candidate
+
+    base = dict(player_id="1", name="Player One", board_rank=1, total=9.5,
+                value_over_safe=1.25, survival=0.4, categories={"pts": 2.1})
+    base.update(kw)
+    return Candidate(**base)
+
+
+def test_parse_columns_default_subset_and_duplicates():
+    assert parse_columns(None) == DEFAULT_COLUMNS
+    assert parse_columns("surv, adp") == ("surv", "adp")
+    assert parse_columns("adp,adp, surv") == ("adp", "surv")  # duplicates collapse
+    with pytest.raises(ValueError, match="no columns requested"):
+        parse_columns("")  # an explicitly empty spec is an error, not the default
+
+
+def test_parse_columns_reports_unknown():
+    with pytest.raises(ValueError, match="bogus_col"):
+        parse_columns("rk,bogus_col")
+    with pytest.raises(ValueError, match="nope1.*nope2|nope2.*nope1"):
+        parse_columns("nope1,nope2")
+    with pytest.raises(ValueError, match="no columns requested"):
+        parse_columns("  ,  ")
+
+
+def test_render_recommendation_explicit_absence_and_market_columns():
+    from fantasy_gm.draft.live import Recommendation
+
+    # board_rank 5 priced at adp 2: the market expects them three picks EARLIER than
+    # the board does — adp_dev = adp - rank = -3.
+    priced = _candidate(board_rank=5, adp=2, adp_dev=-3,
+                        neg_cats=(("tov", -0.8), ("fg_pct", -0.3)))
+    unpriced = _candidate(player_id="2", name="Player Two", board_rank=2, total=8.0,
+                          value_over_safe=0.5, survival=0.6)
+    rec = Recommendation(pick_number=1, on_the_clock=1, my_seat=1, mode="board",
+                         elapsed_s=0.1, degraded=False, note="",
+                         candidates=[priced, unpriced])
+
+    # Explicit absence: a column set without the market columns renders neither.
+    out = render_recommendation(rec, ("rk", "player", "value"))
+    assert "adp" not in out and "Player One" in out
+    # Default set: the adp column shows the priced pick number and explicit absence
+    # (—) for the unpriced player, never a fake 0. Cells in column order per row:
+    full = render_recommendation(rec, parse_columns(None))
+    rows = [ln for ln in full.splitlines() if "Player" in ln]
+    assert rows[0].split() == ["5", "Player", "One", "9.50", "+1.25", "40%",
+                               "2", "pts+2.10", "tov-0.80", "fg-0.30"]
+    assert rows[1].split() == ["2", "Player", "Two", "8.00", "+0.50", "60%",
+                               "—", "pts+2.10"]  # no neg cats: nothing after top cats
+    # The gap column on request: signed pick difference, — when unpriced.
+    gap = render_recommendation(rec, ("rk", "player", "adp", "adp_dev"))
+    grows = [ln for ln in gap.splitlines() if "Player" in ln]
+    assert grows[0].split()[-2:] == ["2", "-3"] and grows[1].split()[-2:] == ["—", "—"]
+
+
+def test_render_recommendation_neg_cats_only_when_genuinely_negative():
+    from fantasy_gm.draft.live import Recommendation
+
+    drags = _candidate(neg_cats=(("tov", -0.8),))
+    clean = _candidate(player_id="2", name="Player Two", board_rank=2, total=8.0,
+                       value_over_safe=0.5, survival=0.6, categories={"pts": 1.0})
+    rec = Recommendation(pick_number=1, on_the_clock=1, my_seat=1, mode="board",
+                         elapsed_s=0.1, degraded=False, note="",
+                         candidates=[drags, clean])
+    out = render_recommendation(rec, ("rk", "player", "neg_cats"))
+    assert "tov" in out
+    lines = [ln for ln in out.splitlines() if "Player" in ln]
+    assert len(lines) == 2 and "tov" not in lines[1]  # a player who drags nothing: none
+
+
+def test_candidate_json_additive_schema():
+    from fantasy_gm.draft.live import candidate_json
+
+    priced = candidate_json(_candidate(categories={"pts": 2.1, "tov": -0.8},
+                                       adp=2, adp_dev=-3,
+                                       neg_cats=(("tov", -0.8), ("fg_pct", -0.3))))
+    unpriced = candidate_json(_candidate(player_id="2", name="Two", board_rank=2,
+                                         total=8.0, value_over_safe=0.5, survival=0.6,
+                                         categories={"reb": 1.0}))
+    # The 4.1 keys the page already consumed are all still present (additive, R5).
+    old_keys = {"name", "board_rank", "total", "value_over_safe", "survival",
+                "categories", "engine_value"}
+    assert old_keys <= set(priced)
+    # Market columns: ints when priced, explicit nulls when not; neg cats worst first.
+    assert (priced["adp"], priced["adp_dev"]) == (2, -3)
+    assert (unpriced["adp"], unpriced["adp_dev"]) == (None, None)
+    assert priced["neg_cats"] == [["tov", -0.8], ["fg_pct", -0.3]]
+    assert unpriced["neg_cats"] == []
+
+
+def test_column_spec_json_is_the_page_menu():
+    from fantasy_gm.draft.live import column_spec_json
+
+    menu = column_spec_json()
+    assert [s["key"] for s in menu] == [s.key for s in COLUMN_SPECS]
+    assert [s["key"] for s in menu if s["default"]] == list(DEFAULT_COLUMNS)
+    assert all(set(s) == {"key", "header", "default"} for s in menu)
 
 
 # --- persistence ----------------------------------------------------------------

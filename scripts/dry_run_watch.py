@@ -21,6 +21,7 @@ from fantasy_gm.data.store import Store
 from fantasy_gm.draft.live import (
     DraftState,
     build_gm,
+    parse_columns,
     poll_draft_results,
     recommend,
     reconcile,
@@ -37,6 +38,13 @@ def main() -> int:
     seat = int(sys.argv[sys.argv.index("--seat") + 1]) if "--seat" in sys.argv else 1
     interval = (float(sys.argv[sys.argv.index("--interval") + 1])
                 if "--interval" in sys.argv else 15.0)
+    columns_spec = (sys.argv[sys.argv.index("--columns") + 1]
+                    if "--columns" in sys.argv else None)
+    try:
+        columns = parse_columns(columns_spec)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     store = Store(Config().db_path)
     state_path = f"data/draft_{league.replace('.', '_')}.json"
@@ -66,7 +74,7 @@ def main() -> int:
         if state.is_my_pick():
             rec = recommend(store, "2025-26", state, gm["pool"], board=gm["board"],
                             adp_order=gm["adp_order"], names=gm["names"], budget_s=8.0)
-            print(render_recommendation(rec), flush=True)
+            print(render_recommendation(rec, columns), flush=True)
         time.sleep(interval)
 
 
