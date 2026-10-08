@@ -150,7 +150,7 @@ def fetch_draft_results(league_key: str, access_token: str) -> list[dict]:
     import requests
 
     url = (f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/draftresults"
-           f"?format=json")
+           f";out=players?format=json")
     resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
     if resp.status_code == 401:
         raise RuntimeError("401 from Yahoo — token expired; the poller will refresh and retry")
@@ -161,6 +161,28 @@ def fetch_draft_results(league_key: str, access_token: str) -> list[dict]:
         )
     resp.raise_for_status()
     return parse_draft_results(resp.json())
+
+
+def _embedded_name(node) -> str:
+    """First ``name.full`` anywhere under a parsed node.
+
+    With ``;out=players`` Yahoo embeds the full player node inside each draft_result;
+    tolerate nesting changes the same way the pick walk does.
+    """
+    if isinstance(node, dict):
+        nm = node.get("name")
+        if isinstance(nm, dict) and nm.get("full"):
+            return str(nm["full"])
+        for v in node.values():
+            got = _embedded_name(v)
+            if got:
+                return got
+    elif isinstance(node, list):
+        for v in node:
+            got = _embedded_name(v)
+            if got:
+                return got
+    return ""
 
 
 def parse_draft_results(payload) -> list[dict]:
@@ -198,6 +220,7 @@ def parse_draft_results(payload) -> list[dict]:
             "pick": num,
             "team_key": d.get("team_key"),
             "player_id": pid,
+            "name": _embedded_name(d) or None,
         })
     return out
 
@@ -318,7 +341,8 @@ def apply_manual_pick(
 
 
 def reconcile(
-    state: DraftState, platform_picks: list[dict], by_id: dict[str, str]
+    state: DraftState, platform_picks: list[dict], by_id: dict[str, str],
+    by_key: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Merge platform picks into the state, reporting every discrepancy it finds.
 
@@ -326,32 +350,63 @@ def reconcile(
     authority until Yahoo shows the pick. Discrepancies are returned as human-readable
     lines — never silently reconciled, never raised: a discrepancy list is the normal
     mid-draft condition, not an error.
+
+    Id spaces: the store/board use one id space (NBA.com ids); Yahoo draft feeds use
+    Yahoo game ids. When ``by_key`` (the player directory's normalized-name index) is
+    given, a foreign id is resolved through the pick's name; ambiguity is reported, not
+    guessed, and an unresolvable pick is recorded under its platform id with an issue
+    line so the clock never stalls. Without ``by_key`` ids pass through unchanged (the
+    caller asserts the spaces match). Yahoo mock feeds also pre-fill every remaining
+    slot with the drawn draft order and no player — those rows are placeholders, not
+    picks, and are skipped without an issue line.
     """
     issues: list[str] = []
     for p in platform_picks:
         number, pid = p.get("pick"), p.get("player_id")
-        if number is None or pid is None:
+        if number is None:
             issues.append(f"platform pick missing fields: {p}")
             continue
+        if pid is None:
+            continue  # placeholder slot: draft order pre-drawn, no player yet
         number = int(number)
         pid = str(pid)
+        name = p.get("name") or ""
+        store_pid = pid if pid in by_id else None
+        if store_pid is None and by_key is not None and name:
+            cands = by_key.get(normalize_name(name)) or []
+            if len(cands) == 1:
+                store_pid = cands[0]
+            elif len(cands) > 1:
+                shown = ", ".join(f"{c} ({by_id.get(c, c)})" for c in cands[:6])
+                issues.append(f"pick {number}: \"{name}\" matches several players "
+                              f"[{shown}] — resolve manually, pick not recorded")
+                continue
+        if store_pid is None and by_key is not None:
+            issues.append(
+                f"pick {number}: {name or 'player'} ({pid}) not in our directory; "
+                f"recorded under platform id — add it manually if it should count"
+            )
+            store_pid = pid
+        if store_pid is None:
+            store_pid = pid  # no directory given: ids pass through unchanged
+        display = by_id.get(store_pid) or name
         existing = {pk.number: pk for pk in state.picks}
         if number in existing:
-            if existing[number].player_id != pid:
+            if existing[number].player_id != store_pid:
                 ours = (existing[number].name
                         or by_id.get(existing[number].player_id, existing[number].player_id))
                 issues.append(
                     f"pick {number}: we have {ours}"
                     f" ({existing[number].player_id}, {existing[number].source}), "
-                    f"platform has {by_id.get(pid, pid)} ({pid})"
+                    f"platform has {display or store_pid} ({store_pid})"
                 )
             continue
         if number > state.pick_number:
             issues.append(f"platform shows pick {number}, we are at {state.pick_number} — gap?")
             continue
         state.picks.append(Pick(
-            number=number, player_id=pid, team_seat=_seat_of(number, state.n_teams),
-            source=PICK_SOURCE_LIVE, name=by_id.get(pid, ""),
+            number=number, player_id=store_pid, team_seat=_seat_of(number, state.n_teams),
+            source=PICK_SOURCE_LIVE, name=display,
         ))
         # keep pick order intact after inserting a retroactive pick
         state.picks.sort(key=lambda pk: pk.number)

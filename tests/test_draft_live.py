@@ -136,6 +136,80 @@ def test_reconcile_reports_disagreement_and_gap():
     assert [p.number for p in state.picks] == [1]
 
 
+def test_reconcile_skips_mock_placeholder_slots():
+    # Yahoo mock feeds pre-fill every remaining slot with the drawn draft order and no
+    # player. Those rows are placeholders, not picks: no issue lines, no state changes.
+    state = DraftState(league_key="t", n_teams=12, my_seat=1)
+    platform = [
+        {"pick": 20, "team_key": "478.l.2654071.t.5", "player_id": None},
+        {"pick": 21, "team_key": "478.l.2654071.t.4", "player_id": None},
+        {"pick": 156, "team_key": "478.l.2654071.t.12", "player_id": None},
+    ]
+    assert reconcile(state, platform, {}) == []
+    assert state.picks == []
+
+
+def test_reconcile_translates_foreign_ids_by_name():
+    # Platform ids speak Yahoo; the board/store speak their own id space. The pick's
+    # embedded name resolves through the directory's normalized-name index.
+    state = DraftState(league_key="t", n_teams=12, my_seat=1)
+    by_id = {"203999": "Nikola Jokic", "1628983": "Shai Gilgeous-Alexander"}
+    by_key = {}
+    for pid, name in by_id.items():
+        by_key.setdefault(normalize_name(name), []).append(pid)
+    platform = [
+        {"pick": 1, "team_key": "t.1", "player_id": "5352", "name": "Nikola Jokić"},
+        {"pick": 2, "team_key": "t.2", "player_id": "201566", "name": "Shai Gilgeous-Alexander"},
+    ]
+    issues = reconcile(state, platform, by_id, by_key)
+    assert issues == []
+    assert [p.player_id for p in state.picks] == ["203999", "1628983"]
+    assert state.picks[0].name == "Nikola Jokic"
+
+
+def test_reconcile_flags_ambiguous_name_without_guessing():
+    state = DraftState(league_key="t", n_teams=4, my_seat=1)
+    by_id = {"1": "Gary Payton", "2": "Gary Payton II"}
+    by_key = {"gary payton": ["1", "2"]}
+    platform = [{"pick": 1, "team_key": "t.1", "player_id": "77", "name": "Gary Payton"}]
+    issues = reconcile(state, platform, by_id, by_key)
+    assert any("matches several players" in i for i in issues)
+    assert state.picks == []
+
+
+def test_reconcile_records_unresolvable_and_keeps_clock():
+    # A name our directory lacks must not stall the clock: record under the platform
+    # id, flag it, and keep merging the picks after it.
+    state = DraftState(league_key="t", n_teams=4, my_seat=1)
+    by_id = {"203999": "Nikola Jokic"}
+    by_key = {"nikola jokic": ["203999"]}
+    platform = [
+        {"pick": 1, "team_key": "t.1", "player_id": "777", "name": "Draft Nugget"},
+        {"pick": 2, "team_key": "t.2", "player_id": "5352", "name": "Nikola Jokić"},
+    ]
+    issues = reconcile(state, platform, by_id, by_key)
+    assert any("not in our directory" in i for i in issues)
+    assert [p.player_id for p in state.picks] == ["777", "203999"]
+    assert state.pick_number == 3
+
+
+def test_parse_draft_results_extracts_embedded_name_and_placeholders():
+    # Real shape (captured 2026-10-08 from a live mock): draft_result embeds the player
+    # node with ;out=players; unfilled slots have a pick and team but no player_key.
+    payload = {"fantasy_content": {"league": [{"draft_results": {
+        "0": {"draft_result": {
+            "pick": 1, "round": 1, "team_key": "478.l.2654071.t.1",
+            "player_key": "478.p.5352",
+            "0": {"players": {"0": {"player": [["478.p.5352"], {"player_id": "5352"},
+                   {"name": {"full": "Nikola Jokić", "first": "Nikola", "last": "Jokić"}}]}}}}},
+        "1": {"draft_result": {"pick": 20, "team_key": "478.l.2654071.t.5"}},
+    }}]}}
+    picks = parse_draft_results(payload)
+    assert picks[0]["player_id"] == "5352"
+    assert picks[0]["name"] == "Nikola Jokić"
+    assert picks[1]["player_id"] is None and picks[1]["name"] is None
+
+
 def test_parse_draft_results_finds_nested_picks():
     payload = {"fantasy_content": {"league": [{"draft_results": {
         "0": {"draft_result": {"pick": "1", "team_key": "t.1", "player_key": "478.p.111"}},

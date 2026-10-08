@@ -127,24 +127,35 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     gm = build_gm(store, "2025-26", "2025-10-20")
     pool = gm["pool"]
     names = gm["names"]
+    # Full-universe directory, not the board-only names map: platform picks arrive with
+    # Yahoo game ids and foreign-id names must resolve through the whole directory.
+    dir_by_id, dir_by_key = gm["directory"]
     draft_state = DraftState(league_key=league, n_teams=12, my_seat=seat)
     # Re-arm on the same league+seat resumes the recorded draft (crash recovery):
     # picks already in the state file are adopted so nothing is lost or re-logged.
     if (prev and prev.get("league") == league and prev.get("seat") == seat
             and prev.get("picks")):
         from fantasy_gm.draft.live import Pick
+        # Adopt only picks already in our id space; raw platform ids from an older run
+        # (before the id translation existed) are re-fed and mapped by the platform
+        # poll, so dropping them here loses nothing.
+        adopted = [pk for pk in prev["picks"] if pk["player_id"] in dir_by_id]
+        dropped = len(prev["picks"]) - len(adopted)
         draft_state.picks = [
             Pick(number=pk["number"], player_id=pk["player_id"],
                  team_seat=pk["seat"], source="live", name=pk.get("name", ""))
-            for pk in prev["picks"]
+            for pk in adopted
         ]
-        log_line(state, f"resumed {len(draft_state.picks)} picks from previous run")
+        log_line(state, f"resumed {len(draft_state.picks)} picks from previous run"
+                 + (f"; dropped {dropped} untranslatable platform ids (platform re-feeds them)"
+                    if dropped else ""))
     state["status"] = "watching"
     state["board_players"] = len(pool)
     log_line(state, f"board ready: {len(pool)} players; watching seat {seat} of {league}")
     write_state(state_path, state)
 
     seen = 0
+    placeholder_logged = False
     while True:
         if stop_file.exists():
             log_line(state, "stop requested; watcher exits (page goes stale on purpose)")
@@ -165,7 +176,12 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             time.sleep(interval)
             continue
 
-        issues = reconcile(draft_state, picks, names)
+        n_placeholders = sum(1 for p in picks if p.get("player_id") is None)
+        if n_placeholders and not placeholder_logged:
+            placeholder_logged = True
+            log_line(state, f"platform pre-fills {n_placeholders} empty draft-order slots; "
+                            f"ignored (not errors)")
+        issues = reconcile(draft_state, picks, dir_by_id, dir_by_key)
         for i in issues:
             log_line(state, f"! {i}")
             print(f"  ! {i}", flush=True)
@@ -173,14 +189,14 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         if len(draft_state.picks) > seen:
             for p in draft_state.picks[seen:]:
                 who = "YOU" if p.team_seat == seat else f"seat {p.team_seat}"
-                nm = p.name or names.get(p.player_id, p.player_id)
+                nm = p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id)
                 log_line(state, f"#{p.number} {who}: {nm}")
                 print(f"#{p.number:>3} {who:<4} {nm}", flush=True)
             seen = len(draft_state.picks)
         state["pick_count"] = len(draft_state.picks)
         state["picks"] = [
             {"number": p.number, "seat": p.team_seat, "player_id": p.player_id,
-             "name": p.name or names.get(p.player_id, p.player_id)}
+             "name": p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id)}
             for p in draft_state.picks
         ]
         if draft_state.is_my_pick():
