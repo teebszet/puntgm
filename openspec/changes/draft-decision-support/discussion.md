@@ -61,10 +61,10 @@ round — force-synced.
 
 | Requirement | Kind | Delivered by | Read at |
 |---|---|---|---|
-| Availability adjusts from ingested platform status, not hand rows | new | task 2.1 | to fill |
-| Last-healthy-baseline pricing for unusable ranked seasons | new | task 2.2 | to fill |
-| Provenance names each source; news display-only; unpriced surfaced | new | task 2.3 | to fill |
-| Draft pool reflects current role — injury-wiped season = no usable sample | corrected | task 2.2 (contradicts: ranked-season minutes would zero-rank an injury-wiped season; test pins placement by derived depth) | placement half delivered by task 1.2 @ 557c77f (`rosterable_pool` depth placement; `test_valuation.py` lost-season test); rate half waits on 2.2 |
+| Availability adjusts from ingested platform status, not hand rows | new | task 2.1 @ ecafe58 (`status.py`; rate caps live in `rate_factor`) | live ingest 2026-10-08: 500 rows → 87 stored, 0 unmapped (`runs/status-ingest-478-l-25733.json`) |
+| Last-healthy-baseline pricing for unusable ranked seasons | new | task 2.2 @ ecafe58 (`valuation.last_healthy_sample`, ≥10-game floor) | tests pin Haliburton baseline + Tatum-unchanged; the four verified in the 2026-27 pool |
+| Provenance names each source; news display-only; unpriced surfaced | new | task 2.3 @ ecafe58 (basis line, `st`/note columns, `*` baseline marker, unpriced list) | board renderers + `board_json` export the new fields |
+| Draft pool reflects current role — injury-wiped season = no usable sample | corrected | task 2.2 (contradicts: ranked-season minutes would zero-rank an injury-wiped season; test pins placement by derived depth) | both halves delivered: placement task 1.2 @ 557c77f, rates task 2.2 @ ecafe58 |
 
 ## 2026-10-08 — build note: basis fixes landed; evidence re-measured
 
@@ -85,3 +85,34 @@ counts (2,273 / 2,159 / 1,985 per season; Giannis example) are unlocated — lik
 different census (possibly zero-weeks from idle-week filling, not DNP rows). The fix is
 spec-correct regardless (a DNP row is a game not played, by definition); the mechanism is
 what changed, not the magnitudes. Design.md context figures stand corrected by this note.
+
+## 2026-10-08 — build note: live-data pricing landed (tasks 2.1–2.4)
+
+Committed at `ecafe58` (suite 381 passed, ruff clean at that sha). What shipped, and what
+the real league says:
+
+- **Status ingest (2.1).** `fantasy_gm/projections/status.py` parses Yahoo's
+  `players;out=metadata` — `status_full`, dated `injury_note`,
+  `player_notes_last_timestamp` — into effective-dated `availability` rows keyed
+  (player, known_from, source), idempotent. The board consumes them as availability-rate
+  caps: OUT-for-season ×0.0, short-term OUT ×0.5, QUESTIONABLE ×0.75; an ACTIVE row never
+  raises a rate.
+- **Baseline pricing (2.2).** A player whose ranked seasons hold no usable sample prices
+  per-game rates from his most recent healthy season (≥10-game floor): Haliburton, Lillard
+  and Kyrie price from 2024-25. Tatum keeps his own (usable) sample, unchanged. The
+  board's `as_of` turned out to guard the availability fit only — feeding it into rate
+  measurement zeroed everyone; removed and pinned by a test.
+- **The four on live data (2.4, `runs/status-ingest-478-l-25733.json`).** 500 rows → 87
+  designations (71 QUESTIONABLE, 15 OUT, 1 ACTIVE), 0 unresolved names. **None of the four
+  carries a designation** — Haliburton/Lillard/Kyrie price via baseline + depth placement,
+  Tatum via his own sample; all four verified in the 2026-27 pool. Real rows the board now
+  sees: LeBron (Q, Rest), Luka (Q), Curry (Q), Mark Williams (OUT, shoulder), Shaedon
+  Sharpe (OUT, knee).
+- **Status map finalized.** Live data surfaced two values the round-1 map did not carry:
+  52× 'Not Active' (roster state — not on an NBA roster — now ignored and reported as
+  `ignored`, never priced; availability does not own roster reasons) and 1× 'Probable'
+  (→ ACTIVE; the mildest NBA designation, and ACTIVE never raises a rate). Re-ingest
+  clean: 0 unmapped, 0 unresolved.
+- **Consume-side gap fixed.** No production surface passed `forward_season`, so the pool
+  the four need never materialized; `FORWARD_SEASON=2026-27` now wired through `build_gm`
+  (draft sessions + watcher), `cmd_board --forward-season` and `build_site.py`.
