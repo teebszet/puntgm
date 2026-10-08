@@ -15,11 +15,13 @@ career-average `usage_role.minutes`.
 
 - Goal: the person on the clock can see the market, their roster's category standing, and
   what punting would do — without leaving the rec card.
-- Goal: the four named players are priced by news we enter, visibly, before the real draft.
+- Goal: the four named players are priced by the status + baseline pipeline, visibly, before
+  the real draft.
 - Non-goal: an on-clock optimizer. H₀ measured behind the static board 48/48 (3.14/3.15/3.16);
   the differential view is display, and the `recommend()` engine hook stays for when one is
   cleared.
-- Non-goal: new data sources, auto-pick, or changes to the published site.
+- Non-goal: data providers beyond the league platform, auto-pick, or changes to the
+  published site.
 
 ## Decisions
 
@@ -30,14 +32,20 @@ board's own A-DRAFT-14 separation applied to the basis it computes on; today the
 jobs, which double-counts absence. Rates shrink toward the pool on a thinner sample — that is
 the correct direction for a board that projects availability separately.
 
-### D2 — Overrides outrank models, and say so
+### D2 — Pricing adjusts from live league data; overrides are gone
 
-`player_overrides` is effective-dated (`known_from`), hand-entered, and carries
-expected-games / role / note. An override forces pool entry and replaces the projection row;
-every applied override is named in the basis line and on the player row (`override:` mark).
-A stale or malformed override prints and refuses silently-dropped ingestion — the 2.3a lesson
-(a silent parse zero-cost 580 roster rows) applied to hand-entered data. Haliburton /
-Lillard / Tatum / Kyrie ship as overrides, not model edits.
+Hand-entered rows rot and need tending all season — Tim's 2026-10-08 review comment rejected
+the override table on exactly that ground. The system adjusts from data that maintains
+itself: (1) **status** — the league platform's structured per-player status is ingested as
+effective-dated `Availability` rows (`source=yahoo`); the board's projected-availability
+mode (already the default) consumes them, and a mid-season status change is just a new row.
+(2) **baselines** — a player with no usable ranked-season sample prices per-game rates from
+his most recent season above the games-played floor (last healthy baseline, under D1's
+games-played rule) and is placed by R2's derived-depth rule; a season lost to injury counts
+as no usable sample. (3) **projections** — the projected minutes/role basis (D3) carries
+role onto 2026-27 rosters. Dated player news renders on rows as display context; prose is
+never a pricing input. Haliburton / Lillard / Tatum / Kyrie flow through this pipeline with
+no special entry; the ingest prints per-player coverage so a silent gap cannot hide.
 
 ### D3 — The projected basis ships labeled-crude; measured stays the default
 
@@ -76,8 +84,9 @@ localStorage; `--columns` on the CLI mirrors the same order.
 
 ## Risks / Trade-offs
 
-- Overrides are hand-entered and will be wrong sometimes — visible by design (`override:` +
-  note on every affected row) and editable mid-draft.
+- Platform status can lag the truth (a designation the feed has not caught up with yet);
+  the ingest prints per-player coverage and provenance names each source, so a wrong price
+  is traceable to the row that produced it.
 - Excluding DNP rows changes every board number slightly; the published site boards are
   measured-board artifacts and stay frozen until the next manual rebuild.
 - The differential view risks being read as a ranking signal; the spec pins it display-only
@@ -87,9 +96,9 @@ localStorage; `--columns` on the CLI mirrors the same order.
 ## Migration Plan
 
 Basis fixes change board output on the same inputs — acceptable: no published number depends
-on the live-surface board (site boards are frozen exports). Overrides are opt-in rows. The
-page redesign keeps the `/state.json` contract; the watcher and page deploy together and the
-old page still renders new state.
+on the live-surface board (site boards are frozen exports). Status ingest is additive (new
+effective-dated Availability rows; no new tables). The page redesign keeps the `/state.json`
+contract; the watcher and page deploy together and the old page still renders new state.
 
 ## Open Questions
 

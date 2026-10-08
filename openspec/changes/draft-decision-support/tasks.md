@@ -9,17 +9,22 @@
 - [ ] 1.3 Basis line gains the rate rule ("rates over games played; DNPs carried by
       availability"); re-export nothing published
 
-## 2. News overrides (R3) — the four named players
+## 2. Live-data pricing (R3) — status ingest + last-healthy baseline
 
-- [ ] 2.1 `player_overrides` store table: player_id, known_from, expected_games, role, note;
-      effective-dated reads (`as_of`-gated like every other forward table)
-- [ ] 2.2 Ingest CLI `fantasy-gm override set/list`; malformed or expired rows print and
-      refuse silent drops (2.3a lesson)
-- [ ] 2.3 Board integration: an override forces pool entry and replaces the projection row;
-      rows and provenance carry the `override:` mark + note. Test: Haliburton enters the
-      pool with expected games 0 under an "out for season" override and is priced by the note
-- [ ] 2.4 Enter the four (Haliburton, Lillard, Tatum, Kyrie) from current news, as-of
-      2026-10-08 — **content sourced from Tim's league news, not guessed**
+- [ ] 2.1 Ingest platform per-player status into `availability` (`source=yahoo`,
+      effective-dated): extend the saved-payload Yahoo import to extract status (+ dated
+      editorial notes for display); the CLI prints per-player coverage. Verify the payload
+      carries status at implementation; report loudly if it does not
+- [ ] 2.2 Last-healthy-baseline pricing: when the ranked season has no usable sample, rates
+      come from the most recent season above the games-played floor; placement follows the
+      derived-depth rule (R2's injury edge). Test: Haliburton (zero 2025-26 logs) enters
+      the pool priced from 2024-25 rates + OUT status; Tatum's rates are unchanged (usable
+      sample)
+- [ ] 2.3 Provenance + display: basis lines and rows name each applied source (status row,
+      baseline season, projected model); the dated news headline renders as context; a
+      player neither sample nor baseline can price is reported as unpriced with the reason
+- [ ] 2.4 Coverage check on the four (Haliburton, Lillard, Tatum, Kyrie): after ingest,
+      verify status rows + basis lines; record their pricing in runs/
 
 ## 3. Forward basis option (R4)
 
@@ -64,8 +69,8 @@
 
 ## 8. Rehearsal and gates
 
-- [ ] 8.1 Re-run `scripts/mock_draft_harness.py` with overrides + columns + punt panel;
-      record the four players' pricing before/after overrides in runs/
+- [ ] 8.1 Re-run `scripts/mock_draft_harness.py` with status ingest + columns + punt panel;
+      record the four players' pricing before/after the status+baseline pipeline in runs/
 - [ ] 8.2 **HUMAN GATE — spec direction.** Tim reviews this change (Obsidian) before
       implementation starts. Waits on: Tim
 - [ ] 8.3 **HUMAN GATE — default basis for draft night.** Measured (recommended) vs

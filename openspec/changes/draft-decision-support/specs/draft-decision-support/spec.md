@@ -22,8 +22,9 @@ pool eligibility.
 ### Requirement: The draft pool reflects the current role, not a career average
 
 The draft pool SHALL be ranked by the player's most recent measured role (2025-26 minutes per
-game), not by an average that spans earlier seasons. Players without NBA history SHALL be
-ranked by their derived depth on the projected roster.
+game), not by an average that spans earlier seasons. Players without NBA history, or whose
+ranked season contains no usable sample (a season lost to injury), SHALL be ranked by their
+derived depth on the projected roster.
 
 #### Scenario: A veteran whose minutes fell is not pool-ranked on his career average
 
@@ -36,29 +37,50 @@ ranked by their derived depth on the projected roster.
 - **WHEN** a player has no NBA game logs
 - **THEN** his pool position derives from his ranked depth on his projected roster
 
-### Requirement: News overrides place and price a player the model cannot
+#### Scenario: A season lost to injury does not zero-rank the player
 
-The system SHALL accept effective-dated manual overrides per player — expected games played,
-expected role, and a note — which force the player into the draft pool and replace the
-model's projection for him. Every override applied SHALL be visible in the board's provenance
-and in any recommendation that includes the player.
+- **WHEN** the pool is built and a player's ranked season contains no games played
+- **THEN** he is placed by derived depth on his projected roster, not by a zero-minutes rank
+- **AND** his rate basis follows the last-healthy-baseline rule
 
-#### Scenario: A player who missed the prior season is draftable
+### Requirement: Availability and pricing adjust from live league data, not hand-entered rows
 
-- **WHEN** an override names a player with no 2025-26 logs (e.g. Haliburton, Lillard, Irving)
-- **THEN** that player enters the draft pool
-- **AND** his projected production follows the override, labeled as override-derived
+The board SHALL derive each player's availability from the league platform's structured
+player status, ingested as effective-dated Availability rows (`source=yahoo`), and SHALL NOT
+depend on hand-entered per-player overrides. A player whose ranked season has no usable
+sample SHALL price per-game rates from his most recent season above the games-played floor —
+his last healthy baseline — with expected games carried by the status-derived availability
+term. Every adjustment SHALL be visible in the board's provenance and on affected rows with
+its source; recent dated player news SHALL render as display context and SHALL NOT be a
+pricing input.
 
-#### Scenario: An override without projection data is not silently dropped
+#### Scenario: A player who missed the prior season is priced without hand entry
 
-- **WHEN** an override row is loaded for a player the basis cannot otherwise project
-- **THEN** the board reports that the override was applied
-- **AND** a malformed or stale override is surfaced, never silently ignored
+- **WHEN** the pool is built and a player has no usable 2025-26 logs (e.g. Haliburton,
+  Lillard, Irving)
+- **THEN** his per-game rates come from his last healthy season above the games floor
+- **AND** his expected games follow the ingested status as of the board date
+- **AND** provenance names both sources (baseline season, status row)
 
-#### Scenario: The manager sees which rows are overrides
+#### Scenario: A status change adjusts the board with no hand edit
 
-- **WHEN** a recommendation or board row names an overridden player
-- **THEN** the row is marked as override-priced with its note
+- **WHEN** the platform's status for a player changes and a later board is built
+- **THEN** the new effective-dated availability row drives his expected games from its
+  known_from date
+- **AND** no manual row edit is required
+
+#### Scenario: A player the data cannot price is surfaced, never silently dropped
+
+- **WHEN** a player has neither a usable ranked-season sample nor a baseline season above
+  the floor
+- **THEN** the board reports him as unpriced with the reason
+- **AND** he does not silently vanish from the pool or the report
+
+#### Scenario: News is context, not a pricing input
+
+- **WHEN** a board or recommendation row renders a player who has dated news
+- **THEN** the latest headline renders alongside the row as context
+- **AND** candidate ordering is unchanged by the news text
 
 ### Requirement: A forward basis is available and clearly labeled
 

@@ -33,10 +33,10 @@ export, not as an on-the-clock exploration.
 - **Fix the basis** (`player-projections`) — per-game rates measured over games actually
   played (DNP zero-rows excluded from rates, retained by the availability model); draft pool
   ranked by 2025-26 minutes only.
-- **Add news overrides** (`player-projections`) — an effective-dated manual override table per
-  player (expected games, role, note) that forces a player into the pool and labels the row.
-  This is how Haliburton/Lillard/Tatum/Kyrie get priced: by news the model cannot see, entered
-  by us, visibly.
+- **Adjust pricing from live league data** (`player-projections`) — ingest the platform's
+  structured player status as effective-dated availability rows; price a player with no
+  usable ranked-season sample from his last healthy baseline. This is how
+  Haliburton/Lillard/Tatum/Kyrie get priced, with no hand-entered table to maintain.
 - **Add a forward basis option** (`player-projections`) — `board --basis projected` builds the
   board from the derived minutes/role model (which reacts to team changes), clearly labeled,
   with the 2.11 backtest caveat printed. Default stays measured.
@@ -62,7 +62,7 @@ export, not as an on-the-clock exploration.
   change fixes is the basis that change built — is resolved by archive order).
 - **Depends on** `change/draft-watch-page` (this branch stacks on it — the page it ships is
   the one being redesigned).
-- **Data:** one new table (`player_overrides`); no schema changes elsewhere. ADP data already
-  ingested.
-- **Non-goals:** no resurrection of H₀ as the on-clock optimizer; no new data sources; no
-  auto-pick; no change to the published site boards.
+- **Data:** no new tables — status rides the existing effective-dated `availability` table;
+  ADP data already ingested.
+- **Non-goals:** no resurrection of H₀ as the on-clock optimizer; no data providers beyond
+  the league platform; no auto-pick; no change to the published site boards.
