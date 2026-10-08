@@ -1,12 +1,12 @@
 ## 1. Basis fixes (R1, R2) — the numbers under everything
 
-- [ ] 1.1 `measure_per_game_stats` excludes DNP rows (no playing time) from rate means and
+- [x] 1.1 `measure_per_game_stats` excludes DNP rows (no playing time) from rate means and
       pool eligibility; `measure_period_stats`/availability keep them as games not played.
       Pin the split with a test on a fixture containing both row kinds
-- [ ] 1.2 `rosterable_pool` ranks by the ranked season's minutes only (`usage_role` filtered
+- [x] 1.2 `rosterable_pool` ranks by the ranked season's minutes only (`usage_role` filtered
       to that season's window); no-history players rank by derived `forward_roster` depth.
       Test: a veteran whose minutes fell between seasons keeps his new-season rank
-- [ ] 1.3 Basis line gains the rate rule ("rates over games played; DNPs carried by
+- [x] 1.3 Basis line gains the rate rule ("rates over games played; DNPs carried by
       availability"); re-export nothing published
 
 ## 2. Live-data pricing (R3) — status ingest + last-healthy baseline
@@ -71,8 +71,8 @@
 
 - [ ] 8.1 Re-run `scripts/mock_draft_harness.py` with status ingest + columns + punt panel;
       record the four players' pricing before/after the status+baseline pipeline in runs/
-- [ ] 8.2 **HUMAN GATE — spec direction.** Tim reviews this change (Obsidian) before
-      implementation starts. Waits on: Tim
+- [x] 8.2 **HUMAN GATE — spec direction.** Tim reviews this change (Obsidian) before
+      implementation starts. Waits on: Tim — cleared 2026-10-08 ("ok build it", after round 1)
 - [ ] 8.3 **HUMAN GATE — default basis for draft night.** Measured (recommended) vs
       projected; one flag, but it is a product call. Waits on: Tim
 - [ ] 8.4 **HUMAN GATE — dashboard sign-off.** Tim approves the layout after the screenshot

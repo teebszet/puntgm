@@ -12,11 +12,12 @@ from fantasy_gm.draft.xscore import (
     g_score_board,
     g_scores,
     kappa_sensitivity,
+    measure_per_game_stats,
     measure_period_stats,
     xscore_basis,
 )
 from fantasy_gm.models import Game, PlayerGameLog, UsageRole
-from fantasy_gm.valuation import player_values
+from fantasy_gm.valuation import player_values, rosterable_pool
 
 SEASON = "2025-26"
 START = date(2025, 10, 20)  # a Monday
@@ -222,3 +223,51 @@ def test_basis_falls_back_to_typical_tau_for_unknown_player():
     basis = xscore_basis(store, SEASON, ["pts"], pool_size=1)
     assert basis.tau_for("never-seen", "pts") == basis.bases["pts"].typical_tau
     assert basis.category_score("never-seen", "pts") == 0.0
+
+
+# --- R1: rates measure games actually played (the DNP split) ------------------
+
+
+def _with_dnp_rows(store: Store, pid: str, *, after: int, n: int) -> None:
+    """Append ``n`` DNP rows (zero stat line, zero-minute usage snapshot) after day ``after``."""
+    for day_i in range(after, after + n):
+        d = (START + timedelta(days=day_i)).isoformat()
+        store.upsert_games([Game(f"dnp{day_i}", SEASON, d, "AAA", "BBB")])
+        store.upsert_player_logs(
+            [PlayerGameLog(f"dnp{day_i}", SEASON, d, pid, pid, "AAA", _line())]
+        )
+        store.add_usage_role([UsageRole(pid, d, 0.0, 0.0, False, 5)])
+
+
+def test_dnp_rows_do_not_dilute_per_game_rates():
+    """The rate basis is per-game over games played: six zero-stat DNP rows must not pull a
+    20-point scorer's mean toward the pool (R1)."""
+    store = Store(":memory:")
+    _seed(store, {"played": [_line(pts=20) for _ in range(12)]})
+    _with_dnp_rows(store, "played", after=12, n=6)
+    stats, _pool = measure_per_game_stats(store, SEASON)
+    assert stats["played"]["pts"].mean == pytest.approx(20.0)
+
+
+def test_dnp_rows_do_not_count_toward_pool_eligibility():
+    """Five played games plus six DNP rows used to clear the 10-game floor on DNP rows
+    alone; the floor now counts games the player actually played (R1)."""
+    store = Store(":memory:")
+    _seed(store, {
+        "control": [_line(pts=10) for _ in range(12)],
+        "thin": [_line(pts=20) for _ in range(5)],
+    })
+    _with_dnp_rows(store, "thin", after=5, n=6)
+    pool = rosterable_pool(store, SEASON, pool_size=2)
+    assert "control" in pool
+    assert "thin" not in pool
+
+
+def test_dnp_rows_still_sit_in_the_pool_window_for_ranking_minutes():
+    """Ranking minutes come from games played in the ranked season: DNP rows (minutes 0)
+    neither count as games nor drag the minutes average (R2)."""
+    store = Store(":memory:")
+    _seed(store, {"p": [_line(pts=10) for _ in range(12)]})
+    _with_dnp_rows(store, "p", after=12, n=4)
+    pool = rosterable_pool(store, SEASON, pool_size=4)
+    assert pool == ["p"]  # eligible on 12 played games, ranked on 30.0 minutes

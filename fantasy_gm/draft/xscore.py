@@ -49,7 +49,7 @@ from enum import StrEnum
 from statistics import fmean, median, pstdev
 
 from fantasy_gm.config import CATEGORY_DIRECTION, DEFAULT_CATEGORIES, PERCENTAGE_CATEGORIES
-from fantasy_gm.valuation import rosterable_pool
+from fantasy_gm.valuation import _player_games, rosterable_pool
 
 # κ weights period-to-period noise against player-to-player spread. PROVISIONAL: 1.0 gives
 # the two equal weight, which is a choice, not a measurement. `kappa_sensitivity` reports how
@@ -321,6 +321,7 @@ def measure_per_game_stats(
     season: str,
     categories: list[str] | None = None,
     pool_size: int = 156,
+    forward_season: str | None = None,
 ) -> tuple[dict[str, dict[str, PeriodStats]], list[str]]:
     """Per-**game** mean and spread per category, over the rosterable pool.
 
@@ -334,6 +335,11 @@ def measure_per_game_stats(
     built the old way correlated **+0.60/+0.64 with realized games and ~0.00 with the projected
     games it was actually given** (A-DRAFT-14).
 
+    Rates measure games the player actually played: a DNP row (no recorded minutes) enters the
+    availability term, never a per-game mean or pool eligibility (R1/D1). ``forward_season``
+    lets the pool place players the ranked season cannot — a rookie, or a season lost to
+    injury — by derived depth on their projected roster.
+
     ``PeriodStats.periods`` here counts games, not weeks. Compounding these up to a week is
     :func:`fantasy_gm.draft.board.compound_weekly`'s job, and it uses a *scheduled* game count
     so no realized availability can re-enter.
@@ -342,12 +348,8 @@ def measure_per_game_stats(
     counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
     pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
 
-    lines: dict[str, list[dict]] = defaultdict(list)
-    for r in store.conn.execute(
-        "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
-    ):
-        lines[r["player_id"]].append(json.loads(r["stats_json"]))
-    pool = rosterable_pool(store, season, pool_size=pool_size)
+    lines = _player_games(store, season, played_only=True)
+    pool = rosterable_pool(store, season, pool_size=pool_size, forward_season=forward_season)
 
     league_rates: dict[str, float] = {}
     for c in pcts:

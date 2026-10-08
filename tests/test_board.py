@@ -327,3 +327,46 @@ def test_the_engines_kappa_is_left_alone():
 
     assert DEFAULT_KAPPA == 1.0
     assert BOARD_KAPPA != DEFAULT_KAPPA
+
+
+# --- R1/D1: the DNP split, and the provenance that names it --------------------
+
+
+def test_dnp_rows_do_not_inflate_projected_availability():
+    """A DNP row is a game NOT played: observed games and the availability rate the
+    beta-binomial projects must be identical with and without DNP rows (R1)."""
+    store = Store(":memory:")
+    _seed(store, {"plain": [_line(pts=10) for _ in range(10)]})
+    _seed(store, {"withdnp": [_line(pts=10) for _ in range(10)]})
+    n_days = 10
+    for day_i in range(n_days, n_days + 5):
+        d = (START + timedelta(days=day_i)).isoformat()
+        store.upsert_games([Game(f"dnp{day_i}", SEASON, d, "AAA", "BBB")])
+        store.upsert_player_logs(
+            [PlayerGameLog(f"dnp{day_i}", SEASON, d, "withdnp", "withdnp", "AAA", _line())]
+        )
+        store.add_usage_role([UsageRole("withdnp", d, 0.0, 0.0, False, 5)])
+
+    projs = project_availability(store, SEASON, "2025-12-31")
+    assert projs["plain"].observed_games == 10
+    assert projs["withdnp"].observed_games == 10  # the 5 DNP rows count as games NOT played
+    assert projs["withdnp"].expected_games == pytest.approx(projs["plain"].expected_games)
+
+
+def test_basis_line_states_the_dnp_rule():
+    """The provenance line must say rates are over games played and DNPs ride the
+    availability term — a reader cannot audit a basis that does not state its rule (1.3)."""
+    board = build_board(_pool_store(), SEASON, pool_size=4,
+                        availability=AvailabilityMode.PROJECTED, as_of=AS_OF)
+    assert "games actually played" in board.basis
+    assert "DNP" in board.basis
+    assert board_json(board)["basis"] == board.basis
+
+
+def test_basis_line_names_forward_roster_placement():
+    """When the pool places unsampled players by projected-roster depth, the line says so —
+    derived placement is provenance, not something to guess at (R2)."""
+    board = build_board(_pool_store(), SEASON, pool_size=4,
+                        availability=AvailabilityMode.NEUTRAL, forward_season="2026-27")
+    assert "2026-27" in board.basis
+    assert board_json(board)["forward_season"] == "2026-27"

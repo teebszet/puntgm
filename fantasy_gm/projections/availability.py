@@ -72,14 +72,17 @@ def fit_games(store, as_of: str, *, since: str | None = None, min_games: int = 5
 
     rates: list[float] = []
     for games in per_player.values():
-        if len(games) < min_games:
+        # Games the player actually played — a DNP row is a game NOT played and must not
+        # raise the availability rate it is supposed to explain (R1/D1).
+        observed = sum(1 for g in games if g["minutes"] is None or g["minutes"] > 0)
+        if observed < min_games:
             continue
         team = games[-1]["team"]
         start = since or games[0]["game_date"]
         available = _team_games(store, team, start, as_of)
         if available <= 0:
             continue
-        rates.append(min(len(games) / available, 1.0))
+        rates.append(min(observed / available, 1.0))
 
     if len(rates) < MIN_PLAYERS_FOR_FIT:
         pool = statistics.fmean(rates) if rates else 0.8

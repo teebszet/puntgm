@@ -151,14 +151,22 @@ class Board:
     variance_mode: str
     availability: AvailabilityMode = AvailabilityMode.PROJECTED
     availability_as_of: str | None = None
+    forward_season: str | None = None
     rows: list[BoardRow] = field(default_factory=list)
 
     @property
     def basis(self) -> str:
         """The provenance line. Published output must carry this verbatim."""
         head = (
-            f"Per-game production measured from {self.season} game logs over the top "
-            f"{self.pool_size} players by minutes per game."
+            f"Per-game production measured from {self.season} game logs over games actually "
+            "played — DNP rows enter the availability term, not the rates — for the top "
+            f"{self.pool_size} players by {self.season} minutes per game"
+            + (
+                f", players without a usable {self.season} sample placed by depth on their "
+                f"{self.forward_season} roster"
+                if self.forward_season else ""
+            )
+            + "."
         )
         if self.availability is AvailabilityMode.REALIZED:
             return (
@@ -226,7 +234,12 @@ def project_availability(
     for pid, games in per_player.items():
         team = games[-1]["team"]
         team_games = store.games_in_window_for_team(team, games[0]["game_date"], as_of)
-        out[pid] = model.project(pid, len(games), team_games)
+        # Observed games are games actually played: a DNP row is a game NOT played, so it
+        # must not inflate the numerator the beta-binomial shrinks (R1/D1). The row still
+        # sits in the stream and in the team-games denominator — it is carried by this
+        # availability term, exactly as the rate side excludes it.
+        observed = sum(1 for g in games if g["minutes"] is None or g["minutes"] > 0)
+        out[pid] = model.project(pid, observed, team_games)
     for pid in players or []:
         if pid not in out:
             out[pid] = model.project(pid, 0, 0)
@@ -283,6 +296,7 @@ def _basis(
     mode: VarianceMode,
     availability: AvailabilityMode,
     as_of: str | None,
+    forward_season: str | None = None,
 ) -> tuple[XScoreBasis, dict[str, object]]:
     """Build the standardisation basis under one availability treatment."""
     from statistics import fmean, median, pstdev
@@ -298,7 +312,9 @@ def _basis(
         # Forward boards are *constructed*, never measured at the week level: see
         # `compound_weekly`. Aggregating to weeks first would smuggle realized availability
         # back in through each player's games-per-active-week.
-        per_game, pool = measure_per_game_stats(store, season, categories, pool_size)
+        per_game, pool = measure_per_game_stats(
+            store, season, categories, pool_size, forward_season=forward_season
+        )
         n_sched = scheduled_games_per_week(store, season)
         if availability is AvailabilityMode.PROJECTED:
             if not as_of:
@@ -339,6 +355,7 @@ def build_board(
     as_of: str | None = None,
     limit: int | None = None,
     with_zscore: bool = True,
+    forward_season: str | None = None,
 ) -> Board:
     """Rank the pool by G-score over the categories left after ``punt``.
 
@@ -346,6 +363,10 @@ def build_board(
     is what a punt build means and what makes the result comparable to the punt checkbox in
     every commercial tool. The z-score comparison, when requested, is computed over the *same*
     reduced category set and the same pool, so the delta isolates the metric and nothing else.
+
+    ``forward_season`` names the season being drafted into (e.g. 2026-27): players the ranked
+    season cannot place are ranked by derived depth on that season's projected roster, and the
+    provenance line records the placement source.
     """
     punt = tuple(punt)
     unknown = [c for c in punt if c not in DEFAULT_CATEGORIES]
@@ -356,7 +377,8 @@ def build_board(
         raise ValueError("cannot punt every category")
 
     basis, projections = _basis(
-        store, season, scored, pool_size, kappa, mode, availability, as_of
+        store, season, scored, pool_size, kappa, mode, availability, as_of,
+        forward_season=forward_season,
     )
     ranked = sorted(
         (
@@ -407,6 +429,7 @@ def build_board(
         variance_mode=str(mode),
         availability=availability,
         availability_as_of=as_of,
+        forward_season=forward_season,
         rows=rows[:limit] if limit else rows,
     )
 
@@ -453,6 +476,7 @@ def board_json(board: Board, top: int | None = None) -> dict:
         "variance_mode": board.variance_mode,
         "availability": str(board.availability),
         "availability_as_of": board.availability_as_of,
+        "forward_season": board.forward_season,
         "basis": board.basis,
         "rows": [
             {

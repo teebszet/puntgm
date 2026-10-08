@@ -23,49 +23,126 @@ def _counting(categories: list[str]) -> list[str]:
     return [c for c in categories if c not in PERCENTAGE_CATEGORIES]
 
 
-def _player_games(store, season: str, as_of: str | None = None) -> dict[str, list[dict]]:
-    """Per-player stat lines for a season, optionally restricted to games known by ``as_of``."""
-    if as_of is None:
-        rows = store.conn.execute(
-            "SELECT player_id, stats_json FROM player_logs WHERE season = ?", (season,)
-        )
-    else:
-        rows = store.conn.execute(
-            "SELECT player_id, stats_json FROM player_logs WHERE season = ? AND game_date <= ?",
-            (season, as_of),
-        )
+def _player_games(
+    store, season: str, as_of: str | None = None, played_only: bool = True,
+) -> dict[str, list[dict]]:
+    """Per-player stat lines for a season, optionally restricted to games known by ``as_of``.
+
+    ``played_only`` (the default) drops rows with no recorded playing time — a DNP row
+    carries signal only through the availability model, never through a per-game rate mean
+    or pool eligibility (the board's D1 split). A row with no usage snapshot at all counts
+    as played: minutes unknown, but the stat line is real.
+    """
+    sql = (
+        "SELECT l.player_id, l.stats_json FROM player_logs l "
+        "LEFT JOIN usage_role u ON u.player_id = l.player_id AND u.known_from = l.game_date "
+        "WHERE l.season = ?"
+    )
+    args: list = [season]
+    if as_of is not None:
+        sql += " AND l.game_date <= ?"
+        args.append(as_of)
+    if played_only:
+        sql += " AND (u.minutes IS NULL OR u.minutes > 0)"
     out: dict[str, list[dict]] = {}
-    for r in rows:
+    for r in store.conn.execute(sql, args):
         out.setdefault(r["player_id"], []).append(json.loads(r["stats_json"]))
     return out
+
+
+# Depth-chart position -> implied minutes, for players a ranked season cannot place: a
+# player with no NBA history, or whose ranked season contains no usable sample (a season
+# lost to injury). The curve is a documented estimate, not a measurement — depth 1 projects
+# to starter minutes, depth 15 to garbage minutes — and is recorded as derived provenance
+# wherever it ranks someone.
+DEPTH_MINUTES_TOP = 36.0
+DEPTH_MINUTES_STEP = 2.0
+DEPTH_MINUTES_FLOOR = 6.0
+
+
+def depth_implied_minutes(depth_chart_pos: int) -> float:
+    """The minutes a depth-chart position implies, for pool placement without a sample."""
+    return max(DEPTH_MINUTES_TOP - DEPTH_MINUTES_STEP * (depth_chart_pos - 1),
+               DEPTH_MINUTES_FLOOR)
 
 
 def rosterable_pool(
     store, season: str, pool_size: int = 156, min_games: int = 10,
     games: dict[str, list[dict]] | None = None, as_of: str | None = None,
+    forward_season: str | None = None,
 ) -> list[str]:
     """The set of players a real league would roster, ranked by **minutes per game** — the
     true starter/role signal. Ranking by games played (the old approach) wrongly excludes
     stars who miss a handful of nights (Jokić at 65 games) while keeping durable role players,
     dumping the stars onto the wire. A light ``min_games`` floor keeps tiny samples out.
     Falls back to games played only if no usage/minutes data exists.
+
+    The minutes are the **ranked season's** minutes per game over games actually played —
+    ``usage_role`` rows inside that season's window, DNP rows (minutes 0) excluded — not a
+    career average that lets an old role outrank the current one. Players the ranked season
+    cannot place (below the ``min_games`` floor) are placed by their derived depth on the
+    ``forward_season`` projected roster when one is given; without ``forward_season`` they
+    stay out of the pool, as before.
     """
     games = games if games is not None else _player_games(store, season, as_of=as_of)
     eligible = [p for p in games if len(games[p]) >= min_games] or list(games)
+
     # Minutes must respect the same as-of gate as the box scores, or a point-in-time
-    # valuation silently ranks players by a role they had not yet earned.
-    if as_of is None:
-        rows = store.conn.execute(
-            "SELECT player_id, AVG(minutes) m FROM usage_role GROUP BY player_id")
-    else:
-        rows = store.conn.execute(
-            "SELECT player_id, AVG(minutes) m FROM usage_role WHERE known_from <= ? "
-            "GROUP BY player_id", (as_of,))
-    mins = {r["player_id"]: r["m"] for r in rows}
-    if mins:
-        eligible.sort(key=lambda p: (-(mins.get(p) or 0.0), -len(games[p]), p))
-    else:
-        eligible.sort(key=lambda p: (-len(games[p]), p))
+    # valuation silently ranks players by a role they had not yet earned. The window is the
+    # ranked season's, so an earlier season's role cannot outrank the current one.
+    window = store.conn.execute(
+        "SELECT MIN(game_date) lo, MAX(game_date) hi FROM games WHERE season = ?", (season,)
+    ).fetchone()
+    rank_min: dict[str, float] = {}
+    if window and window["lo"] and window["hi"]:
+        sql = (
+            "SELECT player_id, AVG(minutes) m FROM usage_role "
+            "WHERE known_from >= ? AND known_from <= ? AND minutes > 0"
+        )
+        args: list = [window["lo"], window["hi"]]
+        if as_of is not None:
+            sql += " AND known_from <= ?"
+            args.append(as_of)
+        sql += " GROUP BY player_id"
+        rank_min = {r["player_id"]: r["m"]
+                    for r in store.conn.execute(sql, args)}
+
+    # Players without a usable ranked-season sample are ranked by derived depth on their
+    # projected roster (R2's injury edge): a season lost to injury must not zero-rank the
+    # player, and a rookie must not vanish from the pool he will be drafted from.
+    placed: dict[str, float] = {}
+    if forward_season:
+        gate = as_of or "9999-12-31"
+        for r in store.conn.execute(
+            """SELECT fr.player_id, fr.depth_chart_pos
+               FROM forward_roster fr
+               JOIN (SELECT player_id, MAX(known_from) kf FROM forward_roster
+                     WHERE season = ? AND known_from <= ? GROUP BY player_id) latest
+                 ON latest.player_id = fr.player_id AND latest.kf = fr.known_from
+               WHERE fr.season = ?""",
+            (forward_season, gate, forward_season),
+        ):
+            pid = r["player_id"]
+            if pid not in eligible:
+                placed[pid] = depth_implied_minutes(r["depth_chart_pos"])
+
+    eligible_set = set(eligible)
+
+    def _rank_key(pid: str) -> tuple[float, int, str]:
+        # A player's ranked-season minutes count when he is eligible at all (the floor
+        # filter, or the tiny-store fallback that admits everyone); otherwise his placement
+        # is derived depth, or the bottom if nothing places him.
+        mins = rank_min.get(pid) if pid in eligible_set else None
+        mins = mins if mins is not None else placed.get(pid, 0.0)
+        return (-mins, -len(games.get(pid, ())), pid)
+
+    if rank_min or placed:
+        eligible_plus = eligible + [p for p in placed if p not in eligible_set]
+        eligible_plus.sort(key=_rank_key)
+        return eligible_plus[:pool_size]
+    if not games:
+        return []
+    eligible.sort(key=lambda p: (-len(games[p]), p))
     return eligible[:pool_size]
 
 
