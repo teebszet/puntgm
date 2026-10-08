@@ -273,16 +273,22 @@ def build_strategies(
     engine_steps: int = 8,
     opponent_arms: tuple[OpponentModel, ...] = (OpponentModel.REPRESENTATIVE,),
     engine_variants: dict[str, dict] | None = None,
+    adp_order: list[str] | None = None,
 ) -> dict:
     """The field: H₀ vs G-score vs z-score vs ADP.
 
     ``opponent_arms`` enters one H₀ per opponent model, so the stand-in and the field objective
     draft in the *same* room against the *same* bots and are graded on the same weeks. Running
     them in separate replays would confound the comparison with the pool each happened to face.
+
+    ``adp_order`` overrides the default value-ranking proxy the bots and the "adp" arm run on
+    (e.g. a real market ordering from ``adp_order_from_market``). Default None keeps the
+    proxy, so every published replay number reproduces.
     """
     from fantasy_gm.valuation import player_values
 
-    adp_order = derive_adp_order(store, season)
+    if adp_order is None:
+        adp_order = derive_adp_order(store, season)
     g_order = [p for p, _, _ in sorted(
         ((p, basis.total(p), None) for p in basis.pool), key=lambda r: -r[1]
     )]
@@ -321,6 +327,7 @@ def run_draft_replay(
     schedule: bool = False,
     mirror: bool = True,
     engine_variants: dict[str, dict] | None = None,
+    adp_order: list[str] | None = None,
 ) -> dict[str, StrategyResult]:
     """Draft and grade every strategy at several seats.
 
@@ -345,7 +352,8 @@ def run_draft_replay(
     settings = settings or DraftSettings()
     rng = random.Random(seed)
     strategies = build_strategies(
-        store, season, basis, settings, rng, engine_steps, opponent_arms, engine_variants
+        store, season, basis, settings, rng, engine_steps, opponent_arms, engine_variants,
+        adp_order=adp_order,
     )
     names = list(strategies)
     n_teams = settings.n_teams
@@ -358,7 +366,8 @@ def run_draft_replay(
         pool = pool[:pool_size]
 
     results = {n: StrategyResult(n) for n in names}
-    adp_order = derive_adp_order(store, season)
+    if adp_order is None:
+        adp_order = derive_adp_order(store, season)
 
     placements = [names, list(reversed(names))] if mirror else [names]
     for rot in range(rotations):
@@ -413,6 +422,7 @@ def run_strategy_replay(
     seed: int = 7,
     schedule: bool = False,
     mirror: bool = True,
+    adp_order: list[str] | None = None,
 ) -> dict[str, StrategyResult]:
     """Grade a room of arbitrary strategies against each other, seat-mirrored.
 
@@ -439,7 +449,7 @@ def run_strategy_replay(
     """
     settings = settings or DraftSettings()
     names = list(strategies)
-    adp_order = derive_adp_order(store, season)
+    adp_order = adp_order or derive_adp_order(store, season)
     n_teams = settings.n_teams
     results = {n: StrategyResult(n) for n in names}
     orderings = [names, list(reversed(names))] if mirror else [names]
@@ -501,6 +511,7 @@ def run_board_replay(
     include_adp: bool = True,
     schedule: bool = False,
     mirror: bool = True,
+    adp_order: list[str] | None = None,
 ) -> dict[str, StrategyResult]:
     """Grade a set of *static boards* against each other in one room.
 
@@ -511,11 +522,12 @@ def run_board_replay(
     why a ladder means a series of two-arm rooms rather than one wide room.
     """
     settings = settings or DraftSettings()
-    adp_order = derive_adp_order(store, season)
+    adp_order = adp_order or derive_adp_order(store, season)
     arms: dict[str, object] = {n: static_order_strategy(o) for n, o in orders.items()}
     if include_adp:
         arms["adp"] = lambda rot: bot_strategy(AdpBot(adp_order, random.Random(seed + rot)))
     return run_strategy_replay(
         store, season, arms, pool, settings,
         rotations=rotations, seed=seed, schedule=schedule, mirror=mirror,
+        adp_order=adp_order,
     )

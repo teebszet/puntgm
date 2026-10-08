@@ -373,11 +373,24 @@ def cmd_projection_backtest(args: argparse.Namespace) -> int:
 
 
 def cmd_adp(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
     from fantasy_gm.projections.adp import adp_for_pool, ingest_adp_file
+
+    if args.live:
+        from fantasy_gm.projections.adp import fetch_draft_analysis
+
+        token = Path("data/yahoo_access_token.txt").read_text().strip()
+        capture = f"data/raw_cache/yahoo_draftanalysis_{args.live.replace('.', '_')}.json"
+        print(f"Fetching live draft_analysis for {args.live} (limit {args.limit}) ...")
+        rows = fetch_draft_analysis(args.live, token, limit=args.limit, save_path=capture)
+        print(f"  captured {len(rows)} rows to {capture}")
+    else:
+        capture = args.file
 
     config = Config()
     store = _store(config)
-    result = ingest_adp_file(store, args.file, args.season, args.known_from, source=args.source)
+    result = ingest_adp_file(store, capture, args.season, args.known_from, source=args.source)
     print(f"ADP ingest — season {args.season}, known_from {args.known_from}, "
           f"source {args.source}")
     print(f"  {result.rows} row(s) -> {result.stored} stored; "
@@ -486,6 +499,114 @@ def cmd_yahoo_import(args: argparse.Namespace) -> int:
     for k, v in report.items():
         print(f"  {k}: {v}")
     return 0
+
+
+def cmd_draft(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    """Interactive draft night: live poll + manual entry + on-the-clock recommendations.
+
+    Commands inside the session:
+      n            next recommendation (on-the-clock output)
+      p <name>     record a pick by typed name (manual entry / type-ahead)
+      sync         pull platform picks now (live ingest; reports discrepancies)
+      auto         sync + recommend in one step
+      board        show recent picks
+      q            save and quit
+    """
+    from fantasy_gm.draft.live import (
+        DraftState,
+        apply_manual_pick,
+        build_gm,
+        load_state,
+        poll_draft_results,
+        recommend,
+        reconcile,
+        render_recommendation,
+        save_state,
+    )
+
+    config = Config()
+    store = _store(config)
+    state_path = Path(f"data/draft_{args.league.replace('.', '_')}.json")
+    if state_path.exists() and not args.fresh:
+        state = load_state(state_path)
+        print(f"resumed {state_path} ({len(state.picks)} picks already recorded)")
+    else:
+        state = DraftState(league_key=args.league, n_teams=args.teams,
+                           n_rounds=args.rounds, my_seat=args.seat)
+
+    print("Building board + market order (once) ...")
+    gm = build_gm(store, args.season, args.as_of)
+    pool, names, directory = gm["pool"], gm["names"], gm["directory"]
+    print(f"  board ready: {len(pool)} players; market order: {len(gm['adp_order'])} priced")
+
+    while True:
+        try:
+            raw = input(f"\n[pick {state.pick_number}] draft> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raw = "q"
+        if not raw:
+            continue
+        cmd, _, arg = raw.partition(" ")
+        if cmd in ("q", "quit", "exit"):
+            save_state(state, state_path)
+            print(f"saved -> {state_path}")
+            return 0
+        if cmd == "n":
+            rec = recommend(store, args.season, state, pool, board=gm["board"],
+                            adp_order=gm["adp_order"], names=names,
+                            budget_s=args.budget)
+            print(render_recommendation(rec))
+            continue
+        if cmd == "p":
+            if not arg:
+                print("usage: p <player name>")
+                continue
+            pid, cands, err = apply_manual_pick(state, arg, directory)
+            if err:
+                print(f"error: {err}")
+            elif pid:
+                print(f"picked: {names.get(pid, pid)} (#{state.pick_number - 1})")
+            else:
+                print("ambiguous or unknown -- candidates:")
+                for c in cands:
+                    print(f"  {names.get(c, c)}")
+            save_state(state, state_path)
+            continue
+        if cmd == "sync":
+            try:
+                picks = poll_draft_results(state.league_key)
+                issues = reconcile(state, picks, names)
+            except RuntimeError as exc:
+                print(f"poll failed: {exc}")
+                continue
+            print(f"synced {len(picks)} platform picks; {len(issues)} discrepancy(ies)")
+            for i in issues:
+                print(f"  ! {i}")
+            save_state(state, state_path)
+            continue
+        if cmd == "auto":
+            try:
+                picks = poll_draft_results(state.league_key)
+                issues = reconcile(state, picks, names)
+                if issues:
+                    for i in issues:
+                        print(f"  ! {i}")
+            except RuntimeError as exc:
+                print(f"poll failed ({exc}); recommending from manual state")
+            rec = recommend(store, args.season, state, pool, board=gm["board"],
+                            adp_order=gm["adp_order"], names=names,
+                            budget_s=args.budget)
+            print(render_recommendation(rec))
+            save_state(state, state_path)
+            continue
+        if cmd == "board":
+            for p in state.picks[-10:]:
+                who = "you" if p.team_seat == state.my_seat else f"seat {p.team_seat}"
+                print(f"  {p.number:>3} {who:<8} {p.name or p.player_id} ({p.source})")
+            continue
+        print("commands: n | p <name> | sync | auto | board | q")
 
 
 def cmd_board(args: argparse.Namespace) -> int:
@@ -653,12 +774,32 @@ def build_parser() -> argparse.ArgumentParser:
     pb.set_defaults(func=cmd_projection_backtest)
 
     ad = sub.add_parser("adp", help="ingest a saved Yahoo draft_analysis payload as ADP (2.4)")
-    ad.add_argument("--file", required=True, help="saved draft_analysis JSON")
+    ad.add_argument("--file", required=False, default=None,
+                    help="saved draft_analysis JSON (not required with --live)")
     ad.add_argument("--season", required=True)
     ad.add_argument("--known-from", dest="known_from", required=True,
                     help="date the market snapshot was taken")
     ad.add_argument("--source", default="yahoo")
+    ad.add_argument("--live", default=None, metavar="LEAGUE_KEY",
+                    help="fetch draft_analysis live from Yahoo instead of reading --file; "
+                         "the fetched capture is saved and then ingested from it")
+    ad.add_argument("--limit", type=int, default=500,
+                    help="player cap for --live pagination (default 500)")
     ad.set_defaults(func=cmd_adp)
+    df = sub.add_parser("draft",
+                        help="interactive draft night: live poll + manual entry + recommendations")
+    df.add_argument("league", help="Yahoo league key, e.g. 478.l.25733")
+    df.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    df.add_argument("--as-of", dest="as_of", default="2025-10-20",
+                    help="availability projection date (day before the season being measured)")
+    df.add_argument("--seat", type=int, default=1, help="your 1-indexed draft seat")
+    df.add_argument("--teams", type=int, default=12)
+    df.add_argument("--rounds", type=int, default=13)
+    df.add_argument("--budget", type=float, default=8.0,
+                    help="seconds the on-the-clock evaluation may take (4.5)")
+    df.add_argument("--fresh", action="store_true", help="ignore any saved draft state")
+    df.set_defaults(func=cmd_draft)
+
     mg = sub.add_parser("manage",
                         help="give simulated teams a baseline manager so the wire drains")
     mg.add_argument("league", help="league id to manage")

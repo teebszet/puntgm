@@ -233,25 +233,98 @@ def ingest_adp_file(
 ) -> AdpIngestResult:
     """Ingest a saved ``draft_analysis`` payload from disk.
 
-    The manual path, and the one the tests use: the live fetch needs OAuth (task 4.1), but a
-    payload saved from a browser session is the same JSON and is enough to draft against.
+    The manual path, and the one the tests use: handles both a browser-saved single
+    response and a paged capture written by :func:`fetch_draft_analysis`.
     """
-    payload = json.loads(Path(path).read_text())
-    return ingest_adp(store, parse_draft_analysis(payload), season, known_from,
+    rows = load_draft_analysis_file(path)
+    return ingest_adp(store, rows, season, known_from,
                       resolver=resolver, source=source)
 
 
-def fetch_draft_analysis(league_key: str) -> list[DraftAnalysisRow]:  # pragma: no cover
-    """Live Yahoo fetch — not available until the OAuth flow lands (task 4.1).
+def _append_page(pages: list, payload: Mapping[str, Any] | list) -> bool:
+    """Add one page's rows to ``pages`` if it carried any parseable rows.
 
-    Kept as an explicit, named gap rather than a silent one: the draft-surface track owns the
-    token, and this module will call through it when it exists. Use
-    :func:`ingest_adp_file` with a saved payload in the meantime.
+    Returns False when the page was empty, which is the pagination stop signal:
+    Yahoo returns an empty (or repeating) tail once ``start`` passes the end, and
+    ``start`` always advances, so the loop is bounded by ``limit`` regardless.
     """
-    raise NotImplementedError(
-        "Yahoo draft_analysis needs the OAuth flow from task 4.1 (draft-surface). "
-        f"Save the payload for {league_key} and use ingest_adp_file() until it lands."
+    batch = parse_draft_analysis(payload)
+    if not batch:
+        return False
+    pages.append(payload)
+    return True
+
+
+def load_draft_analysis_file(path: str | Path) -> list[DraftAnalysisRow]:
+    """Parse a saved draft_analysis capture — either one raw payload or a paged fetch.
+
+    The live fetch writes ``{"pages": [...]}``; a browser-saved single response is the
+    payload itself. Both are the same rows to the caller.
+    """
+    payload = json.loads(Path(path).read_text())
+    if isinstance(payload, dict) and "pages" in payload:
+        rows: list[DraftAnalysisRow] = []
+        for page in payload["pages"]:
+            rows.extend(parse_draft_analysis(page))
+        return rows
+    return parse_draft_analysis(payload)
+
+
+def fetch_draft_analysis(
+    league_key: str,
+    access_token: str,
+    *,
+    count: int = 25,
+    limit: int = 500,
+    sort: str = "AR",
+    save_path: str | Path | None = None,
+) -> list[DraftAnalysisRow]:
+    """Live paginated fetch of every league-relevant player's draft_analysis.
+
+    Requests the players collection sorted by ``AR`` (average rank, i.e. ADP) so page
+    boundaries fall in ADP order — the ordering the opponent model consumes directly.
+    ``limit`` caps the walk: 500 covers every player a 12-team draft can touch, and a
+    malicious or broken server cannot extend the loop.
+
+    The raw pages are written to ``save_path`` when given, so the ingest can be re-run
+    and audited offline — same discipline as the league snapshot.
+    """
+    import time as _time
+
+    import requests
+
+    url = (
+        "https://fantasysports.yahooapis.com/fantasy/v2/league/"
+        f"{league_key}/players"
+        ";start={start};count={count};sort="
+        f"{sort};out=draft_analysis?format=json"
     )
+    headers = {"Authorization": f"Bearer {access_token}"}
+    pages: list = []
+    start = 0
+    while start < limit:
+        resp = requests.get(
+            url.format(start=start, count=count), headers=headers, timeout=30
+        )
+        if resp.status_code == 401:
+            raise RuntimeError(
+                "401 from Yahoo — token expired. Re-run scripts/yahoo_author.py "
+                "and retry; the fetch is resumable from the saved pages."
+            )
+        resp.raise_for_status()
+        if not _append_page(pages, resp.json()):
+            break
+        start += count
+    if save_path is not None:
+        Path(save_path).write_text(json.dumps({
+            "league_key": league_key,
+            "fetched_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            "sort": sort,
+            "pages": pages,
+        }))
+    return load_draft_analysis_file(save_path) if save_path else [
+        row for page in pages for row in parse_draft_analysis(page)
+    ]
 
 
 # --- explicit absence --------------------------------------------------------

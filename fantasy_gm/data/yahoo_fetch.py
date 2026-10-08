@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from fantasy_gm.data.yahoo_reconstruct import Movement, Transaction
@@ -154,6 +155,48 @@ def check_access(access_token: str) -> tuple[bool, str]:
     if r.status_code == 401:
         return False, "401 — token expired or invalid; re-run scripts/yahoo_authorize.py"
     return False, f"unexpected HTTP {r.status_code}: {r.text[:200]}"
+
+
+def refresh_token_from_files(
+    token_path: str | Path = "data/yahoo_access_token.txt",
+    pkce_path: str | Path = "data/yahoo_pkce.json",
+    secret_path: str | Path = "data/yahoo_token.json",
+) -> str:
+    """Refresh an expired SPA token from the files the authorize script leaves behind.
+
+    Yahoo's token endpoint requires the client secret on ``refresh_token`` grants even for
+    the PKCE flow whose *exchange* needed none, so the secret is read from the legacy
+    ``yahoo_token.json`` when present (verified live 2026-10-05: without it Yahoo answers
+    400 INVALID_INPUT "client secret cannot be empty"). Both the fresh access token and the
+    rotated refresh token are persisted, so the next refresh keeps working.
+    """
+    import requests
+
+    pkce = json.loads(Path(pkce_path).read_text())
+    data = {
+        "client_id": pkce["client_id"],
+        "grant_type": "refresh_token",
+        "redirect_uri": pkce.get("redirect_uri", "oob"),
+        "refresh_token": pkce["refresh_token"],
+    }
+    if Path(secret_path).exists():
+        secret = json.loads(Path(secret_path).read_text()).get("consumer_secret")
+        if secret:
+            data["client_secret"] = secret
+    resp = requests.post(TOKEN_URL, data=data, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"token refresh failed: HTTP {resp.status_code} {resp.text[:200]} — "
+            "re-run scripts/yahoo_authorize.py (the refresh token may have been revoked)"
+        )
+    payload = resp.json()
+    if "access_token" not in payload:
+        raise RuntimeError(f"token refresh returned no access_token: {payload}")
+    Path(token_path).write_text(payload["access_token"])
+    if payload.get("refresh_token"):
+        pkce["refresh_token"] = payload["refresh_token"]
+        Path(pkce_path).write_text(json.dumps(pkce))
+    return payload["access_token"]
 
 
 def normalize_transactions(raw: list[dict[str, Any]]) -> list[Transaction]:
