@@ -119,8 +119,8 @@ the real league says:
 
 ## 2026-10-08 — build note: the projected basis shipped (tasks 3.1–3.2)
 
-Committed on `change/draft-decision-support` (suite 387 passed, ruff clean on touched files
-at that sha). What shipped:
+Committed at `56ac54f` on `change/draft-decision-support` (suite 387 passed, ruff clean on
+touched files, openspec validate strict 6/6, all in the same shell as the commit). What shipped:
 
 - **3.1 — the flag.** `build_board(..., rate_basis=)` accepts `measured` (default) or
   `projected` (a `RateBasis` StrEnum next to `AvailabilityMode`); `cmd_board --basis` and
@@ -152,4 +152,4 @@ unchanged. Comments and docstrings now say what the code does.
 
 | Requirement | Kind | Delivered by | Read at |
 |---|---|---|---|
-| Forward basis available and labeled | new | task 3.1 (`rate_basis` on `build_board`/`build_gm`, `--basis` on `cmd_board`; label = basis line date + caveat) | tests `test_board.py::test_projected_basis_*` (6) + full suite 387 passed at the §3 commit sha; caveat text pinned in `Board.basis` |
+| Forward basis available and labeled | new | task 3.1 (`rate_basis` on `build_board`/`build_gm`, `--basis` on `cmd_board`; label = basis line date + caveat) | tests `test_board.py::test_projected_basis_*` (6) + full suite 387 passed @ 56ac54f; caveat text pinned in `Board.basis` |
