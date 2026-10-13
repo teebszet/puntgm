@@ -22,11 +22,11 @@ view and punt scenarios instead.
 | Per-game rates over games actually played | new | task 1.1 | `fantasy_gm/valuation.py` `_player_games(played_only)` + `fantasy_gm/draft/xscore.py:349` @ 557c77f; suite 356 passed at that sha |
 | Draft pool reflects current role | new | task 1.2 | `fantasy_gm/valuation.py` `rosterable_pool` (season window + depth placement) @ 557c77f; tests `test_valuation.py` ranked-season + depth, run at that sha |
 | News overrides place and price a player | superseded round 1 — replaced by live-data adjustments, see round 1 map | — | — |
-| Forward basis available and labeled | new | task 3.1 | to fill |
-| Recommendations carry market context + columns | new | task 4.2 | to fill |
-| Differential view vs field (display-only) | new | task 5.1 | to fill |
-| Punt scenarios explorable on the clock | new | task 6.1 | to fill |
-| Watch page is a drafting dashboard | new | task 7.1 | to fill |
+| Forward basis available and labeled | new | task 3.1 | delivered — see the 3.1–3.2 update map below |
+| Recommendations carry market context + columns | new | task 4.2 | delivered — see the 4.1–4.4 update map below |
+| Differential view vs field (display-only) | new | task 5.1 | delivered — see the 5.1–7.2 update map below |
+| Punt scenarios explorable on the clock | new | task 6.1 | delivered — see the 5.1–7.2 update map below |
+| Watch page is a drafting dashboard | new | task 7.1 | delivered — see the 5.1–7.2 update map below |
 
 ## 2026-10-08 — feedback round 1 (origin: Tim's Obsidian comment on design.md D2)
 
@@ -194,3 +194,81 @@ built around.
 | Column selection on CLI + watch page, default set fixed | new | `parse_columns` + `fantasy-gm draft --columns` (validated at startup) + `dry_run_watch.py --columns`; page picker persisted in `localStorage` | `test_parse_columns_default_subset_and_duplicates` / `test_parse_columns_reports_unknown`; page smoke (picker persistence + bogus-key drop) |
 | Terminal and page render from the same spec | new | `render_recommendation(rec, columns)` via `COLUMN_BY_KEY`; page renders `rec.column_spec` keys/headers, fallback table when absent | `test_render_recommendation_explicit_absence_and_market_columns`; page smoke (spec + no-spec paths) |
 | Unpriced = explicit absence; unknown columns reported | new | `—` cells + `null` fields for unpriced; `parse_columns` raises naming the unknown set | `test_render_recommendation_explicit_absence_and_market_columns` (— row tokens), `test_parse_columns_reports_unknown` |
+
+## 2026-10-13 — build note: differential, punt panels, dashboard shipped (tasks 5.1–7.2)
+
+Committed at `2e5093d` (suite 410 passed at that sha — re-run 2026-10-13 at the same HEAD
+while writing this note; ruff clean on fantasy_gm/scripts/tests, remaining hits were the
+untracked one-off in .scratch/). What shipped:
+
+- **§5 Differential (5.1–5.2).** `fantasy_gm/draft/panels.py` computes the per-category
+  profile of our roster vs the field-average roster vs the field-strongest roster from the
+  current draft state, recomputed per pick; reuses the 3.1 differential model's inputs
+  without its objective. Display-only is pinned by test: candidate ordering is unchanged.
+- **§6 Punt panels (6.1–6.3).** Named builds plus a manager-supplied category set re-rank
+  the remaining pool against the current state (drafted players excluded), with per-build
+  top candidates + roster outlook. Under `budget_s`: on overrun the last complete panel is
+  returned marked stale with its pick number (the 4.5 pattern); the per-(pick, custom set)
+  cache invalidates on the next pick. Surfaces: draft-session CLI `context` / `punt [spec]`
+  with `--punt-budget`; watcher state.json carries differential + punt panel additively;
+  `POST /punt` writes punt.json consumed once per poll (the trigger.json handoff pattern),
+  with punt.json hygiene at arm. The tests caught one real defect: the panel computed
+  `note` but never passed it into `PuntPanel`, so the budget-overrun reason was silently
+  dropped — fixed.
+- **§7 Dashboard (7.1–7.2).** The watch page rewritten (637 lines): sticky clock bar, rec
+  card with the 4.2 column picker, differential bars with per-category scaling (a single
+  global scale made FG% invisible next to counting cats), punt tabs + custom-set input,
+  roster rail, compact pick log; dense dark theme, phone-portrait grid. Screenshot pass
+  against the real pipeline (real store, pick-31 state, 8 candidates, 9 builds):
+  `runs/dashboard_desktop_pick31.png` + `runs/dashboard_phone_pick31.png`, both verified.
+- **Durability follow-up at `94627c2` (suite 412 passed there).** The page's only copies
+  were `.scratch/page/index.html` (disposable by convention) and the deployed watch dir —
+  the repo could not reproduce the page draft night depends on. `watch_page.html` is now a
+  package asset and the source of truth (byte-identical to the deployed copy); the watcher
+  provisions it into a fresh `--dir` at start and at arm, never overwriting a deployed
+  page; the node DOM-shim smoke moved to `scripts/page_dom_smoke.js` against the repo copy
+  (13 assertions pass).
+
+### Requirement → delivery map (5.1–7.2 update)
+
+| Requirement | Kind | Delivered by | Read at |
+|---|---|---|---|
+| Differential view vs field (display-only) | new | task 5.1 — `compute_differential` (`fantasy_gm/draft/panels.py:155`) with `differential_json`/`render_differential` for page + terminal | `tests/test_draft_panels.py` display-only pin @ 2e5093d; screenshots `runs/dashboard_*_pick31.png` |
+| Punt scenarios explorable on the clock | new | task 6.1 — `compute_punt_panel` (`panels.py:276`) + `PuntPanelCache` (`panels.py:360`); watcher `POST /punt` → punt.json | `tests/test_draft_panels.py` (drafted-player exclusion, custom set, stale marking) @ 2e5093d |
+| Watch page is a drafting dashboard | new | task 7.1 — `fantasy_gm/draft/watch_page.html` (637 lines), provisioned at watcher start and arm @ 94627c2 | screenshot pass `runs/dashboard_desktop_pick31.png` + `runs/dashboard_phone_pick31.png`; node smoke `scripts/page_dom_smoke.js` 13 assertions |
+
+## 2026-10-13 — build note: harness re-run + the four's pricing record (task 8.1)
+
+`scripts/mock_draft_harness.py` re-run 2026-10-13 with status ingest + columns + punt panel
+in the pipeline (`runs/mock-draft-harness.json`; 6 arms × 16,500 matchups, 148,500 cat
+games each, production repeats, as_of 2025-10-20):
+
+| arm | cat games | matchups |
+|---|---|---|
+| **ours** | **52.9%** | **55.3%** |
+| g_score | 51.6% | 52.0% |
+| null | 50.6% | 49.9% |
+| z_steelman | 50.3% | 49.7% |
+| adp_market | 49.8% | 50.3% |
+| z_pergame | 48.7% | 43.9% |
+
+Ours leads the field on both measures, and its margin over null (+2.3pp cat, +5.4pp
+matchup) is the largest of any arm on either. The pre-change run
+(`runs/mock-draft-harness.pre-decision-support.json`, ours 54.4% / 58.4%, null 52.9% /
+54.9%) is not a regression baseline: the whole field moved with the changed pool (null
+−2.3pp cat, −5.0pp matchup). On the changed-pool comparison ours still leads — and its
+margin over null grew from +1.5pp/+3.5pp to +2.3pp/+5.4pp.
+
+**The four's pricing record (8.1, `runs/four_player_pricing_2026-10-13.json`)**, via
+`build_gm` (the draft-night path) at both commits:
+
+| player | before `5d90fc9` | after `2e5093d` |
+|---|---|---|
+| Tyrese Haliburton | absent from the pool | rank 5, `baseline:2024-25` |
+| Damian Lillard | absent from the pool | rank 16, `baseline:2024-25` |
+| Kyrie Irving | absent from the pool | rank 47, `baseline:2024-25` |
+| Jayson Tatum | rank 17 | rank 21 (own sample unchanged; the three added poolmates push him down) |
+
+The four carry no Yahoo designation rows (`status` null throughout the record), so the
+baseline pipeline — not a designation — is what prices them; the ingest is wired for the
+day designations appear.
