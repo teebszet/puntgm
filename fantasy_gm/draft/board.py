@@ -585,6 +585,7 @@ def build_board(
     with_zscore: bool = True,
     forward_season: str | None = None,
     rate_basis: str = "measured",
+    capture: dict | None = None,
 ) -> Board:
     """Rank the pool by G-score over the categories left after ``punt``.
 
@@ -682,6 +683,10 @@ def build_board(
     for s in statuses.values():
         if s is not None and s.status != ACTIVE:
             status_counts[s.status] = status_counts.get(s.status, 0) + 1
+    if capture is not None:
+        # Hand the fitted basis out (draft-decision-support D5/D6): the per-pick panels
+        # reuse its per-category standardisation instead of re-measuring the store.
+        capture["basis"] = basis
     return Board(
         season=season,
         build=build or _build_name(punt),

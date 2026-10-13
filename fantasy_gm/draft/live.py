@@ -749,15 +749,19 @@ def build_gm(
     from fantasy_gm.draft.board import AvailabilityMode, build_board
     from fantasy_gm.draft.opponents import adp_order_from_market
 
+    capture: dict = {}
     board = build_board(store, season, availability=AvailabilityMode.PROJECTED, as_of=as_of,
-                        forward_season=forward_season, rate_basis=rate_basis)
+                        forward_season=forward_season, rate_basis=rate_basis,
+                        capture=capture)
     pool = [r.player_id for r in board.rows]
     market = adp_order_from_market(store, market_season, source=market_source,
                                    restrict_to=pool) or []
     directory = build_player_directory(store, market_season)
     names = {r.player_id: r.player_name for r in board.rows}
+    # The fitted basis rides along (D5/D6): the differential and punt panels re-use its
+    # per-category standardisation; nothing per-pick re-measures the store.
     return {"board": board, "pool": pool, "adp_order": market,
-            "names": names, "directory": directory}
+            "names": names, "directory": directory, "basis": capture["basis"]}
 
 
 # --- persistence ---------------------------------------------------------------

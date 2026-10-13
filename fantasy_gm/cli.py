@@ -611,8 +611,12 @@ def cmd_draft(args: argparse.Namespace) -> int:
       sync         pull platform picks now (live ingest; reports discrepancies)
       auto         sync + recommend in one step
       board        show recent picks
+      context      category differential vs the field (display only, R6)
+      punt [x]     punt panel: summary, a build name for its table, or a cat set
+                   to explore (e.g. punt ft%,pts) (R7/R8)
       q            save and quit
     """
+    from fantasy_gm.draft.board import PUNT_BUILDS
     from fantasy_gm.draft.live import (
         DraftState,
         apply_manual_pick,
@@ -624,6 +628,13 @@ def cmd_draft(args: argparse.Namespace) -> int:
         reconcile,
         render_recommendation,
         save_state,
+    )
+    from fantasy_gm.draft.panels import (
+        PuntPanelCache,
+        compute_differential,
+        parse_punt,
+        render_differential,
+        render_punt_panel,
     )
 
     config = Config()
@@ -644,6 +655,8 @@ def cmd_draft(args: argparse.Namespace) -> int:
     print("Building board + market order (once) ...")
     gm = build_gm(store, args.season, args.as_of)
     pool, names, directory = gm["pool"], gm["names"], gm["directory"]
+    basis = gm["basis"]  # the panels read its per-category standardisation (D5/D6)
+    punt_cache = PuntPanelCache()
     print(f"  board ready: {len(pool)} players; market order: {len(gm['adp_order'])} priced")
 
     while True:
@@ -663,6 +676,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
                             adp_order=gm["adp_order"], names=names,
                             budget_s=args.budget)
             print(render_recommendation(rec, columns))
+            print(render_differential(compute_differential(state, basis)))
             continue
         if cmd == "p":
             if not arg:
@@ -704,14 +718,34 @@ def cmd_draft(args: argparse.Namespace) -> int:
                             adp_order=gm["adp_order"], names=names,
                             budget_s=args.budget)
             print(render_recommendation(rec, columns))
+            print(render_differential(compute_differential(state, basis)))
             save_state(state, state_path)
+            continue
+        if cmd == "context":
+            print(render_differential(compute_differential(state, basis)))
+            continue
+        if cmd == "punt":
+            detail = None
+            custom: tuple[str, ...] = ()
+            if arg:
+                if arg in PUNT_BUILDS or arg == "custom":
+                    detail = arg
+                else:
+                    try:
+                        custom = parse_punt(arg)
+                    except ValueError as exc:
+                        print(f"error: {exc}")
+                        continue
+            panel = punt_cache.get(state, basis, gm["adp_order"], names, custom=custom,
+                                   budget_s=args.punt_budget)
+            print(render_punt_panel(panel, detail=detail))
             continue
         if cmd == "board":
             for p in state.picks[-10:]:
                 who = "you" if p.team_seat == state.my_seat else f"seat {p.team_seat}"
                 print(f"  {p.number:>3} {who:<8} {p.name or p.player_id} ({p.source})")
             continue
-        print("commands: n | p <name> | sync | auto | board | q")
+        print("commands: n | p <name> | sync | auto | board | context | punt [spec] | q")
 
 
 def cmd_board(args: argparse.Namespace) -> int:
@@ -928,6 +962,8 @@ def build_parser() -> argparse.ArgumentParser:
     df.add_argument("--rounds", type=int, default=13)
     df.add_argument("--budget", type=float, default=8.0,
                     help="seconds the on-the-clock evaluation may take (4.5)")
+    df.add_argument("--punt-budget", type=float, default=8.0,
+                    help="seconds all punt builds may take per computation (R8)")
     df.add_argument("--columns", default=None,
                     help="comma-separated recommendation columns "
                          "(default: rk,player,value,vs_safe,surv,adp,top_cats,neg_cats)")

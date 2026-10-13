@@ -74,6 +74,8 @@ def new_state(league: str, seat: int, interval: float, started_at: str,
         "issues": [],
         "events": [],
         "recommendation": None,
+        "differential": None,
+        "punt_panel": None,
         "error": None,
         "heartbeat_at": started_at,
         "watcher_pid": None,
@@ -114,6 +116,8 @@ def reset_state(state_file: str | Path, league: str, seat: int, interval: float,
     state = new_state(league, seat, interval, now, start_utc=start_utc, status="armed")
     when = f", starts {start_utc} UTC" if start_utc else ", starting within a minute"
     log_line(state, f"armed: league {league} seat {seat}{when} — previous draft cleared")
+    # A leftover punt request must not leak into the new draft (same hygiene as trigger).
+    Path(state_file).with_name("punt.json").unlink(missing_ok=True)
     write_state(state_file, state)
     return state
 
@@ -228,7 +232,7 @@ def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
 # --- watch mode -------------------------------------------------------------------
 
 def run_watch(league: str, seat: int, interval: float, state_path: Path,
-              serve_port: int | None, stop_file: Path) -> int:
+              serve_port: int | None, stop_file: Path, punt_budget: float = 8.0) -> int:
     # Detach from the spawner's process group FIRST: launchd kills a job's whole
     # process group when the job exits (no AbandonProcessGroup), which silently
     # killed every nohup-spawned watcher before its first write (2026-10-08 --
@@ -248,6 +252,13 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         poll_draft_results,
         recommend,
         reconcile,
+    )
+    from fantasy_gm.draft.panels import (
+        PuntPanelCache,
+        compute_differential,
+        differential_json,
+        parse_punt,
+        punt_panel_json,
     )
 
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -291,6 +302,9 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     gm = build_gm(store, "2025-26", "2025-10-20")
     pool = gm["pool"]
     names = gm["names"]
+    basis = gm["basis"]  # the panels read the fitted basis; nothing re-measures per pick
+    punt_cache = PuntPanelCache()
+    punt_custom: tuple[str, ...] = ()
     # Full-universe directory, not the board-only names map: platform picks arrive with
     # Yahoo game ids and foreign-id names must resolve through the whole directory.
     dir_by_id, dir_by_key = gm["directory"]
@@ -321,6 +335,8 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     seen = 0
     placeholder_logged = False
     last_rec_printed_picks = -1
+    last_punt_key: tuple[int, tuple[str, ...]] | None = None
+    last_differential_picks = -1
     while True:
         if stop_file.exists():
             log_line(state, "stop requested; watcher exits (page goes stale on purpose)")
@@ -330,6 +346,22 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             stop_file.unlink()
             return 0
         state["heartbeat_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # A custom punt request (page POSTs /punt -> serve writes punt.json -> we consume
+        # it here, once). An unparseable request is consumed too and logged, never retried.
+        punt_req = state_path.parent / "punt.json"
+        if punt_req.exists():
+            raw_spec = ""
+            try:
+                raw_spec = str((json.loads(punt_req.read_text()) or {}).get("punt") or "")
+            except (OSError, ValueError):
+                pass
+            punt_req.unlink(missing_ok=True)
+            try:
+                punt_custom = parse_punt(raw_spec) if raw_spec else ()
+                log_line(state, "punt panel set: "
+                         + (", ".join(punt_custom) if punt_custom else "balanced (cleared)"))
+            except ValueError as exc:
+                log_line(state, f"punt request ignored: {exc}")
         try:
             picks = poll_draft_results(league)
             state["error"] = None
@@ -365,6 +397,11 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
              "name": p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id)}
             for p in draft_state.picks
         ]
+        # The differential is recomputed when the draft state moved (R6: after every
+        # pick). It is display: nothing here touches candidate ordering.
+        if len(draft_state.picks) != last_differential_picks:
+            state["differential"] = differential_json(compute_differential(draft_state, basis))
+            last_differential_picks = len(draft_state.picks)
         # Recs run every poll, not only on our turn: between our picks the card is a
         # preview -- top of the board with survival projected to OUR next pick (the
         # survival math was always relative to my_seat; the card now says so).
@@ -400,6 +437,17 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             }
         else:
             state["recommendation"] = None
+        # Punt panel (R7/R8): one attempt per (pick, custom set); a pick change or a new
+        # custom set invalidates it. When the budget overruns, the cache hands back the
+        # last complete panel marked stale — and we do not keep retrying within the pick
+        # unless the page still has no complete panel at all.
+        punt_key = (draft_state.pick_number, punt_custom)
+        prev_punt = state.get("punt_panel")
+        if punt_key != last_punt_key or not (prev_punt and prev_punt.get("complete")):
+            panel = punt_cache.get(draft_state, basis, gm["adp_order"], names,
+                                   custom=punt_custom, budget_s=punt_budget)
+            last_punt_key = punt_key
+            state["punt_panel"] = punt_panel_json(panel)
         write_state(state_path, state)
         time.sleep(interval)
 
@@ -467,11 +515,39 @@ class StateAwareStaticServer:
                 code, payload = handle_trigger(params, state_file)
                 self._reply(code, payload)
 
+            def _do_punt(self) -> None:
+                """Set the watcher's custom punt set: writes punt.json next to the state
+                file; the watcher consumes it on its next poll (same handoff as trigger).
+                An empty spec clears back to the named builds only."""
+                from fantasy_gm.draft.panels import parse_punt
+
+                n = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(min(n, 4096)) if n else b""
+                try:
+                    spec = str((json.loads(body or b"{}") or {}).get("punt") or "")
+                except ValueError:
+                    spec = ""
+                try:
+                    cats = parse_punt(spec) if spec else []
+                except ValueError as exc:
+                    self._reply(400, {"ok": False, "error": str(exc)})
+                    return
+                path = Path(state_file).parent / "punt.json"
+                tmp = Path(str(path) + ".tmp")
+                tmp.write_text(json.dumps(
+                    {"punt": spec, "created": time.strftime("%H:%M:%S", time.gmtime())}))
+                tmp.replace(path)
+                self._reply(200, {"ok": True, "punt": list(cats)})
+
             def do_POST(self) -> None:  # noqa: N802 - stdlib naming
-                """Only /trigger (arm the runner) and /stop (sentinel file). Nothing else."""
+                """Only /trigger (arm the runner), /punt (custom punt set) and /stop
+                (sentinel file). Nothing else."""
                 route = self.path.split("?")[0]
                 if route == "/trigger":
                     self._do_trigger()
+                    return
+                if route == "/punt":
+                    self._do_punt()
                     return
                 if route != "/stop":
                     self.send_error(404)
@@ -548,7 +624,10 @@ def main() -> int:
                       if "--serve-port" in rest else None)
         stop_file = (Path(rest[rest.index("--stop-file") + 1])
                      if "--stop-file" in rest else Path(str(state_path) + ".stop"))
-        return run_watch(league, seat, interval, state_path, serve_port, stop_file)
+        punt_budget = (float(rest[rest.index("--punt-budget") + 1])
+                       if "--punt-budget" in rest else 8.0)
+        return run_watch(league, seat, interval, state_path, serve_port, stop_file,
+                         punt_budget=punt_budget)
     if mode == "reset-state" and "--out" in rest and "--league" in rest:
         # Runner helper: write a fresh 'armed' state at trigger-consume time so the
         # page never shows a previous draft, even when the trigger didn't come
