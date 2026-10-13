@@ -38,6 +38,7 @@ the terminal watcher would print.
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 import os
 import re
@@ -207,7 +208,8 @@ def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
     start = str(params.get("start") or "").strip()
     if not league or not re.fullmatch(r"\d+\.l\.\d+", league):
         return 400, {"ok": False,
-                     "error": "league must look like 478.l.2638432 (the page adds the 478.l. prefix itself)"}
+                     "error": "league must look like 478.l.2638432 "
+                              "(the page adds the 478.l. prefix itself)"}
     if not seat.isdigit() or not 1 <= int(seat) <= 12:
         return 400, {"ok": False, "error": "seat must be 1-12"}
     if not interval.isdigit() or not 5 <= int(interval) <= 120:
@@ -226,7 +228,25 @@ def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
     tmp.replace(trigger_path)
     reset_state(state_file, league, int(seat), int(interval),
                 start_utc=start[:16] if start else None)
+    ensure_watch_page(state_file)
     return 200, {"ok": True, "trigger": str(trigger_path), "killed_watchers": killed}
+
+
+# --- watch page provisioning --------------------------------------------------------
+
+def ensure_watch_page(state_file: str | Path) -> str | None:
+    """Copy the packaged watch page into the watch dir when it has none.
+
+    The page is a repo asset (fantasy_gm/draft/watch_page.html); the watch dir is
+    a deployable scratch location. Without this, a fresh --dir serves 404 on
+    draft night. Never overwrites an existing page. Returns the path or None.
+    """
+    page = Path(state_file).parent / "index.html"
+    if page.exists():
+        return None
+    src = importlib.resources.files("fantasy_gm.draft").joinpath("watch_page.html")
+    page.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return str(page)
 
 
 # --- watch mode -------------------------------------------------------------------
@@ -272,6 +292,9 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     except FileNotFoundError:
         prev = None
     write_state(state_path, state)
+    page_written = ensure_watch_page(state_path)
+    if page_written:
+        print(f"wrote watch page: {page_written}", flush=True)
 
     def http_state_server() -> None:
         """Answer the page's state.json straight from memory (localhost only)."""
@@ -606,8 +629,10 @@ def main() -> int:
         # Positional (dir port state) or named (--dir --port --state) both accepted;
         # the launchd job uses named flags so the plist reads at a glance.
         directory = _flag(rest, "--dir") or (rest[0] if not rest[0].startswith("--") else None)
-        port = int(_flag(rest, "--port") or (rest[1] if len(rest) > 1 and not rest[1].startswith("--") else 0))
-        state = _flag(rest, "--state") or (rest[2] if len(rest) > 2 and not rest[2].startswith("--") else None)
+        port = int(_flag(rest, "--port")
+                   or (rest[1] if len(rest) > 1 and not rest[1].startswith("--") else 0))
+        state = (_flag(rest, "--state")
+                 or (rest[2] if len(rest) > 2 and not rest[2].startswith("--") else None))
         if not (directory and port and state):
             print(USAGE)
             return 1

@@ -9,6 +9,7 @@ contract tested here: arm == kill watchers + fresh 'armed' state, always.
 
 from __future__ import annotations
 
+import importlib.resources
 import importlib.util
 import json
 import subprocess
@@ -184,3 +185,18 @@ def test_kill_watchers_tolerates_missing_or_garbled_state(svc, tmp_path):
     garbled = tmp_path / "garbled.json"
     garbled.write_text("{not json")
     assert svc.kill_watchers(garbled, grace=0.1) == []
+
+
+def test_ensure_watch_page_writes_packaged_page_when_missing(svc, tmp_path):
+    state = tmp_path / "serve_state.json"
+    written = svc.ensure_watch_page(state)
+    assert written == str(tmp_path / "index.html")
+    src = importlib.resources.files("fantasy_gm.draft").joinpath("watch_page.html")
+    assert (tmp_path / "index.html").read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
+
+
+def test_ensure_watch_page_never_overwrites_a_deployed_page(svc, tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text("<html>deployed copy</html>", encoding="utf-8")
+    assert svc.ensure_watch_page(tmp_path / "serve_state.json") is None
+    assert page.read_text(encoding="utf-8") == "<html>deployed copy</html>"

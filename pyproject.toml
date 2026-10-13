@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["fantasy_gm*"]
 
+[tool.setuptools.package-data]
+"fantasy_gm.draft" = ["watch_page.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

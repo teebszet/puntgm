@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>Draft watch — Chucky Cheese League</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif;
+    background: #0f1115; color: #e6e6e6; margin: 0; padding: 0 10px 60px;
+    display: flex; justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 1060px; padding-top: 10px; }
+  /* --- fixed clock header (R9): always visible while the page scrolls --- */
+  .fixedbar {
+    position: sticky; top: 0; z-index: 10; display: flex; gap: 14px;
+    align-items: center; justify-content: space-between;
+    background: #12161d; border: 1px solid #2a2f3a; border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+  }
+  .fixedbar b { font-variant-numeric: tabular-nums; }
+  #fb-clock-seat.mine { color: #7fd8ac; font-weight: 700; }
+  #fb-clock-seat:not(.mine) { color: #aab3c0; }
+  .fb-right { display: flex; align-items: center; gap: 8px; color: #7d8695;
+              font-variant-numeric: tabular-nums; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #444;
+         display: inline-block; }
+  .dot.green { background: #2fbf71; } .dot.red { background: #ff5a5a; }
+  .dot.amber { background: #d9a441; }
+  /* minmax(0, …) lets a column shrink below a wide table's min-content — otherwise the
+     rec table's width forces the grid past the phone viewport and clips the other cards. */
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  @media (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+  .card { background: #161a21; border: 1px solid #2a2f3a; border-radius: 12px;
+          padding: 16px 18px 18px; margin-bottom: 12px; overflow-x: auto; }
+  .grid .card { margin-bottom: 0; }
+  h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: .2px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px;
+       color: #aab3c0; margin: 0 0 10px; }
+  .sub { color: #9aa3b2; font-size: 13px; margin: 0 0 14px; line-height: 1.55; }
+  label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .4px;
+          text-transform: uppercase; color: #aab3c0; margin: 12px 0 6px; }
+  input, select {
+    width: 100%; padding: 10px 12px; font-size: 15px; border-radius: 8px;
+    border: 1px solid #333a46; background: #0f1115; color: #e6e6e6;
+  }
+  input:focus, select:focus { outline: 2px solid #4f8cff; border-color: #4f8cff; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 12px; color: #7d8695; margin-top: 6px; line-height: 1.4; }
+  button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 15px; font-weight: 600;
+    border: 0; border-radius: 10px; background: #2f6bff; color: #fff; cursor: pointer;
+  }
+  button:hover { background: #3d78ff; }
+  button:disabled { background: #24304a; color: #8b93a5; cursor: wait; }
+  button.slim { width: auto; margin: 0; padding: 7px 14px; font-size: 13px; }
+  .err { color: #ff6b6b; font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .banner { display: none; border: 1px dashed #39404e; border-radius: 8px;
+            padding: 12px 14px; font-size: 13px; color: #c6cdd8; line-height: 1.55;
+            margin-top: 18px; }
+  .banner .url { font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+                 word-break: break-all; color: #8fb7ff; display: block; margin-top: 6px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 10px; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px;
+          background: #1c222d; border: 1px solid #2a2f3a; color: #aab3c0; }
+  .pill b { color: #e6e6e6; font-weight: 600; }
+  .pill.green { border-color: #2f6b4f; color: #7fd8ac; }
+  .pill.red { border-color: #6b2f2f; color: #ff9a9a; }
+  .pill.amber { border-color: #6b5a2f; color: #ffd98a; }
+  .statline { font-size: 13px; color: #7d8695; margin: 0 0 10px; }
+  .banner-issue { display: none; background: #2a1f14; border: 1px solid #6b5a2f;
+                  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+                  font-size: 13px; color: #ffd98a; line-height: 1.5; }
+  .banner-issue.error { background: #2a1414; border-color: #6b2f2f; color: #ff9a9a; }
+  .rec-note { font-size: 12px; color: #8b93a5; margin: 0 0 8px; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b93a5; font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: .4px; padding: 5px 8px;
+       border-bottom: 1px solid #2a2f3a; }
+  td { padding: 6px 8px; border-bottom: 1px solid #1d232e; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.me td { background: #17202e; }
+  tr.me td.name { color: #8fb7ff; font-weight: 600; }
+  td.name { color: #e6e6e6; }
+  .cat { font-size: 11px; color: #7d8695; }
+  .cat.neg { color: #d8a1a1; }
+  #rec-picker, #punt-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+                            margin: 0 0 10px; }
+  #rec-picker .picker-label, #punt-tabs .picker-label {
+    font-size: 11px; color: #5d6675; text-transform: uppercase; letter-spacing: .4px; }
+  .chip { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px;
+          border: 1px solid #2a2f3a; background: #1c222d; color: #aab3c0; cursor: pointer; }
+  .chip:hover { border-color: #3d4657; }
+  .chip.on { background: #24304a; border-color: #46608f; color: #cfe0ff; }
+  /* buttons default to width:100% in this theme; chips are inline pills */
+  #rec-picker .chip, #punt-tabs .chip { width: auto; margin: 0; }
+  .empty { color: #7d8695; font-size: 13px; line-height: 1.6; }
+  .events { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+            line-height: 1.7; max-height: 240px; overflow-y: auto; }
+  .events div { white-space: pre-wrap; word-break: break-word; }
+  .events .t { color: #5d6675; margin-right: 8px; }
+  .events .issue { color: #ffd98a; }
+  .events .me { color: #8fb7ff; font-weight: 600; }
+  /* --- differential bars (R6): honest |value|/max widths, red when negative --- */
+  .diff-row { display: grid; grid-template-columns: 42px 1fr 62px; gap: 8px;
+              align-items: center; padding: 4px 0; border-bottom: 1px solid #1d232e; }
+  .diff-row:last-child { border-bottom: 0; }
+  .dl { font-size: 12px; color: #aab3c0; font-weight: 600; }
+  .dtrack { height: 5px; background: #1a1f28; border-radius: 3px; margin: 2px 0;
+            position: relative; }
+  .dbar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+          min-width: 1px; }
+  .dbar.ours { background: #4f8cff; } .dbar.avg { background: #555f6e; }
+  .dbar.strong { background: #d9a441; }
+  .dbar.neg { background: #b3555f; }
+  .ds { font-size: 11px; text-align: right; }
+  .ds.ahead { color: #7fd8ac; } .ds.behind { color: #ff9a9a; } .ds.even { color: #8b93a5; }
+  .dlegend { font-size: 11px; color: #5d6675; margin: 8px 0 0; display: flex; gap: 12px; }
+  .dlegend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+               margin-right: 4px; vertical-align: middle; }
+  .diff-note { font-size: 11px; color: #5d6675; margin: 6px 0 0; font-style: italic; }
+  /* --- punt panel tabs (R7/R8) --- */
+  .punt-note { font-size: 12px; color: #8b93a5; margin: 0 0 8px; }
+  .punt-note .stale { color: #ffd98a; font-weight: 600; }
+  .outlook { font-size: 12px; color: #7d8695; margin: 0 0 6px; }
+  .outlook b { color: #aab3c0; }
+  .punt-custom { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+  .punt-custom input { flex: 1; width: auto; padding: 8px 10px; font-size: 13px; }
+  .punt-custom button { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
+  .punt-custom button.clear { background: #2a2f3a; color: #aab3c0; }
+  #punt-msg { font-size: 12px; color: #7fd8ac; min-width: 0; }
+  #punt-msg.bad { color: #ff9a9a; }
+  /* --- roster rail --- */
+  .rpill { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #1c222d;
+           border: 1px solid #2a2f3a; color: #cfe0ff; display: inline-block; margin: 0 4px 4px 0; }
+  .rpill i { font-style: normal; color: #5d6675; font-size: 10px; margin-right: 5px; }
+  /* --- compact pick log --- */
+  .picklog { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+             line-height: 1.65; max-height: 240px; overflow-y: auto; }
+  .picklog div { white-space: nowrap; }
+  .picklog .n { color: #5d6675; display: inline-block; width: 44px; }
+  .picklog .s { color: #7d8695; display: inline-block; width: 62px; }
+  .picklog .me { color: #8fb7ff; font-weight: 600; }
+  details.card summary { cursor: pointer; color: #aab3c0; font-size: 13px; font-weight: 600;
+                         text-transform: uppercase; letter-spacing: .6px; }
+  details.card[open] summary { margin-bottom: 10px; }
+  .footer { color: #5d6675; font-size: 11px; line-height: 1.7; padding: 0 4px; }
+  code { background: #1e232c; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="fixedbar">
+  <div><b id="fb-pick">pick —</b> <span id="fb-clock-seat"></span></div>
+  <div class="fb-right"><span class="dot" id="fb-heart"></span>
+    <span id="fb-time">—</span> UTC</div>
+</div>
+  <section class="grid">
+    <div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div class="pills" style="margin-bottom:8px">
+            <span class="pill" id="p-status">status —</span>
+            <span class="pill" id="p-league">league —</span>
+            <span class="pill" id="p-seat">seat —</span>
+            <span class="pill" id="p-picks">picks 0</span>
+          </div>
+          <button id="stop" class="slim" style="display:none;background:#3a2f2f;border:1px solid #6b2f2f;color:#ffb3b3">Stop</button>
+        </div>
+        <p class="statline" id="statline">Waiting for the watcher to report…</p>
+        <div class="banner-issue" id="banner-issue"></div>
+        <div id="rec-wrap">
+          <h2>Recommendation — live</h2>
+          <p class="rec-note" id="rec-note"></p>
+          <div id="rec-picker"></div>
+          <div id="rec-body" class="empty">No recommendation yet — the watcher reports one from
+          the first poll until the draft ends; between your picks it runs as a preview.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Punt panel — pool re-ranked per build <span style="text-transform:none;color:#5d6675">(display)</span></h2>
+        <div id="punt-tabs"></div>
+        <p class="punt-note" id="punt-note"></p>
+        <div id="punt-body" class="empty">No punt panel yet — it computes from the current
+        draft state on the first poll.</div>
+        <div class="punt-custom">
+          <input id="punt-spec" placeholder='your own punt set, e.g. ft%,pts — blank = balanced'
+                 autocomplete="off" spellcheck="false">
+          <button id="punt-set" class="slim" style="background:#24304a">Set</button>
+          <button id="punt-clear" class="slim clear">Clear</button>
+        </div>
+        <div id="punt-msg" class="hint" style="min-height:16px;margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Category differential <span style="text-transform:none;color:#5d6675">(context — never a ranking input)</span></h2>
+        <div id="diff-body" class="empty">Recomputes from the current draft state after every
+        pick.</div>
+        <div class="dlegend"><span><i style="background:#4f8cff"></i>our roster</span>
+          <span><i style="background:#555f6e"></i>field avg</span>
+          <span><i style="background:#d9a441"></i>strongest roster</span></div>
+        <p class="diff-note" id="diff-note"></p>
+      </div>
+
+      <div class="card">
+        <h2>Our roster</h2>
+        <div id="roster-body" class="empty">No picks yet.</div>
+      </div>
+
+      <div class="card">
+        <h2>Pick log</h2>
+        <div id="picks-body" class="picklog empty">No picks ingested yet.</div>
+      </div>
+
+      <details class="card">
+        <summary>Watcher events</summary>
+        <div id="events-body" class="events empty">Waiting for the watcher to report…</div>
+      </details>
+    </div>
+  </section>
+
+  <details class="card" id="setup" style="margin-top:12px">
+    <summary>Arm / re-arm the watcher</summary>
+    <p class="sub" style="margin-top:10px">Submit when the mock (or real) draft is scheduled.
+    It arms a watcher (<code>scripts/draft_watch_service.py</code> watch mode), which polls the
+    Yahoo <code>draft_results</code> endpoint, reconciles every pick, and computes the
+    on-the-clock recommendation, the category differential and the punt panel for the watched
+    seat. This page updates live — no refresh needed. If anything degrades, the terminal
+    fallback (<code>scripts/dry_run_watch.py</code>) is unchanged and manual entry still
+    works.</p>
+    <div id="form">
+      <label for="league">Yahoo league key</label>
+      <input id="league" placeholder="478.l.12345 (or just 12345)" autocomplete="off" spellcheck="false">
+      <div class="hint">The number from the mock league's page URL after <code>/nba/</code> —
+      pasting the whole URL works too. The page adds the <code>478.l.</code> game prefix itself.
+      Not 478.l.25733 (that's the real league).</div>
+
+      <div class="row">
+        <div>
+          <label for="start">Start time (your local timezone)</label>
+          <input id="start" type="datetime-local" step="60">
+          <div class="hint">Converted to UTC before sending — the header clock shows UTC so you
+          can cross-check. Leave blank to start immediately.</div>
+        </div>
+        <div>
+          <label for="seat">Seat to watch</label>
+          <input id="seat" type="number" min="1" max="12" value="1">
+          <div class="hint">The draft slot to rehearse (1–12).</div>
+        </div>
+        <div>
+          <label for="interval">Poll interval (s)</label>
+          <input id="interval" type="number" min="5" max="120" value="15">
+          <div class="hint">Yahoo poll cadence once live.</div>
+        </div>
+      </div>
+
+      <button id="go">Arm the watcher</button>
+      <div class="err" id="err"></div>
+      <div class="banner" id="banner">
+        Armed — the watcher starts on its own (at the set time, or immediately) and
+        runs unattended: a scheduled script polls Yahoo and updates this page. No agent in
+        the loop. Status updates here and at the same token URL from any device:<span
+        class="url" id="puburl">—</span>
+      </div>
+    </div>
+    <div class="footer" style="margin-top:14px">
+      Watcher state: <span id="statehint">checking…</span>
+    </div>
+  </details>
+
+  <p class="footer" style="margin-top:14px">Watcher:
+  <code>fantasy-nba-gm/scripts/draft_watch_service.py</code> (watch mode)
+  · Board: 2025-26 G-score, availability projected to 2025-10-20 · Survival vs market ADP ·
+  Differential + punt panel are display-only context; candidate ordering always comes from the
+  static board. Page auto-refreshes from the watcher's state every 3 s. If the heartbeat dot
+  goes red for more than ~45 s the watcher has stopped — check <code>#fantasy-nba-gm</code>.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const REC_LABEL = {
+  'pts': 'PTS', 'reb': 'REB', 'ast': 'AST', 'stl': 'STL', 'blk': 'BLK',
+  'fg3m': '3PM', 'fg_pct': 'FG%', 'ft_pct': 'FT%', 'tov': 'TOV'
+};
+const esc = s => { const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+const short = n => (n == null ? '—' : Number(n).toLocaleString('en-US', {maximumFractionDigits: 2}));
+const pct = v => (v == null ? '—' : Math.round(v * 100) + '%');
+
+// API base: the directory this page is mounted under. Through Tailscale Funnel the
+// page lives at a token path (/fantasy-gm-watch-<token>/); root-relative fetches
+// would escape that mount and hit whatever sits at the site root (it 302s to an
+// auth login — bit the arm button 2026-10-07).
+const API_ROOT = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/';
+
+function tickClock() { $('fb-time').textContent = new Date().toISOString().slice(11, 16); }
+tickClock(); setInterval(tickClock, 1000);
+
+// Pull the draft id / league key out of whatever was pasted: bare id (what the
+// mock league page URL shows after /nba/), full key, the whole URL, or a
+// mock-lobby join link (mlid=...). Strips every kind of stray whitespace first.
+function parseLeague(raw) {
+  const s = String(raw).replace(/[\s\u00A0\u200B\u202F\uFEFF]/g, '');
+  if (/^\d+$/.test(s)) return '478.l.' + s;
+  if (/^\d+\.l\.\d+$/.test(s)) return s;
+  const m = s.match(/mlid=(\d+)/) || s.match(/\/nba\/(\d+)(?:[\/?#$]|$)/);
+  if (m) return '478.l.' + m[1];
+  const key = s.match(/(\d+)\.l\.(\d+)/);
+  if (key) return key[1] + '.l.' + key[2];
+  const nums = s.match(/\d{5,}/g);  // ids are 6-7 digits; take the last run
+  return nums ? '478.l.' + nums[nums.length - 1] : null;
+}
+
+$('go').addEventListener('click', async () => {
+  const err = $('err'); err.textContent = '';
+  const league = parseLeague($('league').value);
+  if (!league) {
+    err.textContent = 'No draft id found in: "' + $('league').value.trim().slice(0, 80) +
+      '" — paste the number from the mock league page URL (e.g. 2638432), the whole URL, or the full key (478.l.2638432).';
+    return;
+  }
+  if (!($('seat').value >= 1 && $('seat').value <= 12)) { err.textContent = 'Seat must be 1–12.'; return; }
+  const p = new URLSearchParams();
+  p.set('league', league);
+  p.set('seat', $('seat').value);
+  p.set('interval', $('interval').value);
+  // datetime-local reads in the browser's timezone; convert to UTC for the server.
+  if ($('start').value) p.set('start', new Date($('start').value).toISOString().slice(0, 16));
+  $('go').disabled = true;
+  try {
+    const r = await fetch(API_ROOT + 'trigger?' + p.toString(), {method: 'POST'});
+    const j = await r.json();
+    if (!j.ok) { err.textContent = j.error || 'Trigger failed.'; $('go').disabled = false; return; }
+    $('banner').style.display = 'block';
+    $('puburl').textContent = location.origin + location.pathname;
+    $('statehint').textContent = 'armed — waiting for the watcher to report';
+  } catch (e) { err.textContent = 'Trigger failed: ' + e; $('go').disabled = false; }
+});
+
+let stopRequested = false;
+function showStop(on) { $('stop').style.display = on ? 'inline-block' : 'none'; }
+
+$('stop').addEventListener('click', async () => {
+  try {
+    const r = await fetch(API_ROOT + 'stop', {method: 'POST', body: JSON.stringify({action: 'stop'})});
+    if (r.ok) { stopRequested = true; showStop(false); }
+  } catch (e) { /* reappears on the next poll if the stop failed */ }
+});
+
+// Custom punt set (R8): POST /punt -> serve writes punt.json -> the watcher consumes it
+// on its next poll. Errors surface under the input; nothing is silently dropped.
+async function setPunt(spec) {
+  const msg = $('punt-msg'); msg.className = 'hint'; msg.textContent = 'sending…';
+  try {
+    const r = await fetch(API_ROOT + 'punt', {method: 'POST', body: JSON.stringify({punt: spec})});
+    const j = await r.json();
+    if (!j.ok) { msg.className = 'hint bad'; msg.textContent = j.error || 'rejected'; return; }
+    msg.textContent = j.punt && j.punt.length
+      ? 'set: ' + j.punt.join(', ') + ' — the panel recomputes on the watcher\'s next poll'
+      : 'cleared — back to the named builds';
+  } catch (e) { msg.className = 'hint bad'; msg.textContent = 'failed: ' + e; }
+}
+$('punt-set').addEventListener('click', () => setPunt($('punt-spec').value.trim()));
+$('punt-clear').addEventListener('click', () => { $('punt-spec').value = ''; setPunt(''); });
+
+function pill(id, text, cls) {
+  const el = $(id); el.innerHTML = text; el.className = 'pill' + (cls ? ' ' + cls : '');
+}
+
+// The recommendation table renders from the SAME column spec the terminal does: the
+// watcher embeds rec.column_spec (column_spec_json) in state.json and per-candidate
+// adp/adp_dev/neg_cats alongside. Old state files without a spec still render via the
+// fallback keys (additive schema: a stale serve process never breaks the page).
+const COL_FALLBACK = ['rk', 'player', 'value', 'vs_safe', 'surv', 'adp', 'top_cats', 'neg_cats'];
+const COL_HEADER_FALLBACK = { rk: 'rk', player: 'player', value: 'value', vs_safe: 'vs safe',
+                              surv: 'surv', adp: 'adp', adp_dev: 'adp−rk',
+                              top_cats: 'top cats', neg_cats: 'neg cats' };
+const COL_CLASS = { rk: 'num', player: 'name', value: 'num', vs_safe: 'num', surv: 'num',
+                    adp: 'num', adp_dev: 'num', top_cats: '', neg_cats: '' };
+const LS_KEY = 'rec-columns';
+const CELL = {
+  rk: c => c.board_rank,
+  player: c => esc(c.name),
+  value: c => short(c.total),
+  vs_safe: c => (c.value_over_safe > 0 ? '+' : '') + short(c.value_over_safe),
+  surv: c => pct(c.survival),
+  adp: c => c.adp == null ? '—' : c.adp,
+  adp_dev: c => c.adp_dev == null ? '—' : (c.adp_dev > 0 ? '+' : '') + c.adp_dev,
+  top_cats: c => Object.entries(c.categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([k, v]) => `<span class="cat">${REC_LABEL[k] || esc(k)} ${v > 0 ? '+' : ''}${short(v)}</span>`)
+    .join(' · '),
+  neg_cats: c => (c.neg_cats || []).map(([k, v]) =>
+    `<span class="cat neg">${REC_LABEL[k] || esc(k)} ${v > 0 ? '+' : ''}${short(v)}</span>`)
+    .join(' · '),
+};
+
+function readLS() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) { return []; }
+}
+
+// Validate the stored picker choice against the CURRENT spec every render: keys the spec
+// no longer knows are dropped, never rendered; nothing valid (or nothing stored) falls
+// back to the spec's defaults. Rendering order is spec order, not click order.
+function resolveColumns(spec) {
+  const known = spec ? spec.map(s => s.key) : COL_FALLBACK;
+  let keys = readLS().filter(k => known.includes(k));
+  if (!keys.length) {
+    keys = spec ? spec.filter(s => s.default).map(s => s.key) : COL_FALLBACK;
+  }
+  return known.filter(k => keys.includes(k));
+}
+
+let lastRec = null;
+let pickerBuiltFor = null;
+
+function buildPicker(spec, keys) {
+  const host = $('rec-picker');
+  if (!spec || !spec.length) { host.style.display = ''; host.innerHTML = ''; pickerBuiltFor = null; return; }
+  const sig = JSON.stringify(spec);
+  if (sig !== pickerBuiltFor) {
+    pickerBuiltFor = sig;
+    host.style.display = 'flex';
+    host.innerHTML = '<span class="picker-label">columns</span>' + spec.map(s =>
+      `<button type="button" class="chip" data-key="${esc(s.key)}">${esc(s.header)}</button>`).join('');
+    host.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+      const on = new Set(readLS().filter(k => (spec || []).some(s => s.key === k)));
+      if (on.has(ch.dataset.key)) on.delete(ch.dataset.key); else on.add(ch.dataset.key);
+      try { localStorage.setItem(LS_KEY, JSON.stringify([...on])); } catch (e) { /* private mode: session-only */ }
+      if (lastRec) renderRec(lastRec);   // empty selection falls back to defaults (a table needs columns)
+    }));
+  }
+  host.querySelectorAll('.chip').forEach(ch => ch.classList.toggle('on', keys.includes(ch.dataset.key)));
+}
+
+function renderRec(rec) {
+  lastRec = rec;
+  if (!rec) { pickerBuiltFor = null; $('rec-picker').style.display = 'none'; $('rec-note').textContent = '';
+    $('rec-body').innerHTML = 'No recommendation yet — the watcher reports one from the first poll until the draft ends; between your picks it runs as a preview.';
+    $('rec-body').className = 'empty'; return; }
+  const clock = rec.on_the_clock === rec.my_seat;
+  let mode = rec.mode === 'engine' ? 'H0 engine + board' : 'static board';
+  // survival is always projected to OUR next pick; the head says whose turn it is and
+  // what our next pick is, so the card reads correctly as a preview between our picks.
+  const mine = rec.my_next_pick != null ? rec.my_next_pick : rec.pick_number;
+  let head = clock
+    ? `YOUR PICK #${mine} — pick ${rec.pick_number}`
+    : `Preview — seat ${rec.on_the_clock} on the clock · your pick #${mine} · surv = P(still there then)`;
+  $('rec-note').textContent = head + ' · ' + mode + (rec.degraded ? ' — DEGRADED' : '')
+    + (rec.note ? ' — ' + rec.note : '');
+  const spec = Array.isArray(rec.column_spec) && rec.column_spec.length ? rec.column_spec : null;
+  const keys = resolveColumns(spec);
+  buildPicker(spec, keys);
+  if (!rec.candidates || !rec.candidates.length) {
+    $('rec-body').innerHTML = '<span class="empty">No candidates available.</span>'; return;
+  }
+  const ths = keys.map(k => {
+    const s = spec && spec.find(x => x.key === k);
+    return `<th>${esc(s ? s.header : (COL_HEADER_FALLBACK[k] || k))}</th>`;
+  }).join('');
+  const rows = rec.candidates.map((c, i) => {
+    const tds = keys.map(k => {
+      const cls = COL_CLASS[k];
+      const body = (CELL[k] || (() => '—'))(c);
+      return `<td${cls ? ` class="${cls}"` : ''}>${body || ''}</td>`;
+    }).join('');
+    return `<tr class="${i === 0 ? 'me' : ''}">${tds}</tr>`;
+  }).join('');
+  $('rec-body').innerHTML = `<table><tr>${ths}</tr>${rows}</table>`;
+}
+
+// --- differential (additive state: a state without it renders nothing new) ---------
+function renderDifferential(d) {
+  const body = $('diff-body');
+  if (!d || !d.categories || !d.categories.length) {
+    body.className = 'empty';
+    body.innerHTML = 'Recomputes from the current draft state after every pick.';
+    $('diff-note').textContent = ''; return;
+  }
+  body.className = '';
+  // Bars scale PER CATEGORY: counting cats (PTS ~ hundreds) and percentage impacts
+  // (FG% ~ tenths) share no meaningful unit, so a global scale would make the percentage
+  // cats invisible. Within a cat the three bars stay directly comparable.
+  body.innerHTML = d.categories.map(c => {
+    const max = Math.max(1e-9, Math.abs(c.our), Math.abs(c.avg), Math.abs(c.strong));
+    const bar = (v, cls) => {
+      const w = Math.max(1.5, Math.abs(v) / max * 100);
+      return `<div class="dtrack"><div class="dbar ${cls}${v < 0 ? ' neg' : ''}" style="width:${w}%"></div></div>`;
+    };
+    return `<div class="diff-row">
+      <span class="dl">${esc(c.label || REC_LABEL[c.cat] || c.cat)}</span>
+      <div>${bar(c.our, 'ours')}${bar(c.avg, 'avg')}${bar(c.strong, 'strong')}</div>
+      <span class="ds ${esc(c.standing)}">${esc(c.standing)}</span></div>`;
+  }).join('');
+  const notes = [];
+  if (d.strongest_seat != null) notes.push(`strongest opposing roster: seat ${d.strongest_seat}`);
+  if (d.unpriced_rostered) notes.push(`${d.unpriced_rostered} rostered player(s) unpriced — counted as zero`);
+  $('diff-note').textContent = notes.join(' · ');
+}
+
+// --- punt panel tabs ---------------------------------------------------------------
+let puntTab = null;
+function renderPunt(p) {
+  const body = $('punt-body'), tabs = $('punt-tabs'), note = $('punt-note');
+  if (!p || !p.builds || !p.builds.length) {
+    tabs.innerHTML = ''; note.textContent = '';
+    body.className = 'empty';
+    body.innerHTML = p && p.note ? esc(p.note)
+      : 'No punt panel yet — it computes from the current draft state on the first poll.';
+    return;
+  }
+  body.className = '';
+  if (puntTab == null || !p.builds.some(b => b.build === puntTab)) puntTab = p.builds[0].build;
+  tabs.innerHTML = '<span class="picker-label">build</span>' + p.builds.map(b =>
+    `<button type="button" class="chip${b.build === puntTab ? ' on' : ''}" data-build="${esc(b.build)}">${esc(b.label)}</button>`).join('');
+  tabs.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+    puntTab = ch.dataset.build; renderPunt(p);
+  }));
+  const b = p.builds.find(x => x.build === puntTab);
+  const stale = p.stale ? ' <span class="stale">STALE — as of pick ' + p.pick_number +
+    ', now pick ' + p.current_pick + '</span>' : '';
+  note.innerHTML = (b.scored.length
+    ? 'plays ' + b.scored.map(k => REC_LABEL[k] || esc(k)).join(' · ')
+    : 'no scored cats') + ' · computed at pick ' + p.current_pick + ' in ' + short(p.elapsed_s) + 's' + stale
+    + (p.note ? '<br>' + esc(p.note) : '');
+  const rows = (b.rows || []).map(c => `
+    <tr${c.rank === 1 ? ' class="me"' : ''}>
+      <td class="num">${c.rank}</td><td class="name">${esc(c.name)}</td>
+      <td class="num">${short(c.total)}</td>
+      <td class="num">${c.adp == null ? '—' : c.adp}</td>
+      <td class="num">${pct(c.survival)}</td></tr>`).join('');
+  body.innerHTML = `
+    <p class="outlook">roster-so-far under this build: <b>${b.outlook.up} ahead</b> ·
+      <b>${b.outlook.down} behind</b> · ${b.outlook.even} even</p>
+    <table><tr><th>rk</th><th>player</th><th>value</th><th>adp</th><th>surv</th></tr>${rows}</table>`;
+}
+
+// --- roster rail -------------------------------------------------------------------
+function renderRoster(s) {
+  const mine = (s.picks || []).filter(p => p.seat === s.seat);
+  const body = $('roster-body');
+  if (!mine.length) { body.className = 'empty'; body.textContent = 'No picks yet.'; return; }
+  body.className = '';
+  body.innerHTML = mine.map(p =>
+    `<span class="rpill"><i>#${p.number}</i>${esc(p.name || p.player_id)}</span>`).join('');
+}
+
+function render(s) {
+  const status = s.status || 'waiting';
+  let cls = '';
+  if (status === 'watching') cls = 'green';
+  if (status === 'stopped' || status === 'error') cls = 'red';
+  if (status === 'starting' || status === 'scheduled' || status === 'armed') cls = 'amber';
+  // Fixed header: the pick clock (R9) — where the draft stands and whether it is our turn.
+  const rec = s.recommendation;
+  $('fb-pick').textContent = rec ? 'pick ' + rec.pick_number : 'pick —';
+  const seatEl = $('fb-clock-seat');
+  if (rec) {
+    seatEl.textContent = rec.on_the_clock === rec.my_seat ? 'YOU ARE ON THE CLOCK'
+      : 'seat ' + rec.on_the_clock + ' on the clock';
+    seatEl.className = rec.on_the_clock === rec.my_seat ? 'mine' : '';
+  } else { seatEl.textContent = status === 'armed' ? 'armed — waiting' : ''; seatEl.className = ''; }
+  // heartbeat_at arrives ISO with a trailing Z; normalize instead of blind-appending
+  // (a double Z parses invalid -> NaN, which rendered as "stale · NaNs ago" forever).
+  const hb = s.heartbeat_at
+    ? (Date.now() - Date.parse(String(s.heartbeat_at).replace(/Z?$/, 'Z'))) / 1000 : null;
+  const heart = $('fb-heart');
+  if (status === 'armed') heart.className = 'dot amber';
+  else if (hb == null || !Number.isFinite(hb)) heart.className = 'dot amber';
+  else if (hb < 45) heart.className = 'dot green';
+  else if (status === 'stopped') heart.className = 'dot amber';
+  else heart.className = 'dot red';
+  // Stop only makes sense while a watcher process exists to receive it.
+  showStop(['watching', 'starting', 'error'].includes(status) && !stopRequested);
+  pill('p-status', 'status ' + esc(status), cls);
+  pill('p-league', 'league ' + esc(s.league || '—'));
+  pill('p-seat', 'seat ' + esc(s.seat != null ? s.seat : '—'));
+  pill('p-picks', 'picks ' + (s.pick_count != null ? s.pick_count : '0'));
+
+  $('statline').textContent = s.error
+    ? 'Last poll: ' + s.error + ' — retrying; manual entry remains available.'
+    : s.status === 'armed'
+      ? ('Armed league ' + (s.league || '—') + ' · seat ' + (s.seat != null ? s.seat : '—') + ' · previous draft cleared · '
+         + (s.start_utc ? 'starts ' + s.start_utc + ' UTC' : 'watcher starts within a minute') + '.')
+      : (s.board_players ? `Board ready: ${s.board_players} players · polling every ${s.interval_s || 15}s.`
+                         : 'Watcher requested — building the board (takes a moment)…');
+  $('statehint').textContent = 'watcher ' + status;
+
+  const bi = $('banner-issue');
+  const issues = s.issues || [];
+  if (s.error) {
+    bi.style.display = 'block'; bi.className = 'banner-issue error';
+    bi.textContent = s.error;
+  } else if (issues.length) {
+    bi.style.display = 'block'; bi.className = 'banner-issue';
+    bi.textContent = 'Discrepancy — not silently merged: ' + issues.join(' · ');
+  } else bi.style.display = 'none';
+
+  renderRec(s.recommendation);
+  renderDifferential(s.differential);   // additive: absent field -> section stays empty
+  renderPunt(s.punt_panel);
+  renderRoster(s);
+
+  const picks = s.picks || [];
+  if (!picks.length) { $('picks-body').className = 'picklog empty';
+    $('picks-body').textContent = 'No picks ingested yet.'; }
+  else {
+    $('picks-body').className = 'picklog';
+    $('picks-body').innerHTML = picks.slice().reverse().map(p =>
+      `<div><span class="n">#${p.number}</span><span class="s">seat ${p.seat}</span>` +
+      `<span class="${p.seat === s.seat ? 'me' : ''}">${esc(p.name)}</span></div>`).join('');
+  }
+
+  const evs = s.events || [];
+  if (!evs.length) $('events-body').innerHTML = '<span class="empty">Waiting for the watcher to report…</span>';
+  else $('events-body').innerHTML = evs.slice().reverse().map(e => {
+    const cls = e.text.startsWith('!') ? 'issue' : (e.text.includes('YOU') ? 'me' : '');
+    return `<div><span class="t">${esc(e.at)}</span><span class="${cls}">${esc(e.text)}</span></div>`;
+  }).join('');
+}
+
+async function poll() {
+  try {
+    const r = await fetch(API_ROOT + 'state.json?t=' + Date.now());
+    if (r.ok) { render(await r.json()); }
+  } catch (e) { $('statehint').textContent = 'page cannot reach the server'; }
+}
+poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>
