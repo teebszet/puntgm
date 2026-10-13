@@ -1,0 +1,68 @@
+{
+  "captured": "2026-10-13",
+  "question": "the injured four's pricing before vs after the status+baseline pipeline (dds 1.x-2.x)",
+  "board_call": "build_gm(store, '2025-26', '2025-10-20') \u2014 the draft-night path (board + market + directory + basis)",
+  "before": {
+    "commit": "5d90fc9 (draft-engine tip; no dds change)",
+    "pool_size": 156,
+    "rows": {
+      "1630169": null,
+      "203081": null,
+      "202681": null,
+      "1628369": {
+        "rank": 17,
+        "total": 4.2841,
+        "expected_games": 72.7,
+        "availability_rate": 0.886,
+        "status": null,
+        "rate_source": null
+      }
+    },
+    "unpriced": []
+  },
+  "after": {
+    "commit": "2e5093d (dds 1.x-2.x built)",
+    "pool_size": 156,
+    "rows": {
+      "1630169": {
+        "rank": 5,
+        "total": 6.3748,
+        "expected_games": 70.7,
+        "availability_rate": 0.862,
+        "status": null,
+        "rate_source": "baseline:2024-25"
+      },
+      "203081": {
+        "rank": 16,
+        "total": 4.3029,
+        "expected_games": 65.2,
+        "availability_rate": 0.796,
+        "status": null,
+        "rate_source": "baseline:2024-25"
+      },
+      "202681": {
+        "rank": 47,
+        "total": 1.5588,
+        "expected_games": 53.9,
+        "availability_rate": 0.657,
+        "status": null,
+        "rate_source": "baseline:2024-25"
+      },
+      "1628369": {
+        "rank": 21,
+        "total": 3.568,
+        "expected_games": 72.7,
+        "availability_rate": 0.886,
+        "status": null,
+        "rate_source": null
+      }
+    },
+    "unpriced": []
+  },
+  "players": {
+    "Tyrese Haliburton": "1630169",
+    "Damian Lillard": "203081",
+    "Kyrie Irving": "202681",
+    "Jayson Tatum": "1628369"
+  }
+}

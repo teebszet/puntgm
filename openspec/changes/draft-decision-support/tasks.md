@@ -45,31 +45,31 @@
 
 ## 5. Category differential view (R6)
 
-- [ ] 5.1 Per-category profile of our roster vs field-average roster vs field-strongest
+- [x] 5.1 Per-category profile of our roster vs field-average roster vs field-strongest
       roster, from current draft state, recomputed per pick; reuses the 3.1 differential
       model's inputs without its objective
-- [ ] 5.2 Page bars + terminal block, labeled "context"; test: display-only (candidate
+- [x] 5.2 Page bars + terminal block, labeled "context"; test: display-only (candidate
       ordering is unchanged by differential computation)
 
 ## 6. Live punt scenarios (R7, R8)
 
-- [ ] 6.1 Punt panel: named builds + custom cat set re-rank the remaining pool against
+- [x] 6.1 Punt panel: named builds + custom cat set re-rank the remaining pool against
       current state; per-build top candidates + roster outlook
-- [ ] 6.2 Budget: all builds within `budget_s`; beyond it the last complete set shows with
+- [x] 6.2 Budget: all builds within `budget_s`; beyond it the last complete set shows with
       its pick number, marked stale (4.5 pattern); per-pick cache invalidated on next pick
-- [ ] 6.3 Test: builds exclude drafted players; custom set accepted; stale marking on
+- [x] 6.3 Test: builds exclude drafted players; custom set accepted; stale marking on
       overrun
 
 ## 7. Dashboard page (R9)
 
-- [ ] 7.1 Redesign `index.html`: fixed clock header, rec card with column picker, differential
+- [x] 7.1 Redesign `index.html`: fixed clock header, rec card with column picker, differential
       bars, punt panel tabs, roster rail, compact pick log; dense dark theme, phone-portrait
       usable; same static page + `/state.json` contract, additive state
-- [ ] 7.2 Screenshot pass: desktop + phone widths against the mock rehearsal, posted for Tim
+- [x] 7.2 Screenshot pass: desktop + phone widths against the mock rehearsal, posted for Tim
 
 ## 8. Rehearsal and gates
 
-- [ ] 8.1 Re-run `scripts/mock_draft_harness.py` with status ingest + columns + punt panel;
+- [x] 8.1 Re-run `scripts/mock_draft_harness.py` with status ingest + columns + punt panel;
       record the four players' pricing before/after the status+baseline pipeline in runs/
 - [x] 8.2 **HUMAN GATE — spec direction.** Tim reviews this change (Obsidian) before
       implementation starts. Waits on: Tim — cleared 2026-10-08 ("ok build it", after round 1)

@@ -7,39 +7,39 @@
   "assumption": "production repeats",
   "results": {
     "ours": {
-      "cat_wins": 80795.5,
+      "cat_wins": 78560.5,
       "cat_games": 148500,
-      "matchup_wins": 9629.0,
+      "matchup_wins": 9131.0,
       "matchups": 16500
     },
     "g_score": {
-      "cat_wins": 77943.0,
+      "cat_wins": 76654.0,
       "cat_games": 148500,
-      "matchup_wins": 9094.5,
+      "matchup_wins": 8577.0,
       "matchups": 16500
     },
     "z_steelman": {
-      "cat_wins": 80012.5,
+      "cat_wins": 74683.0,
       "cat_games": 148500,
-      "matchup_wins": 9536.5,
+      "matchup_wins": 8205.0,
       "matchups": 16500
     },
     "z_pergame": {
-      "cat_wins": 74750.0,
+      "cat_wins": 72271.5,
       "cat_games": 148500,
-      "matchup_wins": 7743.5,
+      "matchup_wins": 7236.5,
       "matchups": 16500
     },
     "adp_market": {
-      "cat_wins": 70410.0,
+      "cat_wins": 73889.5,
       "cat_games": 148500,
-      "matchup_wins": 7559.0,
+      "matchup_wins": 8294.0,
       "matchups": 16500
     },
     "null": {
-      "cat_wins": 78519.0,
+      "cat_wins": 75157.5,
       "cat_games": 148500,
-      "matchup_wins": 9052.5,
+      "matchup_wins": 8232.0,
       "matchups": 16500
     }
   }

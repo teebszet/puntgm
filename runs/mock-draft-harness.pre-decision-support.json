@@ -1,0 +1,46 @@
+{
+  "season": "2025-26",
+  "as_of": "2025-10-20",
+  "mocks_per_rotation": 5,
+  "rotations": 12,
+  "field": "market_adp_bots",
+  "assumption": "production repeats",
+  "results": {
+    "ours": {
+      "cat_wins": 80795.5,
+      "cat_games": 148500,
+      "matchup_wins": 9629.0,
+      "matchups": 16500
+    },
+    "g_score": {
+      "cat_wins": 77943.0,
+      "cat_games": 148500,
+      "matchup_wins": 9094.5,
+      "matchups": 16500
+    },
+    "z_steelman": {
+      "cat_wins": 80012.5,
+      "cat_games": 148500,
+      "matchup_wins": 9536.5,
+      "matchups": 16500
+    },
+    "z_pergame": {
+      "cat_wins": 74750.0,
+      "cat_games": 148500,
+      "matchup_wins": 7743.5,
+      "matchups": 16500
+    },
+    "adp_market": {
+      "cat_wins": 70410.0,
+      "cat_games": 148500,
+      "matchup_wins": 7559.0,
+      "matchups": 16500
+    },
+    "null": {
+      "cat_wins": 78519.0,
+      "cat_games": 148500,
+      "matchup_wins": 9052.5,
+      "matchups": 16500
+    }
+  }
+}
