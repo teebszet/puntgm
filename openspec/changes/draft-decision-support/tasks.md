@@ -25,6 +25,10 @@
       player neither sample nor baseline can price is reported as unpriced with the reason
 - [x] 2.4 Coverage check on the four (Haliburton, Lillard, Tatum, Kyrie): after ingest,
       verify status rows + basis lines; record their pricing in runs/
+- [x] 2.5 Thin-sample trust floor (Tim, 2026-10-14): a ranked sample under 25 played games
+      prices rates from the last healthy season when one clears the same floor, else keeps
+      the small sample (never unpriced by the rule). Caught on the live store: Beal, AD,
+      Sabonis, Morant, Tatum, Dejounte Murray, Kessler
 
 ## 3. Forward basis option (R4)
 

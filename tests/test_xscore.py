@@ -325,3 +325,67 @@ def test_a_lost_season_prices_rates_from_the_last_healthy_one_and_names_it():
     assert sources == {"returnee": "baseline:2024-25"}
     # and a player with a usable ranked sample is priced identically either way (Tatum's case)
     assert stats2["scorer"]["pts"].mean == stats["scorer"]["pts"].mean
+
+
+# --- R2 extended: thin ranked samples price from the last healthy season ----------
+
+
+def _thin_sample_fixture(ranked_games: int, baseline_games: int = 30):
+    """A pool player with ``ranked_games`` played 2025-26 games (a thin sample) and a
+    healthy 2024-25 season of ``baseline_games`` games at a clearly different rate."""
+    from fantasy_gm.models import ForwardRoster
+
+    store = Store(":memory:")
+    _seed(store, {"steady": [_line(pts=20) for _ in range(28)],
+                  "filler": [_line(pts=8) for _ in range(28)]})
+    for gi in range(ranked_games):
+        d = (date(2025, 12, 1) + timedelta(days=gi)).isoformat()
+        store.upsert_games([Game(f"t{gi}", SEASON, d, "AAA", "BBB")])
+        store.upsert_player_logs(
+            [PlayerGameLog(f"t{gi}", SEASON, d, "thin", "Thin", "BBB", _line(pts=8.0))])
+        store.add_usage_role([UsageRole("thin", d, 20.0, 8.0, False, 3)])
+    for gi in range(baseline_games):
+        d = (date(2024, 11, 1) + timedelta(days=gi)).isoformat()
+        store.upsert_games([Game(f"b{gi}", "2024-25", d, "AAA", "BBB")])
+        store.upsert_player_logs(
+            [PlayerGameLog(f"b{gi}", "2024-25", d, "thin", "Thin", "BBB", _line(pts=22.0))])
+        store.add_usage_role([UsageRole("thin", d, 34.0, 16.0, True, 1)])
+    store.add_forward_roster([
+        ForwardRoster("thin", "2026-27", "AAA", 2, known_from="2026-08-17"),
+    ])
+    return store
+
+
+def test_a_thin_ranked_sample_prices_from_the_last_healthy_season_and_names_it():
+    """Above the eligibility floor but below the trust floor (25 games): the small sample
+    must not rank him — the healthy season carries his rates, named as baseline provenance
+    (the Dejounte Murray / Beal tier)."""
+    store = _thin_sample_fixture(ranked_games=14)
+    sources: dict[str, str] = {}
+    stats, pool = measure_per_game_stats(store, SEASON, forward_season="2026-27",
+                                         sources=sources)
+    assert "thin" in pool
+    assert stats["thin"]["pts"].mean == pytest.approx(22.0)
+    assert sources["thin"] == "baseline:2024-25"
+
+
+def test_a_full_ranked_sample_is_never_replaced_by_the_baseline():
+    """A 25+ game ranked season ranks from itself even when the baseline season scores
+    more — the rule only catches samples too small to trust, not worse ones."""
+    store = _thin_sample_fixture(ranked_games=26)
+    sources: dict[str, str] = {}
+    stats, _pool = measure_per_game_stats(store, SEASON, forward_season="2026-27",
+                                          sources=sources)
+    assert stats["thin"]["pts"].mean == pytest.approx(8.0)
+    assert "thin" not in sources
+
+
+def test_a_thin_sample_with_only_a_modest_baseline_keeps_the_ranked_sample():
+    """No earlier season clears the trust floor (25): the small ranked sample stays the
+    best available evidence — a player is never made unpriced by the trust rule."""
+    store = _thin_sample_fixture(ranked_games=14, baseline_games=15)
+    sources: dict[str, str] = {}
+    stats, _pool = measure_per_game_stats(store, SEASON, forward_season="2026-27",
+                                          sources=sources)
+    assert stats["thin"]["pts"].mean == pytest.approx(8.0)
+    assert "thin" not in sources

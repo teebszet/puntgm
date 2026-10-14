@@ -57,6 +57,12 @@ from fantasy_gm.valuation import _player_games, last_healthy_sample, rosterable_
 # (assumptions ledger A-DRAFT-4).
 DEFAULT_KAPPA = 1.0
 
+# A ranked-season sample too small to trust prices from the player's last healthy season
+# instead (the thin-sample edge, R2's rule extended): 14 games told a true story about
+# nobody's role, and a 6-game 8.2 pts/g (Beal, 2025-26) must not rank a 17.0 pts/g player.
+# Above BASELINE_MIN_GAMES so the eligibility floor and the trust floor stay distinct.
+THIN_SAMPLE_GAMES = 25
+
 
 class VarianceMode(StrEnum):
     """Where a player's period-to-period variance comes from."""
@@ -365,7 +371,10 @@ def measure_per_game_stats(
     lets the pool place players the ranked season cannot — a rookie, or a season lost to
     injury — by derived depth on their projected roster, and ``last_healthy_sample`` prices
     such a player's *rates* from his most recent season above the games floor (R2's injury
-    edge, rate half; the placement half is the pool's derived-depth rule). Rate measurement
+    edge, rate half; the placement half is the pool's derived-depth rule). A ranked sample
+    above the games floor but below :data:`THIN_SAMPLE_GAMES` is treated the same way — too
+    few games to trust as a rate basis — with the trust floor preferred for the baseline
+    season and the plain games floor as fallback. Rate measurement
     always reads complete seasons — the board's ``as_of`` lookahead discipline guards the
     availability fit, not the rate basis.
 
@@ -387,22 +396,26 @@ def measure_per_game_stats(
     league_rates = league_percentage_rates(store, season, pcts, pool, lines=lines)
 
     stats: dict[str, dict[str, PeriodStats]] = {}
-    for pid in pool:
-        games = lines.get(pid)
-        if not games:
-            continue
+
+    def _price(stat_lines: list[dict]) -> dict[str, PeriodStats]:
         per_cat: dict[str, PeriodStats] = {}
         for c in counting:
-            per_cat[c] = _summarise([g.get(c, 0.0) for g in games])
+            per_cat[c] = _summarise([g.get(c, 0.0) for g in stat_lines])
         for c in pcts:
             mk, at = PERCENTAGE_CATEGORIES[c]
             rate = league_rates[c]
             per_cat[c] = _summarise([
                 (g.get(mk, 0.0) / g.get(at, 0.0) - rate) * g.get(at, 0.0)
                 if g.get(at, 0.0) > 0 else 0.0
-                for g in games
+                for g in stat_lines
             ])
-        stats[pid] = per_cat
+        return per_cat
+
+    for pid in pool:
+        games = lines.get(pid)
+        if not games:
+            continue
+        stats[pid] = _price(games)
 
     # R2's injury edge (rate half): pool players the ranked season cannot price — a season
     # lost to injury, a sample below the floor — price per-game rates from their last
@@ -410,21 +423,22 @@ def measure_per_game_stats(
     # reference, so every player on the board is measured against one environment rather
     # than a mix; the baseline season's own environment is not re-derived.
     unpriced = [p for p in pool if p not in stats]
-    if unpriced:
-        baseline = last_healthy_sample(store, season, unpriced, min_games=min_games)
-        for pid, (_base_season, base_lines) in baseline.items():
-            per_cat: dict[str, PeriodStats] = {}
-            for c in counting:
-                per_cat[c] = _summarise([g.get(c, 0.0) for g in base_lines])
-            for c in pcts:
-                mk, at = PERCENTAGE_CATEGORIES[c]
-                rate = league_rates[c]
-                per_cat[c] = _summarise([
-                    (g.get(mk, 0.0) / g.get(at, 0.0) - rate) * g.get(at, 0.0)
-                    if g.get(at, 0.0) > 0 else 0.0
-                    for g in base_lines
-                ])
-            stats[pid] = per_cat
+    baseline = last_healthy_sample(store, season, unpriced, min_games=min_games)
+    for pid, (_base_season, base_lines) in baseline.items():
+        stats[pid] = _price(base_lines)
+        if sources is not None:
+            sources[pid] = f"baseline:{_base_season}"
+
+    # Thin-sample edge: a sample above the games floor but below the trust floor
+    # (:data:`THIN_SAMPLE_GAMES`) is replaced by the last healthy season *when one clears
+    # the trust floor* — a 6-game 8.2 pts/g (Beal, 2025-26) must not rank a 17.0 pts/g
+    # player. When no such baseline exists (a rookie's first season, say), the small
+    # sample itself stays the best available evidence and ranks him, never nothing.
+    thin = [p for p in pool if lines.get(p) and len(lines[p]) < THIN_SAMPLE_GAMES]
+    if thin:
+        trusted = last_healthy_sample(store, season, thin, min_games=THIN_SAMPLE_GAMES)
+        for pid, (_base_season, base_lines) in trusted.items():
+            stats[pid] = _price(base_lines)
             if sources is not None:
                 sources[pid] = f"baseline:{_base_season}"
     return stats, pool
