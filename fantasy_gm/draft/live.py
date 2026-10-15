@@ -16,6 +16,7 @@ preference:
 Discrepancies between ingested and platform state are surfaced, never silently
 reconciled (4.3).
 """
+
 from __future__ import annotations
 
 import json
@@ -111,8 +112,12 @@ class DraftState:
 
     @classmethod
     def from_parts(
-        cls, my_roster: list[str], opponent_rosters: list[list],
-        taken: set, n_teams: int, my_seat: int,
+        cls,
+        my_roster: list[str],
+        opponent_rosters: list[list],
+        taken: set,
+        n_teams: int,
+        my_seat: int,
     ) -> DraftState:
         """Build state from the replay harness's view (rosters + taken set).
 
@@ -124,13 +129,15 @@ class DraftState:
         state = cls(league_key="harness", n_teams=n_teams, my_seat=my_seat)
         num = 1
         for pid in my_roster:
-            state.picks.append(Pick(number=num, player_id=pid, team_seat=my_seat,
-                                    source=PICK_SOURCE_LIVE))
+            state.picks.append(
+                Pick(number=num, player_id=pid, team_seat=my_seat, source=PICK_SOURCE_LIVE)
+            )
             num += 1
         for roster in opponent_rosters:
             for pid in roster:
-                state.picks.append(Pick(number=num, player_id=pid, team_seat=0,
-                                        source=PICK_SOURCE_LIVE))
+                state.picks.append(
+                    Pick(number=num, player_id=pid, team_seat=0, source=PICK_SOURCE_LIVE)
+                )
                 num += 1
         return state
 
@@ -139,9 +146,14 @@ class DraftState:
         if player_id in self.taken:
             raise ValueError(f"player {player_id} is already drafted")
         number = self.pick_number
-        pick = Pick(number=number, player_id=player_id, team_seat=_seat_of(number, self.n_teams),
-                    source=source, name=name,
-                    at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        pick = Pick(
+            number=number,
+            player_id=player_id,
+            team_seat=_seat_of(number, self.n_teams),
+            source=source,
+            name=name,
+            at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
         self.picks.append(pick)
         return pick
 
@@ -159,8 +171,10 @@ def fetch_draft_results(league_key: str, access_token: str) -> list[dict]:
     """
     import requests
 
-    url = (f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/draftresults"
-           f";out=players?format=json")
+    url = (
+        f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/draftresults"
+        f";out=players?format=json"
+    )
     resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
     if resp.status_code == 401:
         raise RuntimeError("401 from Yahoo — token expired; the poller will refresh and retry")
@@ -226,17 +240,20 @@ def parse_draft_results(payload) -> list[dict]:
         if num is None or num in seen:
             continue
         seen.add(num)
-        out.append({
-            "pick": num,
-            "team_key": d.get("team_key"),
-            "player_id": pid,
-            "name": _embedded_name(d) or None,
-        })
+        out.append(
+            {
+                "pick": num,
+                "team_key": d.get("team_key"),
+                "player_id": pid,
+                "name": _embedded_name(d) or None,
+            }
+        )
     return out
 
 
 def poll_draft_results(
-    league_key: str, token_path: str | Path = "data/yahoo_access_token.txt",
+    league_key: str,
+    token_path: str | Path = "data/yahoo_access_token.txt",
     pkce_path: str | Path = "data/yahoo_pkce.json",
 ) -> list[dict]:
     """One poll cycle: fetch draft_results with a self-refreshing token.
@@ -280,13 +297,9 @@ def build_player_directory(store, season: str) -> tuple[dict[str, str], dict[str
     by hand on draft night.
     """
     by_id: dict[str, str] = {}
-    for r in store.conn.execute(
-        "SELECT DISTINCT player_id, player_name FROM player_logs"
-    ):
+    for r in store.conn.execute("SELECT DISTINCT player_id, player_name FROM player_logs"):
         by_id[str(r["player_id"])] = r["player_name"]
-    for r in store.conn.execute(
-        "SELECT player_id, player_name FROM incoming_players"
-    ):
+    for r in store.conn.execute("SELECT player_id, player_name FROM incoming_players"):
         by_id[str(r["player_id"])] = r["player_name"]
     by_key: dict[str, list[str]] = {}
     for pid, name in by_id.items():
@@ -318,9 +331,7 @@ def resolve_player(
     if matches:
         return None, matches[:10]
     # substring fallback for mid-name fragments
-    matches = sorted({
-        pid for key, ids in by_key.items() if q in key for pid in ids
-    })
+    matches = sorted({pid for key, ids in by_key.items() if q in key for pid in ids})
     if len(matches) == 1:
         return matches[0], []
     return None, matches[:10]
@@ -351,7 +362,9 @@ def apply_manual_pick(
 
 
 def reconcile(
-    state: DraftState, platform_picks: list[dict], by_id: dict[str, str],
+    state: DraftState,
+    platform_picks: list[dict],
+    by_id: dict[str, str],
     by_key: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Merge platform picks into the state, reporting every discrepancy it finds.
@@ -388,8 +401,10 @@ def reconcile(
                 store_pid = cands[0]
             elif len(cands) > 1:
                 shown = ", ".join(f"{c} ({by_id.get(c, c)})" for c in cands[:6])
-                issues.append(f"pick {number}: \"{name}\" matches several players "
-                              f"[{shown}] — resolve manually, pick not recorded")
+                issues.append(
+                    f'pick {number}: "{name}" matches several players '
+                    f"[{shown}] — resolve manually, pick not recorded"
+                )
                 continue
         if store_pid is None and by_key is not None:
             issues.append(
@@ -403,8 +418,9 @@ def reconcile(
         existing = {pk.number: pk for pk in state.picks}
         if number in existing:
             if existing[number].player_id != store_pid:
-                ours = (existing[number].name
-                        or by_id.get(existing[number].player_id, existing[number].player_id))
+                ours = existing[number].name or by_id.get(
+                    existing[number].player_id, existing[number].player_id
+                )
                 issues.append(
                     f"pick {number}: we have {ours}"
                     f" ({existing[number].player_id}, {existing[number].source}), "
@@ -414,10 +430,15 @@ def reconcile(
         if number > state.pick_number:
             issues.append(f"platform shows pick {number}, we are at {state.pick_number} — gap?")
             continue
-        state.picks.append(Pick(
-            number=number, player_id=store_pid, team_seat=_seat_of(number, state.n_teams),
-            source=PICK_SOURCE_LIVE, name=display,
-        ))
+        state.picks.append(
+            Pick(
+                number=number,
+                player_id=store_pid,
+                team_seat=_seat_of(number, state.n_teams),
+                source=PICK_SOURCE_LIVE,
+                name=display,
+            )
+        )
         # keep pick order intact after inserting a retroactive pick
         state.picks.sort(key=lambda pk: pk.number)
     return issues
@@ -429,6 +450,13 @@ MODE_ENGINE = "engine"
 MODE_BOARD = "board"
 
 
+def _utc_today() -> str:
+    """Today's date (UTC) — the as-of the news flags read at when none is given."""
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).date().isoformat()
+
+
 @dataclass
 class Candidate:
     """One candidate as presented to the person on the clock."""
@@ -436,10 +464,10 @@ class Candidate:
     player_id: str
     name: str
     board_rank: int
-    total: float                       # G-score total (board units)
-    value_over_safe: float             # what taking them now gains vs a safe alternative
-    survival: float                    # P(still there at our next pick)
-    categories: dict[str, float]       # per-category contribution in basis units
+    total: float  # G-score total (board units)
+    value_over_safe: float  # what taking them now gains vs a safe alternative
+    survival: float  # P(still there at our next pick)
+    categories: dict[str, float]  # per-category contribution in basis units
     engine_value: float | None = None  # H0 objective, when the engine fit the clock
     engine_delta: float | None = None
     adp: int | None = None
@@ -451,6 +479,10 @@ class Candidate:
     neg_cats: tuple[tuple[str, float], ...] = ()
     """The categories this candidate most *negatively* contributes to, worst first, at most
     two, only genuinely negative contributions (R5). A player who drags nothing renders none."""
+    flag: str = ""
+    """Compact news/status flag (R10): ``OUT``/``QUE`` designation, ``Nn`` stored news
+    events, ``+Nd`` season-OUT depth promotion. Surfacing only — it never reorders the
+    candidates; the rank columns carry the pricing."""
 
 
 @dataclass
@@ -493,8 +525,8 @@ class ColumnSpec:
     key: str
     header: str
     cell: Callable[[Candidate], str]
-    width: int | None = None   # terminal cell width; None = trailing column, no padding
-    align: str = ">"           # terminal alignment for the header and the cell alike
+    width: int | None = None  # terminal cell width; None = trailing column, no padding
+    align: str = ">"  # terminal alignment for the header and the cell alike
 
 
 COLUMN_SPECS: tuple[ColumnSpec, ...] = (
@@ -503,17 +535,38 @@ COLUMN_SPECS: tuple[ColumnSpec, ...] = (
     ColumnSpec("value", "value", width=7, cell=lambda c: f"{c.total:.2f}"),
     ColumnSpec("vs_safe", "vs safe", width=8, cell=lambda c: f"{c.value_over_safe:+.2f}"),
     ColumnSpec("surv", "surv", width=5, cell=lambda c: f"{c.survival:.0%}"),
+    ColumnSpec("flag", "flag", width=10, align="<", cell=lambda c: c.flag or "—"),
     ColumnSpec("adp", "adp", width=5, cell=lambda c: "—" if c.adp is None else str(c.adp)),
-    ColumnSpec("adp_dev", "adp−rk", width=8,
-               cell=lambda c: "—" if c.adp_dev is None else f"{c.adp_dev:+d}"),
-    ColumnSpec("top_cats", "top cats", align="<",
-               cell=lambda c: " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v
-                                       in sorted(c.categories.items(),
-                                                 key=lambda kv: -kv[1])[:3])),
-    ColumnSpec("neg_cats", "neg cats", align="<",
-               cell=lambda c: " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v in c.neg_cats)),
+    ColumnSpec(
+        "adp_dev", "adp−rk", width=8, cell=lambda c: "—" if c.adp_dev is None else f"{c.adp_dev:+d}"
+    ),
+    ColumnSpec(
+        "top_cats",
+        "top cats",
+        align="<",
+        cell=lambda c: " ".join(
+            f"{k.split('_')[0]}{v:+.2f}"
+            for k, v in sorted(c.categories.items(), key=lambda kv: -kv[1])[:3]
+        ),
+    ),
+    ColumnSpec(
+        "neg_cats",
+        "neg cats",
+        align="<",
+        cell=lambda c: " ".join(f"{k.split('_')[0]}{v:+.2f}" for k, v in c.neg_cats),
+    ),
 )
-DEFAULT_COLUMNS = ("rk", "player", "value", "vs_safe", "surv", "adp", "top_cats", "neg_cats")
+DEFAULT_COLUMNS = (
+    "rk",
+    "player",
+    "value",
+    "vs_safe",
+    "surv",
+    "flag",
+    "adp",
+    "top_cats",
+    "neg_cats",
+)
 
 COLUMN_BY_KEY: dict[str, ColumnSpec] = {s.key: s for s in COLUMN_SPECS}
 
@@ -536,8 +589,10 @@ def parse_columns(spec: str | None) -> tuple[str, ...]:
 
 def column_spec_json() -> list[dict]:
     """The full picker menu for the page: every column, its header, and the default flag."""
-    return [{"key": s.key, "header": s.header, "default": s.key in DEFAULT_COLUMNS}
-            for s in COLUMN_SPECS]
+    return [
+        {"key": s.key, "header": s.header, "default": s.key in DEFAULT_COLUMNS}
+        for s in COLUMN_SPECS
+    ]
 
 
 def candidate_json(c: Candidate) -> dict:
@@ -550,6 +605,7 @@ def candidate_json(c: Candidate) -> dict:
         "total": round(c.total, 2),
         "value_over_safe": round(c.value_over_safe, 2),
         "survival": round(c.survival, 3),
+        "flag": c.flag,
         "categories": {k.split("_")[0]: round(v, 2) for k, v in c.categories.items()},
         "engine_value": None if c.engine_value is None else round(c.engine_value, 3),
         "adp": c.adp,
@@ -559,8 +615,12 @@ def candidate_json(c: Candidate) -> dict:
 
 
 def _board_candidates(
-    board, available: list[str], ranks: dict[str, int], names: dict[str, str],
-    picks_until_next: int, top_n: int,
+    board,
+    available: list[str],
+    ranks: dict[str, int],
+    names: dict[str, str],
+    picks_until_next: int,
+    top_n: int,
 ) -> list[Candidate]:
     """The static-board fallback: ranked candidates with survival and opportunity cost.
 
@@ -576,22 +636,25 @@ def _board_candidates(
         )
         for r in rows
     ]
-    safe_total = next(
-        (r.total for r, s in zip(rows, survivals, strict=True) if s >= 0.75), None
-    )
+    safe_total = next((r.total for r, s in zip(rows, survivals, strict=True) if s >= 0.75), None)
     out: list[Candidate] = []
     for r, surv in zip(rows, survivals, strict=True):
         adp_i = ranks.get(r.player_id)
         adp = adp_i + 1 if adp_i is not None else None  # ADP is a 1-based pick number
-        out.append(Candidate(
-            player_id=r.player_id, name=names.get(r.player_id, r.player_id),
-            board_rank=r.rank, total=r.total,
-            value_over_safe=(r.total - safe_total) if safe_total is not None else 0.0,
-            survival=surv, categories=dict(r.categories),
-            adp=adp,
-            adp_dev=(adp - r.rank) if adp is not None else None,
-            neg_cats=_neg_cats_of(r.categories),
-        ))
+        out.append(
+            Candidate(
+                player_id=r.player_id,
+                name=names.get(r.player_id, r.player_id),
+                board_rank=r.rank,
+                total=r.total,
+                value_over_safe=(r.total - safe_total) if safe_total is not None else 0.0,
+                survival=surv,
+                categories=dict(r.categories),
+                adp=adp,
+                adp_dev=(adp - r.rank) if adp is not None else None,
+                neg_cats=_neg_cats_of(r.categories),
+            )
+        )
         if len(out) >= top_n:
             break
     return out
@@ -638,8 +701,9 @@ def recommend(
 
         engine_state = EngineState(
             my_roster=state.roster_of(state.my_seat),
-            opponent_rosters=[state.roster_of(s) for s in range(1, state.n_teams + 1)
-                              if s != state.my_seat],
+            opponent_rosters=[
+                state.roster_of(s) for s in range(1, state.n_teams + 1) if s != state.my_seat
+            ],
             taken=set(state.taken),
         )
         try:
@@ -665,7 +729,8 @@ def recommend(
             note = (
                 f"degraded to static board (4.5): H0 engine took {elapsed_engine:.1f}s "
                 f"> budget {budget_s:.1f}s"
-                if ranked else (note or "engine returned no candidates; static board below")
+                if ranked
+                else (note or "engine returned no candidates; static board below")
             )
     if mode == MODE_BOARD:
         candidates = _board_candidates(
@@ -674,10 +739,32 @@ def recommend(
         if not candidates:
             note = note or "no candidates available — check the pool and ingested picks"
 
+    # News flags (R10): the surface, never the ranking. Read for exactly the candidates
+    # shown (a pool-wide read here would be wasted work on a degraded-budget path).
+    if candidates:
+        from fantasy_gm.projections.news import flags_for_pool
+
+        flags = flags_for_pool(
+            store,
+            [c.player_id for c in candidates],
+            as_of or _utc_today(),
+            # The promotion read keys the forward roster the board prices from
+            # (FORWARD_SEASON), never the ranked-data season the caller passes —
+            # they differ (2025-26 data vs the 2026-27 roster being drafted into).
+            forward_season=FORWARD_SEASON,
+        )
+        for c in candidates:
+            c.flag = flags.get(c.player_id, "")
+
     return Recommendation(
-        pick_number=state.pick_number, on_the_clock=state.on_the_clock,
-        my_seat=state.my_seat, mode=mode, elapsed_s=time.perf_counter() - started,
-        degraded=degraded, note=note, candidates=candidates,
+        pick_number=state.pick_number,
+        on_the_clock=state.on_the_clock,
+        my_seat=state.my_seat,
+        mode=mode,
+        elapsed_s=time.perf_counter() - started,
+        degraded=degraded,
+        note=note,
+        candidates=candidates,
     )
 
 
@@ -686,20 +773,20 @@ def _fmt_cell(text: str, spec: ColumnSpec) -> str:
     (``width=None``) is not truncated or padded."""
     if not spec.width:
         return text
-    text = text[:spec.width - 1]
+    text = text[: spec.width - 1]
     return text.rjust(spec.width - 1) if spec.align == ">" else text.ljust(spec.width - 1)
 
 
 def render_recommendation(
-    rec: Recommendation, columns: tuple[str, ...] = DEFAULT_COLUMNS,
+    rec: Recommendation,
+    columns: tuple[str, ...] = DEFAULT_COLUMNS,
 ) -> str:
     """A terminal-sized answer for the person on the clock, rendered from the column
     spec (4.3): the same keys and headers the watch page consumes."""
     specs = [COLUMN_BY_KEY[k] for k in columns]
     lines = []
     clock = rec.on_the_clock
-    who = ("YOU ARE ON THE CLOCK" if clock == rec.my_seat
-           else f"seat {clock} is on the clock")
+    who = "YOU ARE ON THE CLOCK" if clock == rec.my_seat else f"seat {clock} is on the clock"
     mode = {"engine": "H0 engine + board", "board": "static board"}[rec.mode]
     flag = " — DEGRADED" if rec.degraded else ""
     lines.append(f"Pick {rec.pick_number} ({who}) — {mode}{flag} — {rec.elapsed_s:.1f}s")
@@ -718,13 +805,17 @@ def render_recommendation(
     return "\n".join(lines)
 
 
-
 # --- session builder -----------------------------------------------------------
 
 
 def build_gm(
-    store, season: str, as_of: str, *, market_season: str = "2026-27",
-    market_source: str = "yahoo", pool_size: int = 156,
+    store,
+    season: str,
+    as_of: str,
+    *,
+    market_season: str = "2026-27",
+    market_source: str = "yahoo",
+    pool_size: int = 156,
     forward_season: str | None = FORWARD_SEASON,
     rate_basis: str = "measured",
 ):
@@ -750,18 +841,31 @@ def build_gm(
     from fantasy_gm.draft.opponents import adp_order_from_market
 
     capture: dict = {}
-    board = build_board(store, season, availability=AvailabilityMode.PROJECTED, as_of=as_of,
-                        forward_season=forward_season, rate_basis=rate_basis,
-                        capture=capture)
+    board = build_board(
+        store,
+        season,
+        availability=AvailabilityMode.PROJECTED,
+        as_of=as_of,
+        forward_season=forward_season,
+        rate_basis=rate_basis,
+        capture=capture,
+    )
     pool = [r.player_id for r in board.rows]
-    market = adp_order_from_market(store, market_season, source=market_source,
-                                   restrict_to=pool) or []
+    market = (
+        adp_order_from_market(store, market_season, source=market_source, restrict_to=pool) or []
+    )
     directory = build_player_directory(store, market_season)
     names = {r.player_id: r.player_name for r in board.rows}
     # The fitted basis rides along (D5/D6): the differential and punt panels re-use its
     # per-category standardisation; nothing per-pick re-measures the store.
-    return {"board": board, "pool": pool, "adp_order": market,
-            "names": names, "directory": directory, "basis": capture["basis"]}
+    return {
+        "board": board,
+        "pool": pool,
+        "adp_order": market,
+        "names": names,
+        "directory": directory,
+        "basis": capture["basis"],
+    }
 
 
 # --- persistence ---------------------------------------------------------------
@@ -769,19 +873,26 @@ def build_gm(
 
 def save_state(state: DraftState, path: str | Path) -> None:
     """Persist the draft state after every change — draft night must survive a crash."""
-    Path(path).write_text(json.dumps({
-        "league_key": state.league_key,
-        "n_teams": state.n_teams,
-        "n_rounds": state.n_rounds,
-        "my_seat": state.my_seat,
-        "picks": [vars(p) for p in state.picks],
-    }, indent=2))
+    Path(path).write_text(
+        json.dumps(
+            {
+                "league_key": state.league_key,
+                "n_teams": state.n_teams,
+                "n_rounds": state.n_rounds,
+                "my_seat": state.my_seat,
+                "picks": [vars(p) for p in state.picks],
+            },
+            indent=2,
+        )
+    )
 
 
 def load_state(path: str | Path) -> DraftState:
     d = json.loads(Path(path).read_text())
     state = DraftState(
-        league_key=d["league_key"], n_teams=d["n_teams"], n_rounds=d["n_rounds"],
+        league_key=d["league_key"],
+        n_teams=d["n_teams"],
+        n_rounds=d["n_rounds"],
         my_seat=d["my_seat"],
     )
     state.picks = [Pick(**p) for p in d["picks"]]

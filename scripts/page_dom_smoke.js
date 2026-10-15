@@ -67,7 +67,8 @@ sandbox.__report = r => { result = r; };
 const SPEC = [
   { key: 'rk', header: 'rk', default: true }, { key: 'player', header: 'player', default: true },
   { key: 'value', header: 'value', default: true }, { key: 'vs_safe', header: 'vs safe', default: true },
-  { key: 'surv', header: 'surv', default: true }, { key: 'adp', header: 'adp', default: true },
+  { key: 'surv', header: 'surv', default: true }, { key: 'flag', header: 'flag', default: true },
+  { key: 'adp', header: 'adp', default: true },
   { key: 'adp_dev', header: 'adp\u2212rk', default: false },
   { key: 'top_cats', header: 'top cats', default: true },
   { key: 'neg_cats', header: 'neg cats', default: true },
@@ -78,11 +79,11 @@ const NEW_REC = {
   candidates: [{
     name: 'Shai Gilgeous-Alexander', board_rank: 1, total: 12.34, value_over_safe: 2.5,
     survival: 0.512, categories: { pts: 3.2, tov: -1.1, ast: 2.0 }, engine_value: null,
-    adp: 2, adp_dev: 1, neg_cats: [['tov', -1.1]],
+    adp: 2, adp_dev: 1, neg_cats: [['tov', -1.1]], flag: 'OUT 2n +1d',
   }, {
     name: 'Unpriced Guy', board_rank: 7, total: 9.1, value_over_safe: 0.4,
     survival: 0.8, categories: { reb: 1.5 }, engine_value: null,
-    adp: null, adp_dev: null, neg_cats: [],
+    adp: null, adp_dev: null, neg_cats: [], flag: '',
   }],
 };
 const OLD_REC = JSON.parse(JSON.stringify(NEW_REC)); delete OLD_REC.column_spec;
@@ -110,25 +111,29 @@ const fails = [];
 const t = (name, cond) => { if (!cond) fails.push(name + ' :: ' + JSON.stringify(cond)); };
 const thsOf = table => [...table.matchAll(/<th>(.*?)<\/th>/g)].map(m => m[1]);
 
-t('new: default keys render in spec order (8 cols, no adp_dev)',
+t('new: default keys render in spec order (9 cols incl. flag, no adp_dev)',
   JSON.stringify(thsOf(out.new_table)) ===
-  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'adp', 'top cats', 'neg cats']));
+  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'flag', 'adp', 'top cats', 'neg cats']));
 t('new: priced adp cell renders 2', out.new_table.includes('<td class="num">2</td>'));
 t('new: unpriced adp/adp_dev render dash', out.new_table.includes('—'));
 t('new: neg cat labelled, signed, styled',
   out.new_table.includes('TOV -1.1') && out.new_table.includes('cat neg'));
 t('new: player cell keeps name class', out.new_table.includes('<td class="name">Shai Gilgeous-Alexander</td>'));
-t('new: picker visible with 9 chips', out.new_picker_display === 'flex' &&
-  out.new_picker.split('data-key=').length - 1 === 9);
-t('new: 8 default chips toggled on, adp_dev off',
+t('new: OUT token colored, wire/promo tokens plain',
+  out.new_table.includes('<span class="cat neg">OUT</span>') &&
+  out.new_table.includes('<span class="cat">2n</span>') &&
+  out.new_table.includes('<span class="cat">+1d</span>'));
+t('new: picker visible with 10 chips', out.new_picker_display === 'flex' &&
+  out.new_picker.split('data-key=').length - 1 === 10);
+t('new: 9 default chips toggled on, adp_dev off',
   SPEC.every(s => {
     const tog = out.toggles[s.key];
     if (!tog) { console.log('missing toggle for', s.key, '— have:', Object.keys(out.toggles)); return false; }
     return s.default === (tog[1] === true);
   }));
-t('old state: fallback table equals old fixed table with pretty headers',
+t('old state: fallback table equals the page fixed table (incl. flag)',
   JSON.stringify(thsOf(out.old_table)) ===
-  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'adp', 'top cats', 'neg cats']));
+  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'flag', 'adp', 'top cats', 'neg cats']));
 t('old state: picker not flexed', out.old_picker_display !== 'flex');
 t('null rec: empty state + picker hidden',
   out.null_class === 'empty' && out.null_picker_display === 'none');
@@ -140,7 +145,7 @@ t('picker: bogus key dropped, adp_dev honored',
   JSON.stringify(thsOf(result)) === JSON.stringify(['adp\u2212rk']));
 store['rec-columns'] = JSON.stringify([]);
 vm.runInNewContext(`renderRec(__NEW_REC); __report($('rec-body').innerHTML);`, sandbox);
-t('picker: empty selection falls back to defaults', thsOf(result).length === 8);
+t('picker: empty selection falls back to defaults', thsOf(result).length === 9);
 
 // chip click: toggle top_cats off persists, toggle adp_dev on persists, re-render follows.
 store['rec-columns'] = JSON.stringify(SPEC.filter(s => s.default).map(s => s.key));
@@ -152,10 +157,10 @@ const gotThs = thsOf(result);
 const gotStore = (() => { try { return JSON.parse(store['rec-columns']).sort(); } catch (e) { return String(store['rec-columns']); } })();
 t('chip click: top_cats off + adp_dev on, persisted and re-rendered',
   JSON.stringify(gotThs) ===
-  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'adp', 'adp\u2212rk', 'neg cats']) &&
+  JSON.stringify(['rk', 'player', 'value', 'vs safe', 'surv', 'flag', 'adp', 'adp\u2212rk', 'neg cats']) &&
   JSON.stringify(gotStore) ===
-  JSON.stringify(['adp', 'adp_dev', 'neg_cats', 'player', 'rk', 'surv', 'value', 'vs_safe']));
+  JSON.stringify(['adp', 'adp_dev', 'flag', 'neg_cats', 'player', 'rk', 'surv', 'value', 'vs_safe']));
 if (fails.length) console.log('debug: ths=' + JSON.stringify(gotThs) + ' store=' + JSON.stringify(gotStore));
 
 if (fails.length) { console.log('FAIL:\n  ' + fails.join('\n  ')); process.exit(1); }
-console.log('PAGE SMOKE OK — 13 assertions passed');
+console.log('PAGE SMOKE OK — 14 assertions passed');

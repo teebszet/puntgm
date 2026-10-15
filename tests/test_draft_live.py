@@ -305,12 +305,13 @@ def test_render_recommendation_explicit_absence_and_market_columns():
     out = render_recommendation(rec, ("rk", "player", "value"))
     assert "adp" not in out and "Player One" in out
     # Default set: the adp column shows the priced pick number and explicit absence
-    # (—) for the unpriced player, never a fake 0. Cells in column order per row:
+    # (—) for the unpriced player, never a fake 0. Cells in column order per row
+    # (flag reads —: neither candidate carries news; R10).
     full = render_recommendation(rec, parse_columns(None))
     rows = [ln for ln in full.splitlines() if "Player" in ln]
-    assert rows[0].split() == ["5", "Player", "One", "9.50", "+1.25", "40%",
+    assert rows[0].split() == ["5", "Player", "One", "9.50", "+1.25", "40%", "—",
                                "2", "pts+2.10", "tov-0.80", "fg-0.30"]
-    assert rows[1].split() == ["2", "Player", "Two", "8.00", "+0.50", "60%",
+    assert rows[1].split() == ["2", "Player", "Two", "8.00", "+0.50", "60%", "—",
                                "—", "pts+2.10"]  # no neg cats: nothing after top cats
     # The gap column on request: signed pick difference, — when unpriced.
     gap = render_recommendation(rec, ("rk", "player", "adp", "adp_dev"))

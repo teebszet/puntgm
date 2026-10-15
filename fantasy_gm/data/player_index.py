@@ -182,9 +182,14 @@ def build_forward_roster(
 # --- fetch + ingest ----------------------------------------------------------
 
 
-def _fetch_rows(season: str, cache: RawCache) -> list[dict]:
+def _fetch_rows(season: str, cache: RawCache, refresh: bool = False) -> list[dict]:
+    """``refresh=True`` is the live-wire read: it always hits the network (a news diff
+    that re-reads yesterday's capture never sees today's move) and rewrites the cache
+    with the fresh capture so the data stays auditable offline. ``refresh=False`` keeps
+    the backfill contract: a cached key is never re-fetched, so a season ingest stays
+    resumable and idempotent."""
     params = {"season": season}
-    if cache.has(ENDPOINT, params):
+    if not refresh and cache.has(ENDPOINT, params):
         raw = cache.get(ENDPOINT, params)
     else:  # pragma: no cover - network path, runs on the user's machine
         from nba_api.stats.endpoints import playerindex

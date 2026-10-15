@@ -58,8 +58,35 @@ STATE_VERSION = 1
 WATCHER_MARKER = "draft_watch_service.py watch"
 
 
-def new_state(league: str, seat: int, interval: float, started_at: str,
-              start_utc: str | None = None, status: str = "starting") -> dict:
+def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int, int]:
+    """One NBA.com wire cycle (Tim asked for this source by name, 2026-10-15).
+
+    A fresh ``playerindex`` fetch (``refresh=True`` bypasses the disk cache — a wire
+    that re-reads yesterday's capture never sees today's move), parsed and diffed
+    against the roster stored *as of today*. Returns ``(new events stored, rows
+    fetched)``; raises when the fetch fails so the caller logs a dead wire loudly.
+    Every capture is written back to the disk cache, so any reported move stays
+    auditable offline.
+    """
+    from fantasy_gm.data.player_index import _fetch_rows, parse_player_index
+    from fantasy_gm.projections.news import roster_move_events
+
+    entries = parse_player_index(_fetch_rows(forward_season, cache, refresh=True))
+    before = store.forward_roster_map_asof(forward_season, today)
+    events = roster_move_events(before, entries, today)
+    if not events:
+        return 0, len(entries)
+    return store.add_news_events(events), len(entries)
+
+
+def new_state(
+    league: str,
+    seat: int,
+    interval: float,
+    started_at: str,
+    start_utc: str | None = None,
+    status: str = "starting",
+) -> dict:
     return {
         "version": STATE_VERSION,
         "league": league,
@@ -77,6 +104,7 @@ def new_state(league: str, seat: int, interval: float, started_at: str,
         "recommendation": None,
         "differential": None,
         "punt_panel": None,
+        "news_sources": None,
         "error": None,
         "heartbeat_at": started_at,
         "watcher_pid": None,
@@ -89,23 +117,26 @@ def load_state(path: str | Path) -> dict:
 
 def write_state(path: str | Path, state: dict) -> None:
     state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    tmp = Path(str(path) + ".tmp")
+    # Thread-unique tmp name: the news refresher thread writes this same state file
+    # concurrently with the poll loop, and two writers sharing one tmp path could
+    # interleave into a corrupt replace.
+    tmp = Path(f"{path}.w{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(state, indent=1))
     tmp.replace(path)
 
 
 def log_line(state: dict, text: str) -> None:
     """Append an event line; the page renders these in order."""
-    state["events"].append(
-        {"at": time.strftime("%H:%M:%S", time.gmtime()), "text": text}
-    )
+    state["events"].append({"at": time.strftime("%H:%M:%S", time.gmtime()), "text": text})
     del state["events"][:-200]
 
 
 # --- arm-time helpers: fresh state + watcher cleanup -------------------------------
 
-def reset_state(state_file: str | Path, league: str, seat: int, interval: float,
-                start_utc: str | None = None) -> dict:
+
+def reset_state(
+    state_file: str | Path, league: str, seat: int, interval: float, start_utc: str | None = None
+) -> dict:
     """Overwrite the state file with a fresh 'armed' state for a new draft.
 
     Arming must clear the previous draft's picks immediately (2026-10-08: the page
@@ -125,8 +156,12 @@ def reset_state(state_file: str | Path, league: str, seat: int, interval: float,
 
 def _pid_cmdline(pid: int) -> str:
     try:
-        out = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="],
-                             capture_output=True, text=True, timeout=5)
+        out = subprocess.run(
+            ["ps", "-ww", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
     except (OSError, subprocess.SubprocessError):
         return ""
     return out.stdout.strip()
@@ -161,8 +196,9 @@ def kill_watchers(state_file: str | Path, grace: float = 2.0) -> list[int]:
     except (OSError, ValueError):
         pass
     try:
-        out = subprocess.run(["pgrep", "-f", WATCHER_MARKER],
-                             capture_output=True, text=True, timeout=5)
+        out = subprocess.run(
+            ["pgrep", "-f", WATCHER_MARKER], capture_output=True, text=True, timeout=5
+        )
         candidates.update(int(p) for p in out.stdout.split())
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
@@ -207,9 +243,10 @@ def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
     interval = str(params.get("interval") or "15")
     start = str(params.get("start") or "").strip()
     if not league or not re.fullmatch(r"\d+\.l\.\d+", league):
-        return 400, {"ok": False,
-                     "error": "league must look like 478.l.2638432 "
-                              "(the page adds the 478.l. prefix itself)"}
+        return 400, {
+            "ok": False,
+            "error": "league must look like 478.l.2638432 (the page adds the 478.l. prefix itself)",
+        }
     if not seat.isdigit() or not 1 <= int(seat) <= 12:
         return 400, {"ok": False, "error": "seat must be 1-12"}
     if not interval.isdigit() or not 5 <= int(interval) <= 120:
@@ -220,19 +257,28 @@ def handle_trigger(params: dict, state_file: str | Path) -> tuple[int, dict]:
     killed = kill_watchers(state_file)
     trigger_path = state_file.parent / "trigger.json"
     tmp = Path(str(trigger_path) + ".tmp")
-    tmp.write_text(json.dumps({
-        "league": league, "seat": int(seat), "interval": int(interval),
-        "start_utc": start[:16],
-        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }, indent=1))
+    tmp.write_text(
+        json.dumps(
+            {
+                "league": league,
+                "seat": int(seat),
+                "interval": int(interval),
+                "start_utc": start[:16],
+                "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+            indent=1,
+        )
+    )
     tmp.replace(trigger_path)
-    reset_state(state_file, league, int(seat), int(interval),
-                start_utc=start[:16] if start else None)
+    reset_state(
+        state_file, league, int(seat), int(interval), start_utc=start[:16] if start else None
+    )
     ensure_watch_page(state_file)
     return 200, {"ok": True, "trigger": str(trigger_path), "killed_watchers": killed}
 
 
 # --- watch page provisioning --------------------------------------------------------
+
 
 def ensure_watch_page(state_file: str | Path) -> str | None:
     """Copy the packaged watch page into the watch dir when it has none.
@@ -251,8 +297,39 @@ def ensure_watch_page(state_file: str | Path) -> str | None:
 
 # --- watch mode -------------------------------------------------------------------
 
-def run_watch(league: str, seat: int, interval: float, state_path: Path,
-              serve_port: int | None, stop_file: Path, punt_budget: float = 8.0) -> int:
+
+def log_rank_deltas(old_gm: dict, new_gm: dict, state: dict, min_move: int = 5) -> None:
+    """After a background rebuild, log pool players whose rank moved ≥ ``min_move``.
+
+    This is the rank-delta record task 9.7 promises: the board may move under the
+    clock, but every material move is announced on the page's event log rather than
+    happening silently.
+    """
+    old_rank = {r.player_id: r.rank for r in old_gm["board"].rows}
+    moves = []
+    for r in new_gm["board"].rows:
+        o = old_rank.get(r.player_id)
+        if o is not None and abs(o - r.rank) >= min_move:
+            moves.append((abs(o - r.rank), r.player_name, o, r.rank))
+    if not moves:
+        return
+    moves.sort(reverse=True)
+    for _, name, o, n in moves[:8]:
+        log_line(state, f"board moved: {name} r{o} -> r{n}")
+    if len(moves) > 8:
+        log_line(state, f"board moved: +{len(moves) - 8} more")
+
+
+def run_watch(
+    league: str,
+    seat: int,
+    interval: float,
+    state_path: Path,
+    serve_port: int | None,
+    stop_file: Path,
+    punt_budget: float = 8.0,
+    news_interval: float = 180.0,
+) -> int:
     # Detach from the spawner's process group FIRST: launchd kills a job's whole
     # process group when the job exits (no AbandonProcessGroup), which silently
     # killed every nohup-spawned watcher before its first write (2026-10-08 --
@@ -320,9 +397,20 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     if serve_port:
         threading.Thread(target=http_state_server, daemon=True).start()
 
-    print("Building board + market order (once) ...", flush=True)
+    # as_of is the BUILD DATE (task 9.7): the hard-coded 2025-10-20 made every
+    # 2026-dated designation invisible at draft time (verified: Haliburton rendered r5
+    # uncapped instead of r42 under the QUESTIONABLE cap). A rebuild costs ~2s — spent
+    # here and in the background thread, never on the clock.
+    as_of = time.strftime("%Y-%m-%d", time.gmtime())
+    print(f"Building board + market order (once) ... (as_of {as_of})", flush=True)
     store = Store(Config().db_path)
-    gm = build_gm(store, "2025-26", "2025-10-20")
+    from fantasy_gm.projections import news as news_mod
+
+    gm = build_gm(store, "2025-26", as_of)
+    # The news refresher swaps this box under the lock; the poll loop snapshots it once
+    # per iteration, so a mid-poll swap can never mix two boards' parts.
+    gm_box = [gm]
+    gm_lock = threading.Lock()
     pool = gm["pool"]
     names = gm["names"]
     basis = gm["basis"]  # the panels read the fitted basis; nothing re-measures per pick
@@ -334,26 +422,156 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
     draft_state = DraftState(league_key=league, n_teams=12, my_seat=seat)
     # Re-arm on the same league+seat resumes the recorded draft (crash recovery):
     # picks already in the state file are adopted so nothing is lost or re-logged.
-    if (prev and prev.get("league") == league and prev.get("seat") == seat
-            and prev.get("picks")):
+    if prev and prev.get("league") == league and prev.get("seat") == seat and prev.get("picks"):
         from fantasy_gm.draft.live import Pick
+
         # Adopt only picks already in our id space; raw platform ids from an older run
         # (before the id translation existed) are re-fed and mapped by the platform
         # poll, so dropping them here loses nothing.
         adopted = [pk for pk in prev["picks"] if pk["player_id"] in dir_by_id]
         dropped = len(prev["picks"]) - len(adopted)
         draft_state.picks = [
-            Pick(number=pk["number"], player_id=pk["player_id"],
-                 team_seat=pk["seat"], source="live", name=pk.get("name", ""))
+            Pick(
+                number=pk["number"],
+                player_id=pk["player_id"],
+                team_seat=pk["seat"],
+                source="live",
+                name=pk.get("name", ""),
+            )
             for pk in adopted
         ]
-        log_line(state, f"resumed {len(draft_state.picks)} picks from previous run"
-                 + (f"; dropped {dropped} untranslatable platform ids (platform re-feeds them)"
-                    if dropped else ""))
+        log_line(
+            state,
+            f"resumed {len(draft_state.picks)} picks from previous run"
+            + (
+                f"; dropped {dropped} untranslatable platform ids (platform re-feeds them)"
+                if dropped
+                else ""
+            ),
+        )
     state["status"] = "watching"
     state["board_players"] = len(pool)
-    log_line(state, f"board ready: {len(pool)} players; watching seat {seat} of {league}")
+    log_line(
+        state, f"board ready: {len(pool)} players; watching seat {seat} of {league} (as_of {as_of})"
+    )
     write_state(state_path, state)
+
+    # --- background news refresher (task 9.7) ------------------------------------
+
+    # NBA wire visibility: log its shape (row count) only when it changes — one
+    # heartbeat at arm, silence while identical, a line when the league's rosters move.
+    nba_heartbeat = {"rows": None}
+
+    def news_refresh_cycle() -> None:
+        """One pass: ingest the no-token wires, refresh the pricing authority when the
+        token allows, and rebuild + atomically swap the board if anything moved.
+
+        Opens its OWN store connection and closes it at the end: sqlite3 connections
+        are single-thread by default, so a connection made in the main thread would
+        raise the moment this thread touched it (caught live, 2026-10-15).
+        """
+        store2 = Store(Config().db_path)
+        try:
+            _news_refresh_cycle_body(store2)
+        finally:
+            store2.close()
+
+    def _news_refresh_cycle_body(store2) -> None:
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        changed = False
+        try:
+            rows = news_mod.fetch_yahoo_injuries_page(
+                save_path="data/raw_cache/yahoo_injuries_page.html"
+            )
+            r = news_mod.ingest_yahoo_injuries(store2, rows, today, today=today)
+            if r.stored_designations or r.stored_events:
+                changed = True
+                extra = (
+                    f"; {len(r.unresolved)} unresolved, {len(r.unmapped)} unmapped"
+                    if r.unresolved or r.unmapped
+                    else ""
+                )
+                log_line(
+                    state,
+                    f"yahoo-web injuries: +{r.stored_designations} status, "
+                    f"+{r.stored_events} event(s){extra}",
+                )
+        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+            log_line(state, f"yahoo-web injuries wire failed: {exc}")
+        try:
+            items = news_mod.fetch_yahoo_rss(save_path="data/raw_cache/yahoo_news_rss.xml")
+            r = news_mod.ingest_yahoo_news(store2, items, today)
+            if r.stored_events:
+                changed = True
+                log_line(state, f"yahoo news RSS: +{r.stored_events} item(s)")
+        except Exception as exc:  # noqa: BLE001
+            log_line(state, f"yahoo news RSS wire failed: {exc}")
+        try:
+            from fantasy_gm.config import FORWARD_SEASON
+            from fantasy_gm.data.cache import RawCache
+
+            new_events, rows = nba_roster_moves(
+                store2, today, RawCache(Config().cache_dir), FORWARD_SEASON
+            )
+            if new_events:
+                changed = True
+            if nba_heartbeat["rows"] != rows:  # shape change (or first cycle): say so
+                nba_heartbeat["rows"] = rows
+                log_line(state, f"nba playerindex wire: {rows} rows, {new_events} new move(s)")
+            elif new_events:
+                log_line(state, f"nba playerindex wire: +{new_events} move(s)")
+        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+            nba_heartbeat["rows"] = None
+            log_line(state, f"nba playerindex wire failed: {exc}")
+        try:
+            from fantasy_gm.projections.status import (
+                fetch_league_player_metadata,
+                refresh_statuses,
+            )
+
+            token = Path("data/yahoo_access_token.txt").read_text().strip()
+            rows = fetch_league_player_metadata(
+                league, token, save_path="data/raw_cache/yahoo_status_live.json"
+            )
+            ref = refresh_statuses(store2, rows, today)
+            for name, old, new in ref.changed:
+                log_line(state, f"status: {name} {old or 'none'} -> {new or 'none'}")
+            if ref.changed:
+                changed = True
+        except FileNotFoundError:
+            log_line(state, "yahoo token missing — metadata refresh off (wires still live)")
+        except Exception as exc:  # noqa: BLE001 - 401 etc: degrade loudly, keep the board
+            log_line(state, f"yahoo metadata refresh unavailable: {exc} — wires still live")
+        state["news_sources"] = news_mod.source_age(store2, today)
+        if not changed:
+            return
+        try:
+            new_gm = build_gm(store2, "2025-26", today)
+        except Exception as exc:  # noqa: BLE001
+            log_line(state, f"board rebuild failed: {exc} — the previous board stands")
+            return
+        with gm_lock:
+            old_gm, gm_box[0] = gm_box[0], new_gm
+        log_rank_deltas(old_gm, new_gm, state)
+
+    def refresher() -> None:
+        # First cycle immediately: the wires feed the flags without waiting an interval.
+        try:
+            news_refresh_cycle()
+        except Exception as exc:  # noqa: BLE001
+            log_line(state, f"news refresh error: {exc}")
+        write_state(state_path, state)
+        while not stop_file.exists():
+            time.sleep(news_interval)
+            if stop_file.exists():
+                return
+            try:
+                news_refresh_cycle()
+            except Exception as exc:  # noqa: BLE001
+                log_line(state, f"news refresh error: {exc}")
+                write_state(state_path, state)
+
+    threading.Thread(target=refresher, name="news-refresher", daemon=True).start()
 
     seen = 0
     placeholder_logged = False
@@ -369,6 +587,11 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             stop_file.unlink()
             return 0
         state["heartbeat_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # Snapshot the board box under the lock (task 9.7): the refresher may have
+        # swapped in a rebuilt board between polls; this poll uses exactly one board.
+        with gm_lock:
+            gm = gm_box[0]
+        pool, names, basis = gm["pool"], gm["names"], gm["basis"]
         # A custom punt request (page POSTs /punt -> serve writes punt.json -> we consume
         # it here, once). An unparseable request is consumed too and logged, never retried.
         punt_req = state_path.parent / "punt.json"
@@ -381,8 +604,11 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             punt_req.unlink(missing_ok=True)
             try:
                 punt_custom = parse_punt(raw_spec) if raw_spec else ()
-                log_line(state, "punt panel set: "
-                         + (", ".join(punt_custom) if punt_custom else "balanced (cleared)"))
+                log_line(
+                    state,
+                    "punt panel set: "
+                    + (", ".join(punt_custom) if punt_custom else "balanced (cleared)"),
+                )
             except ValueError as exc:
                 log_line(state, f"punt request ignored: {exc}")
         try:
@@ -400,8 +626,11 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         n_placeholders = sum(1 for p in picks if p.get("player_id") is None)
         if n_placeholders and not placeholder_logged:
             placeholder_logged = True
-            log_line(state, f"platform pre-fills {n_placeholders} empty draft-order slots; "
-                            f"ignored (not errors)")
+            log_line(
+                state,
+                f"platform pre-fills {n_placeholders} empty draft-order slots; "
+                f"ignored (not errors)",
+            )
         issues = reconcile(draft_state, picks, dir_by_id, dir_by_key)
         for i in issues:
             log_line(state, f"! {i}")
@@ -416,8 +645,12 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
             seen = len(draft_state.picks)
         state["pick_count"] = len(draft_state.picks)
         state["picks"] = [
-            {"number": p.number, "seat": p.team_seat, "player_id": p.player_id,
-             "name": p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id)}
+            {
+                "number": p.number,
+                "seat": p.team_seat,
+                "player_id": p.player_id,
+                "name": p.name or dir_by_id.get(p.player_id) or names.get(p.player_id, p.player_id),
+            }
             for p in draft_state.picks
         ]
         # The differential is recomputed when the draft state moved (R6: after every
@@ -430,18 +663,33 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         # survival math was always relative to my_seat; the card now says so).
         my_next = draft_state.my_next_pick()
         if my_next is not None:
-            rec = recommend(store, "2025-26", draft_state, pool, board=gm["board"],
-                            adp_order=gm["adp_order"], names=names, budget_s=8.0)
+            rec = recommend(
+                store,
+                "2025-26",
+                draft_state,
+                pool,
+                board=gm["board"],
+                adp_order=gm["adp_order"],
+                names=names,
+                budget_s=8.0,
+                as_of=as_of,
+            )
             # Print the full rec block only when it changed meaningfully: our turn, or a
             # new pick landed since the last print (a per-poll print is near-duplicate
             # noise across 30-90s clocks).
             if draft_state.is_my_pick() or state["pick_count"] != last_rec_printed_picks:
-                rendered = "\n".join(
-                    f"  {c.name}  value {c.total:.2f}  vs safe {c.value_over_safe:+.2f}  "
-                    f"surv {c.survival:.0%}" for c in rec.candidates
-                ) or "  no candidates"
-                print(f"Pick {rec.pick_number} -- seat {rec.on_the_clock} on the clock\n{rendered}",
-                      flush=True)
+                rendered = (
+                    "\n".join(
+                        f"  {c.name}  value {c.total:.2f}  vs safe {c.value_over_safe:+.2f}  "
+                        f"surv {c.survival:.0%}"
+                        for c in rec.candidates
+                    )
+                    or "  no candidates"
+                )
+                print(
+                    f"Pick {rec.pick_number} -- seat {rec.on_the_clock} on the clock\n{rendered}",
+                    flush=True,
+                )
                 last_rec_printed_picks = state["pick_count"]
             state["recommendation"] = {
                 "pick_number": rec.pick_number,
@@ -467,8 +715,9 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
         punt_key = (draft_state.pick_number, punt_custom)
         prev_punt = state.get("punt_panel")
         if punt_key != last_punt_key or not (prev_punt and prev_punt.get("complete")):
-            panel = punt_cache.get(draft_state, basis, gm["adp_order"], names,
-                                   custom=punt_custom, budget_s=punt_budget)
+            panel = punt_cache.get(
+                draft_state, basis, gm["adp_order"], names, custom=punt_custom, budget_s=punt_budget
+            )
             last_punt_key = punt_key
             state["punt_panel"] = punt_panel_json(panel)
         write_state(state_path, state)
@@ -476,6 +725,7 @@ def run_watch(league: str, seat: int, interval: float, state_path: Path,
 
 
 # --- serve mode -------------------------------------------------------------------
+
 
 class StateAwareStaticServer:
     """Static file server (Range support) plus /state.json read from disk.
@@ -557,8 +807,9 @@ class StateAwareStaticServer:
                     return
                 path = Path(state_file).parent / "punt.json"
                 tmp = Path(str(path) + ".tmp")
-                tmp.write_text(json.dumps(
-                    {"punt": spec, "created": time.strftime("%H:%M:%S", time.gmtime())}))
+                tmp.write_text(
+                    json.dumps({"punt": spec, "created": time.strftime("%H:%M:%S", time.gmtime())})
+                )
                 tmp.replace(path)
                 self._reply(200, {"ok": True, "punt": list(cats)})
 
@@ -588,7 +839,7 @@ class StateAwareStaticServer:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    self.wfile.write(b'{"ok":false,"error":"expected {\"action\":\"stop\"}"}')
+                    self.wfile.write(b'{"ok":false,"error":"expected {"action":"stop"}"}')
                     return
                 Path(str(state_file) + ".stop").write_text("")
                 self.send_response(200)
@@ -629,10 +880,13 @@ def main() -> int:
         # Positional (dir port state) or named (--dir --port --state) both accepted;
         # the launchd job uses named flags so the plist reads at a glance.
         directory = _flag(rest, "--dir") or (rest[0] if not rest[0].startswith("--") else None)
-        port = int(_flag(rest, "--port")
-                   or (rest[1] if len(rest) > 1 and not rest[1].startswith("--") else 0))
-        state = (_flag(rest, "--state")
-                 or (rest[2] if len(rest) > 2 and not rest[2].startswith("--") else None))
+        port = int(
+            _flag(rest, "--port")
+            or (rest[1] if len(rest) > 1 and not rest[1].startswith("--") else 0)
+        )
+        state = _flag(rest, "--state") or (
+            rest[2] if len(rest) > 2 and not rest[2].startswith("--") else None
+        )
         if not (directory and port and state):
             print(USAGE)
             return 1
@@ -641,18 +895,34 @@ def main() -> int:
     if mode == "watch" and rest:
         league = rest[0]
         seat = int(rest[rest.index("--seat") + 1]) if "--seat" in rest else 1
-        interval = (float(rest[rest.index("--interval") + 1])
-                    if "--interval" in rest else 15.0)
-        state_path = (Path(rest[rest.index("--out") + 1]) if "--out" in rest
-                      else Path("data/draft_watch_state.json"))
-        serve_port = (int(rest[rest.index("--serve-port") + 1])
-                      if "--serve-port" in rest else None)
-        stop_file = (Path(rest[rest.index("--stop-file") + 1])
-                     if "--stop-file" in rest else Path(str(state_path) + ".stop"))
-        punt_budget = (float(rest[rest.index("--punt-budget") + 1])
-                       if "--punt-budget" in rest else 8.0)
-        return run_watch(league, seat, interval, state_path, serve_port, stop_file,
-                         punt_budget=punt_budget)
+        interval = float(rest[rest.index("--interval") + 1]) if "--interval" in rest else 15.0
+        state_path = (
+            Path(rest[rest.index("--out") + 1])
+            if "--out" in rest
+            else Path("data/draft_watch_state.json")
+        )
+        serve_port = int(rest[rest.index("--serve-port") + 1]) if "--serve-port" in rest else None
+        stop_file = (
+            Path(rest[rest.index("--stop-file") + 1])
+            if "--stop-file" in rest
+            else Path(str(state_path) + ".stop")
+        )
+        punt_budget = (
+            float(rest[rest.index("--punt-budget") + 1]) if "--punt-budget" in rest else 8.0
+        )
+        news_interval = (
+            float(rest[rest.index("--news-interval") + 1]) if "--news-interval" in rest else 180.0
+        )
+        return run_watch(
+            league,
+            seat,
+            interval,
+            state_path,
+            serve_port,
+            stop_file,
+            punt_budget=punt_budget,
+            news_interval=news_interval,
+        )
     if mode == "reset-state" and "--out" in rest and "--league" in rest:
         # Runner helper: write a fresh 'armed' state at trigger-consume time so the
         # page never shows a previous draft, even when the trigger didn't come

@@ -46,6 +46,28 @@ class Availability:
 
 
 @dataclass(frozen=True)
+class NewsEvent:
+    """One dated item from a news wire, matched to a player when the item names one.
+
+    ``kind`` says what the item is about (``designation`` — a health status; ``news``
+    — a wire headline; ``roster-move`` — an NBA roster change; ``note`` — anything
+    else worth surfacing). ``player_id`` is the store id when resolution succeeded and
+    the empty string when not — an unresolved item is stored and displayed, but can
+    never flag a row. ``url`` points at the item when the source carries one.
+    """
+
+    source: str  # "yahoo-api" | "yahoo-web" | "yahoo-news" | "nba" | "x:<handle>"
+    published_on: str  # ISO date the item is dated
+    kind: str
+    headline: str
+    player_id: str = ""  # store id, or "" when unresolved
+    name: str = ""
+    note: str = ""
+    url: str = ""
+    known_from: str = ""  # ingest date; defaults to published_on at insert
+
+
+@dataclass(frozen=True)
 class Matchup:
     """A weekly (or period) head-to-head pairing within a league."""
 

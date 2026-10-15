@@ -45,6 +45,7 @@ from fantasy_gm.projections.source import (
     ProjectionSource,
     projected_stat_keys,
 )
+from fantasy_gm.projections.status import season_out_ahead
 
 FULL_SEASON_GAMES = 82
 
@@ -81,6 +82,7 @@ class DerivedProjectionSource(ProjectionSource):
         min_games: int = 10,
         season_games: int = FULL_SEASON_GAMES,
         overrides: Mapping[str, Mapping[str, float]] | None = None,
+        season_out_promotion: bool = False,
     ):
         self._store = store
         self._keys = projected_stat_keys(categories or DEFAULT_CATEGORIES)
@@ -88,6 +90,13 @@ class DerivedProjectionSource(ProjectionSource):
         self._min_games = min_games
         self._season_games = season_games
         self._overrides = {p: dict(v) for p, v in (overrides or {}).items()}
+        # Task 9.6: when set, a player's *effective* stated rank improves by the number
+        # of season-OUT teammates listed ahead of him — minutes the man ahead cannot
+        # take are minutes for the man behind. Opt-in because it re-prices: the board's
+        # projected basis turns it on (the projection date's designations are the
+        # inputs), while the backtest path (:meth:`minutes_projection`) keeps the
+        # measured stated rank so published comparisons stay comparable.
+        self._season_out_promotion = season_out_promotion
         self._fits: dict[tuple[str, str], _Fit] = {}
 
     # --- fitting ------------------------------------------------------------
@@ -102,10 +111,12 @@ class DerivedProjectionSource(ProjectionSource):
         stream = self._store.player_game_stream_asof(as_of)
         history = _player_windows(stream, self._window)
         ranks = _rotation_ranks(history, self._min_games)
-        minutes_fit = fit_minutes(self._store, as_of, window=self._window,
-                                  min_games=self._min_games)
-        rates_fit = fit_rates(self._store, as_of, self._keys, ranks,
-                              window=self._window, min_games=self._min_games)
+        minutes_fit = fit_minutes(
+            self._store, as_of, window=self._window, min_games=self._min_games
+        )
+        rates_fit = fit_rates(
+            self._store, as_of, self._keys, ranks, window=self._window, min_games=self._min_games
+        )
         games_fit = fit_games(self._store, as_of)
         rookie_prior = fit_rookie_prior(self._store, season, as_of, ranks)
 
@@ -137,7 +148,8 @@ class DerivedProjectionSource(ProjectionSource):
         if fwd is not None:
             moved = moved or fwd.team != history[-1]["team"]
         return MinutesModel(fit.minutes).project(
-            player_id, history,
+            player_id,
+            history,
             stated_rank=fwd.depth_chart_pos if fwd else None,
             team_changed=moved,
             observed_rank=fit.ranks.get(player_id),
@@ -189,31 +201,45 @@ class DerivedProjectionSource(ProjectionSource):
         ).fetchone()["n"]
         return int(n) or self._season_games
 
-    def _modeled_projection(self, pid: str, season: str, as_of: str, fit: _Fit
-                            ) -> PlayerProjection:
+    def _modeled_projection(self, pid: str, season: str, as_of: str, fit: _Fit) -> PlayerProjection:
         history = fit.history[pid]
         fwd = self._store.forward_roster_asof(pid, season, as_of)
         moved = bool(self._store.transactions_asof(season, as_of, player_id=pid))
         if fwd is not None and history:
             moved = moved or fwd.team != history[-1]["team"]
 
+        stated = fwd.depth_chart_pos if fwd else None
+        promotion = 0
+        if stated is not None and self._season_out_promotion:
+            promotion, _ = season_out_ahead(self._store, pid, season, as_of)
+            stated -= promotion
         mins = MinutesModel(fit.minutes).project(
-            pid, history,
-            stated_rank=fwd.depth_chart_pos if fwd else None,
+            pid,
+            history,
+            stated_rank=stated,
             team_changed=moved,
             observed_rank=fit.ranks.get(pid),
         )
-        tier = tier_of(fwd.depth_chart_pos if fwd else fit.ranks.get(pid))
+        tier = tier_of(stated if fwd is not None else fit.ranks.get(pid))
         rates = RatesModel(fit.rates)
         estimates = {
-            key: _estimate(rates.project(key, history, projected_minutes=mins.minutes,
-                                         minutes_stderr=mins.mean_stderr, tier=tier))
+            key: _estimate(
+                rates.project(
+                    key,
+                    history,
+                    projected_minutes=mins.minutes,
+                    minutes_stderr=mins.mean_stderr,
+                    tier=tier,
+                )
+            )
             for key in self._keys
         }
-        season_games = self._season_games_for(pid, season, as_of,
-                                              fallback=history[-1]["team"])
+        season_games = self._season_games_for(pid, season, as_of, fallback=history[-1]["team"])
         games = GamesModel(fit.games, season_games=self._season_games).project(
-            pid, len(history), fit.team_games.get(pid, 0), season_games=season_games,
+            pid,
+            len(history),
+            fit.team_games.get(pid, 0),
+            season_games=season_games,
         )
         notes = {
             "minutes": f"{mins.minutes:.1f}",
@@ -223,25 +249,35 @@ class DerivedProjectionSource(ProjectionSource):
         }
         if fwd is not None:
             notes["stated_depth"] = str(fwd.depth_chart_pos)
+        if promotion:
+            notes["depth_promotion"] = f"+{promotion}"
         if moved:
             notes["team_changed"] = "yes"
         if len(history) < self._min_games:
             notes["thin_history"] = f"{len(history)} games"
         return PlayerProjection(
-            player_id=pid, season=season, estimates=estimates,
+            player_id=pid,
+            season=season,
+            estimates=estimates,
             expected_games=round(games.expected_games, 2),
             expected_games_std=round(games.expected_games_std, 2),
-            basis=ProjectionBasis.MODELED, source=self.name, notes=notes,
+            basis=ProjectionBasis.MODELED,
+            source=self.name,
+            notes=notes,
         )
 
-    def _rookie_projection(self, pid: str, season: str, as_of: str, fit: _Fit, incoming
-                           ) -> PlayerProjection:
+    def _rookie_projection(
+        self, pid: str, season: str, as_of: str, fit: _Fit, incoming
+    ) -> PlayerProjection:
         rk = project_rookie_minutes(fit.rookies, fit.minutes, incoming.draft_pick)
         tier = tier_of(rk.rank)
         rates = RatesModel(fit.rates)
         estimates = {
-            key: _estimate(rates.project(key, [], projected_minutes=rk.minutes,
-                                         minutes_stderr=rk.mean_stderr, tier=tier))
+            key: _estimate(
+                rates.project(
+                    key, [], projected_minutes=rk.minutes, minutes_stderr=rk.mean_stderr, tier=tier
+                )
+            )
             for key in self._keys
         }
         season_games = self._season_games_for(pid, season, as_of, fallback=incoming.draft_team)
@@ -249,10 +285,13 @@ class DerivedProjectionSource(ProjectionSource):
             pid, 0, 0, season_games=season_games
         )
         return PlayerProjection(
-            player_id=pid, season=season, estimates=estimates,
+            player_id=pid,
+            season=season,
+            estimates=estimates,
             expected_games=round(games.expected_games, 2),
             expected_games_std=round(games.expected_games_std, 2),
-            basis=ProjectionBasis.PRIOR, source=self.name,
+            basis=ProjectionBasis.PRIOR,
+            source=self.name,
             notes={
                 "prior": "draft-slot",
                 "prior_basis": rk.basis,
@@ -268,20 +307,27 @@ class DerivedProjectionSource(ProjectionSource):
         raw = self._overrides[pid]
         minutes = float(raw.get("minutes", 0.0))
         estimates = {
-            key: CategoryEstimate(key, float(raw.get(key, 0.0)),
-                                  float(raw.get(f"{key}_std", 0.0)),
-                                  float(raw.get(f"{key}_stderr", 0.0)))
+            key: CategoryEstimate(
+                key,
+                float(raw.get(key, 0.0)),
+                float(raw.get(f"{key}_std", 0.0)),
+                float(raw.get(f"{key}_stderr", 0.0)),
+            )
             for key in self._keys
         }
         return PlayerProjection(
-            player_id=pid, season=season, estimates=estimates,
+            player_id=pid,
+            season=season,
+            estimates=estimates,
             expected_games=float(raw.get("games", self._season_games)),
             expected_games_std=float(raw.get("games_std", 0.0)),
-            basis=ProjectionBasis.OVERRIDE, source=self.name,
+            basis=ProjectionBasis.OVERRIDE,
+            source=self.name,
             notes={"override": "manual", "minutes": f"{minutes:.1f}"},
         )
 
 
 def _estimate(r) -> CategoryEstimate:
-    return CategoryEstimate(r.key, round(r.per_game_mean, 4), round(r.per_game_std, 4),
-                            round(r.mean_stderr, 4))
+    return CategoryEstimate(
+        r.key, round(r.per_game_mean, 4), round(r.per_game_std, 4), round(r.mean_stderr, 4)
+    )

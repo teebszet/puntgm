@@ -13,6 +13,7 @@ import pytest
 
 from fantasy_gm.data.cache import RawCache
 from fantasy_gm.data.player_index import (
+    _fetch_rows,
     build_forward_roster,
     ingest_player_index,
     parse_player_index,
@@ -255,3 +256,35 @@ def test_missing_position_is_absent_rather_than_a_default(store, tmp_path):
     ingest_player_index(store, SEASON, cache, KNOWN_FROM, as_of=DRAFT_DAY)
     positions = store.player_positions_asof(DRAFT_DAY)
     assert "AAA-0" in positions and "AAA-1" not in positions
+
+
+def test_fetch_rows_refresh_bypasses_cache(monkeypatch, tmp_path):
+    """``refresh=True`` is the live-wire read: network every time, cache rewritten with
+    the fresh capture. ``refresh=False`` (default) keeps the backfill idempotency
+    contract — a cached key is never re-fetched, or a season ingest stops resuming."""
+    import sys
+    import types
+
+    calls: list[str] = []
+
+    def _call(season, timeout):
+        calls.append(season)
+        return types.SimpleNamespace(
+            get_normalized_dict=lambda: {"PlayerIndex": [_row("AAA-9", "Fresh", "Fetch", "AAA")]}
+        )
+
+    stub = types.SimpleNamespace(PlayerIndex=_call)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints.playerindex", stub)
+
+    cache = RawCache(tmp_path)
+    cache.set("playerindex", {"season": SEASON},
+              {"PlayerIndex": [_row("AAA-0", "Old", "Cache", "AAA")]})
+
+    # default: cached read, no network call
+    assert _fetch_rows(SEASON, cache)[0]["PLAYER_FIRST_NAME"] == "Old"
+    assert calls == []
+    # refresh: fresh rows, and the cache now carries them for offline re-runs
+    fresh = _fetch_rows(SEASON, cache, refresh=True)
+    assert fresh[0]["PLAYER_FIRST_NAME"] == "Fresh" and calls == [SEASON]
+    cached_now = cache.get("playerindex", {"season": SEASON})["PlayerIndex"][0]
+    assert cached_now["PLAYER_FIRST_NAME"] == "Fresh"

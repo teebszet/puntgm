@@ -83,3 +83,37 @@
       pass. Waits on: Tim
 - [ ] 8.5 Dry-run the full live path against a real Yahoo mock (h-score-draft-engine 4.8)
       with the new surface once gates 8.2-8.4 clear and the draft date is known
+
+## 9. Event-driven re-pricing + multi-source news (R10 — Tim, 2026-10-14/15)
+
+Origin: Tim's depth-chart/usage question and "2. go" + "i want this from 3 sources:
+yahoo, nba.com, and perhaps X". The board is built once at arm and never re-prices;
+Tim wants injury/rotation events to move the board while drafting, priced from more
+than one source.
+
+Source reality (probed 2026-10-15, from this machine): the **Yahoo fantasy API**
+metadata (status + dated injury note) is the pricing authority and already ingests;
+the **public Yahoo injuries page** (sports.yahoo.com/nba/injuries/) serves the same
+designations with dates and no token; **Yahoo's NBA news RSS** (sports.yahoo.com/nba/rss/)
+is a free beat-reporting wire; **NBA.com** publishes no machine-readable injury or depth
+feed we can reach (official.nba.com 404s, cdn.nba.com Akamai-denies this host) — its
+reachable official signal is the `playerindex` roster-status refresh; **X** has no
+reliable free pipe (official API is paid, scraping is login-walled) — pluggable stub,
+cost decision is Tim's.
+
+- [x] 9.1 `news_events` store table (effective-dated, sourced, name-resolved) + reader
+- [x] 9.2 Yahoo public injuries page: parser (pure) + fetch + ingest as availability
+      rows (plain factors) AND news events; saved raw captures
+- [x] 9.3 Yahoo NBA news RSS: parse + name-match against the pool directory → news events
+- [x] 9.4 NBA.com `playerindex` roster-status refresh → roster-move news events
+- [x] 9.5 X adapter stub: interface + config, loud "not configured" state; no scraping
+- [x] 9.6 Season-OUT promotion rule: a backup's effective stated rank improves by the
+      number of OUT-for-season teammates listed ahead of him (projected basis re-prices;
+      under measured the move is surfaced, never ranked on)
+- [x] 9.7 Watcher: `--as-of` defaults to build date (fixes: statuses ingested with
+      2026-09/10 dates were invisible at the hard-coded 2025-10-20) + background thread:
+      periodic metadata refresh (remaining pool), diff designations (including cleared
+      designations), rebuild the board off the clock, swap atomically, log rank deltas
+- [x] 9.8 Watch page: event flag column on the rec card + per-source age strip
+- [x] 9.9 CLI `fantasy-gm news` (fetch + show; stored view)
+- [x] 9.10 Tests: parsers on saved fixtures, diff/cleared logic, promotion rule, swap

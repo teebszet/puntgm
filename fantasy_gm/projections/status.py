@@ -41,7 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fantasy_gm.models import Availability
+from fantasy_gm.models import Availability, ForwardRoster
 from fantasy_gm.projections.adp import (
     YAHOO_SOURCE,
     _collect_players,
@@ -68,6 +68,7 @@ STATUS_MAP: dict[str, str] = {
     "out": OUT,
     "out (short-term injury)": OUT,
     "out for season": OUT,
+    "out for the season": OUT,
     "out indefinitely": OUT,
     "suspended": OUT,
     "suspended by team": OUT,
@@ -75,7 +76,7 @@ STATUS_MAP: dict[str, str] = {
 }
 
 # The wording that says the season itself is gone, not a stretch of it.
-SEASON_OUT = frozenset({"out for season", "out indefinitely"})
+SEASON_OUT = frozenset({"out for season", "out for the season", "out indefinitely"})
 
 # status_full values that are roster states, not health designations ("Not Active" = not
 # on an NBA roster — a G-League stash or an unsigned player). Ignored on purpose: pricing
@@ -104,8 +105,7 @@ def rate_factor(avail: Availability) -> float:
     yahoo) are read that way — a hand-entered or beat-writer row keeps the plain status
     factor.
     """
-    if (avail.status == OUT and avail.source == YAHOO_SOURCE
-            and avail.confidence >= 1.0):
+    if avail.status == OUT and avail.source == YAHOO_SOURCE and avail.confidence >= 1.0:
         return 0.0
     return RATE_FACTORS.get(avail.status, 1.0)
 
@@ -127,11 +127,11 @@ class StatusIngestResult:
 
     stored: int
     rows: int
-    unresolved: tuple[str, ...] = ()                  # names with no store player id
-    unmapped: tuple[tuple[str, str], ...] = ()        # (name, raw status_full) with no mapping
-    noted: tuple[str, ...] = ()                       # dated note but no designation to map
-    ignored: tuple[str, ...] = ()                     # known non-health roster states
-    designations: dict[str, int] = field(default_factory=dict)   # count by mapped status
+    unresolved: tuple[str, ...] = ()  # names with no store player id
+    unmapped: tuple[tuple[str, str], ...] = ()  # (name, raw status_full) with no mapping
+    noted: tuple[str, ...] = ()  # dated note but no designation to map
+    ignored: tuple[str, ...] = ()  # known non-health roster states
+    designations: dict[str, int] = field(default_factory=dict)  # count by mapped status
 
 
 # --- parsing (pure) ----------------------------------------------------------
@@ -166,13 +166,15 @@ def parse_player_metadata(payload: Mapping[str, Any] | list) -> list[StatusRow]:
         pid = str(flat.get("player_id") or flat.get("player_key") or "")
         if not pid and not name:
             continue
-        rows.append(StatusRow(
-            yahoo_id=pid,
-            name=str(name or ""),
-            status_full=str(flat.get("status_full") or ""),
-            injury_note=str(flat.get("injury_note") or ""),
-            notes_ts=_as_int(flat.get("player_notes_last_timestamp")),
-        ))
+        rows.append(
+            StatusRow(
+                yahoo_id=pid,
+                name=str(name or ""),
+                status_full=str(flat.get("status_full") or ""),
+                injury_note=str(flat.get("injury_note") or ""),
+                notes_ts=_as_int(flat.get("player_notes_last_timestamp")),
+            )
+        )
     return rows
 
 
@@ -232,25 +234,32 @@ def ingest_status(
             continue
         # Season-ending wording is a certainty (1.0); every other designation is the
         # platform's best current read (0.9). rate_factor reads this back — see its comment.
-        confidence = (
-            1.0
-            if mapped == OUT and folded in SEASON_OUT
-            else 0.9
+        confidence = 1.0 if mapped == OUT and folded in SEASON_OUT else 0.9
+        records.append(
+            Availability(
+                pid,
+                mapped,
+                effective_date(row, known_from),
+                source,
+                confidence,
+                row.injury_note,
+            )
         )
-        records.append(Availability(
-            pid, mapped, effective_date(row, known_from), source, confidence,
-            row.injury_note,
-        ))
         designations[mapped] = designations.get(mapped, 0) + 1
     if records:
         store.add_availability(records)
-    return StatusIngestResult(len(records), n, tuple(unresolved), tuple(unmapped),
-                              tuple(noted), tuple(ignored), designations)
+    return StatusIngestResult(
+        len(records),
+        n,
+        tuple(unresolved),
+        tuple(unmapped),
+        tuple(noted),
+        tuple(ignored),
+        designations,
+    )
 
 
-def status_for_pool(
-    store, pids: Iterable[str], as_of: str
-) -> dict[str, Availability | None]:
+def status_for_pool(store, pids: Iterable[str], as_of: str) -> dict[str, Availability | None]:
     """Latest effective-dated designation per player known on or before ``as_of``.
 
     The batch form of ``store.availability_asof`` (one query rather than one per player);
@@ -267,9 +276,146 @@ def status_for_pool(
         (*ids, as_of),
     )
     for r in rows:
-        out[r["player_id"]] = Availability(r["player_id"], r["status"], r["known_from"],
-                                           r["source"], r["confidence"], r["note"])
+        out[r["player_id"]] = Availability(
+            r["player_id"], r["status"], r["known_from"], r["source"], r["confidence"], r["note"]
+        )
     return out
+
+
+def is_season_out(avail: Availability | None) -> bool:
+    """Whether this designation says the player's season is gone, not a stretch of it.
+
+    Single definition for every consumer (the board's rate cap and the depth-chart
+    promotion rule alike): the OUT rows :func:`rate_factor` prices at certainty. A row
+    from a source without the certainty marker stays a plain OUT — it halves the rate
+    but does not hand the minutes to the man behind him.
+    """
+    return avail is not None and avail.status == OUT and rate_factor(avail) == 0.0
+
+
+def season_out_ahead(
+    store, player_id: str, season: str, as_of: str
+) -> tuple[int, ForwardRoster | None]:
+    """How many of this player's stated-roster teammates listed ahead of him are OUT for
+    the season, and his forward-roster row (``None`` when the store cannot place him).
+
+    The depth-chart read behind the season-OUT promotion rule (9.6): minutes a
+    season-OUT teammate cannot take are minutes for the men behind him, so each one
+    ahead improves the backup's *effective* stated rank by one. Reads everything
+    through ``as_of`` — a designation reported after draft day was made never
+    promotes a player retroactively. Callers decide what to do with the count: the
+    projected basis re-prices on it (:mod:`fantasy_gm.projections.derived`), the
+    measured basis only surfaces it (the rec card's ``+Nd`` flag).
+    """
+    fwd = store.forward_roster_asof(player_id, season, as_of)
+    if fwd is None:
+        return 0, None
+    teammates = store.forward_roster_team_asof(fwd.team, season, as_of)
+    statuses = status_for_pool(store, [t.player_id for t in teammates], as_of)
+    ahead = sum(
+        1
+        for t in teammates
+        if t.depth_chart_pos < fwd.depth_chart_pos and is_season_out(statuses.get(t.player_id))
+    )
+    return ahead, fwd
+
+
+# --- refresh (periodic re-ingest with a diff) ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StatusRefreshResult:
+    """What one periodic refresh did, including every status it moved."""
+
+    rows_seen: int
+    stored: int
+    cleared: tuple[str, ...] = ()  # names whose stale cap was lifted
+    changed: tuple[tuple[str, str | None, str | None], ...] = ()  # (name, old, new)
+    unresolved: tuple[str, ...] = ()
+    unmapped: tuple[tuple[str, str], ...] = ()
+    noted: tuple[str, ...] = ()
+    ignored: tuple[str, ...] = ()
+    designations: dict[str, int] = field(default_factory=dict)
+
+
+def refresh_statuses(
+    store,
+    rows: Iterable[StatusRow],
+    known_from: str,
+    *,
+    resolver: Callable[[str], str | None] | None = None,
+    source: str = YAHOO_SOURCE,
+) -> StatusRefreshResult:
+    """Re-ingest a fresh metadata capture and report every designation it moved.
+
+    Two jobs :func:`ingest_status` deliberately does not do, because they only make
+    sense against a store that already holds older rows:
+
+    * **Cleared designations stop capping.** A refresh row with no designation for a
+      player whose stored latest row is still QUESTIONABLE/OUT means the designation
+      was lifted; an ACTIVE row is written so ``status_for_pool`` stops returning the
+      stale cap. (First-time ingest skips empty rows — absence means nothing there.)
+    * **The diff is the product**: ``(name, old, new)`` for every player whose mapped
+      status moved, which is what the watcher rebuilds the board on.
+    """
+    resolve = resolver or build_name_resolver(store, known_from)
+    pids: list[str] = []
+    names_of: dict[str, str] = {}
+    for row in rows:
+        if not row.name:
+            continue
+        pid = resolve(row.name)
+        if pid is not None and pid not in names_of:
+            pids.append(pid)
+            names_of[pid] = row.name
+    before = status_for_pool(store, pids, known_from) if pids else {}
+
+    result = ingest_status(store, rows, known_from, resolver=resolve, source=source)
+
+    cleared: list[str] = []
+    extra: list[Availability] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row.status_full.strip():
+            continue
+        pid = resolve(row.name) if row.name else None
+        if pid is None or pid in seen:
+            continue
+        seen.add(pid)
+        old = before.get(pid)
+        if old is not None and old.status in (QUESTIONABLE, OUT):
+            extra.append(
+                Availability(
+                    pid,
+                    ACTIVE,
+                    known_from,
+                    source,
+                    0.9,
+                    f"designation cleared on refresh (was {old.status})",
+                )
+            )
+            cleared.append(row.name or pid)
+    if extra:
+        store.add_availability(extra)
+
+    after = status_for_pool(store, pids, known_from) if pids else {}
+    changed: list[tuple[str, str | None, str | None]] = []
+    for pid in pids:
+        o, n = before.get(pid), after.get(pid)
+        os_, ns = (o.status if o else None), (n.status if n else None)
+        if os_ != ns:
+            changed.append((names_of.get(pid, pid), os_, ns))
+    return StatusRefreshResult(
+        stored=result.stored + len(extra),
+        rows_seen=result.rows,
+        cleared=tuple(cleared),
+        changed=tuple(changed),
+        unresolved=result.unresolved,
+        unmapped=result.unmapped,
+        noted=result.noted,
+        ignored=result.ignored,
+        designations=result.designations,
+    )
 
 
 # --- file + network ----------------------------------------------------------
@@ -334,12 +480,16 @@ def fetch_league_player_metadata(
         pages.append(resp.json())
         start += count
     if save_path is not None:
-        Path(save_path).write_text(json.dumps({
-            "league_key": league_key,
-            "fetched_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
-            "out": "metadata",
-            "pages": pages,
-        }))
+        Path(save_path).write_text(
+            json.dumps(
+                {
+                    "league_key": league_key,
+                    "fetched_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+                    "out": "metadata",
+                    "pages": pages,
+                }
+            )
+        )
     if save_path is not None:
         return load_status_file(save_path)
     return [row for page in pages for row in parse_player_metadata(page)]

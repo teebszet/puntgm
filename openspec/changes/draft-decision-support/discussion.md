@@ -272,3 +272,66 @@ margin over null grew from +1.5pp/+3.5pp to +2.3pp/+5.4pp.
 The four carry no Yahoo designation rows (`status` null throughout the record), so the
 baseline pipeline — not a designation — is what prices them; the ingest is wired for the
 day designations appear.
+
+## 2026-10-15 — plan: event-driven re-pricing + multi-source news (section 9)
+
+Tim's ask: the board is frozen at arm time; when a starter goes down mid-draft the
+backup's upside must be priced up on the fly, from more than one source. Probe results
+(from this machine, 2026-10-15) fixed the source roles:
+
+| source | reach | role |
+|---|---|---|
+| Yahoo fantasy API metadata | live (token expired, re-auth needed) | **pricing authority** — status_full + dated injury_note |
+| Yahoo public injuries page | 200, parses (168 rows, 10 KB fixture saved) | supplementary designation wire — same designations, dated, no token |
+| Yahoo NBA news RSS | 200 | beat-reporting wire — names matched to the pool |
+| NBA.com | no reachable machine-readable injury/depth feed (cdn 403, official 404) | playerindex roster-status refresh only |
+| X | no free pipe (API paid, scraping login-walled) | pluggable stub, cost decision is Tim's |
+
+Design decisions:
+
+1. **The Yahoo fantasy API stays the pricing authority.** The web page and RSS are
+   confirmation/news wires: web-page designations ingest as availability rows with
+   *plain* factors (they cannot carry the certainty marker `rate_factor` reads), so a
+   web row can never claim a season-ending certainty the API did not.
+2. **Events surface, they do not silently re-rank.** Under the measured basis the
+   board shows the flag (status + news count + depth promotion) and the watcher logs
+   rank deltas; the rank itself moves only under the projected basis, via the
+   season-OUT promotion rule (9.6): a backup's effective stated rank improves by the
+   number of OUT-for-season teammates listed ahead of him.
+3. **`as_of` for draft night is the build date.** The watcher/dry-run path hard-coded
+   `as_of=2025-10-20`, which made every 2026-09/10-dated row invisible — verified
+   empirically (Haliburton rendered r5 uncapped instead of r42 under the
+   QUESTIONABLE cap). Rebuild costs 1.8–2 s measured — safe off the clock.
+4. **A background thread owns freshness**: periodic metadata refresh (token permitting)
+   + web/RSS ingest (no token needed) → designation diff incl. cleared designations →
+   board rebuilt off the clock → atomic `gm` swap under a lock → rank-delta log. The
+   poll loop never rebuilds.
+
+## 2026-10-15 — built: section 9 shipped + the NBA.com wire goes live (Tim's three sources)
+
+Built and live (branch `change/draft-decision-support`, uncommitted → then committed):
+
+* **Flags + promotion (9.6/9.8)**: rec-card `flag` column (`OUT` / `QUE` / `Nn` / `+Nd`),
+  season-OUT promotion opt-in on `DerivedProjectionSource` (projected basis only),
+  page tokens colored, picker/chips follow. Rec card never re-ranks on flags.
+* **`as_of` = build date** everywhere (watcher, dry-run, CLI default): the 2025-10-20
+  hard-code made 2026 designations invisible (verified on Haliburton).
+* **Background refresher (9.7)** runs three wires + metadata refresh, rebuilds the
+  board off the clock, swaps `gm` atomically, logs rank deltas ≥5.
+* **The season-key catch, found during the three-source wiring**: the flag path read
+  the caller's season (`2025-26` ranked-data season) while the board prices the
+  2026-27 forward roster — `+Nd` would have read *last season's* 442 stale roster
+  rows. `flags_for_pool` now takes `forward_season` and `live.py` pins it to
+  `FORWARD_SEASON`; test updated.
+* **NBA.com wire live**: `playerindex` fetched fresh (bypassing the disk cache — a
+  wire that re-reads yesterday's capture never sees today's move), diffed against the
+  stored roster → roster-move events. Verified live from this machine: `36 move(s)`
+  stored (`ATL -> NYK` etc. — real offseason churn since the 8/17 roster ingest),
+  second pass `0 new` (identity-keyed dedupe). In the watcher cycle with a one-line
+  heartbeat (row-count change only) and loud failure logging; `nba` joins the page's
+  per-source age strip automatically. `fantasy-gm news --playerindex SEASON` now
+  always fetches fresh and keeps every capture on disk for audit.
+* **X stays a loud stub** (9.5): no free pipe; a paid key is a cost decision for Tim.
+* Verification: 431 tests pass, `ruff check` clean, page DOM smoke 14 assertions
+  green (fallback + spec pins include the flag column), live store shows sources
+  `yahoo-web 135 / yahoo-news 21 / nba 36`.

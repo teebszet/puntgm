@@ -88,6 +88,7 @@
   td.name { color: #e6e6e6; }
   .cat { font-size: 11px; color: #7d8695; }
   .cat.neg { color: #d8a1a1; }
+  .cat.warn { color: #ffd98a; }
   #rec-picker, #punt-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
                             margin: 0 0 10px; }
   #rec-picker .picker-label, #punt-tabs .picker-label {
@@ -180,6 +181,12 @@
           <div id="rec-body" class="empty">No recommendation yet — the watcher reports one from
           the first poll until the draft ends; between your picks it runs as a preview.</div>
         </div>
+      </div>
+
+      <div class="card" id="news-card">
+        <h2>News wires <span style="text-transform:none;color:#5d6675">(per-source freshness;
+        the events themselves surface as flags on the rec card)</span></h2>
+        <div id="news-body" class="empty">No news events stored yet.</div>
       </div>
 
       <div class="card">
@@ -277,7 +284,8 @@
 
   <p class="footer" style="margin-top:14px">Watcher:
   <code>fantasy-nba-gm/scripts/draft_watch_service.py</code> (watch mode)
-  · Board: 2025-26 G-score, availability projected to 2025-10-20 · Survival vs market ADP ·
+  · Board: 2025-26 G-score, availability projected to the build date and refreshed in the
+  background as news lands · Survival vs market ADP ·
   Differential + punt panel are display-only context; candidate ordering always comes from the
   static board. Page auto-refreshes from the watcher's state every 3 s. If the heartbeat dot
   goes red for more than ~45 s the watcher has stopped — check <code>#fantasy-nba-gm</code>.</p>
@@ -378,12 +386,12 @@ function pill(id, text, cls) {
 // watcher embeds rec.column_spec (column_spec_json) in state.json and per-candidate
 // adp/adp_dev/neg_cats alongside. Old state files without a spec still render via the
 // fallback keys (additive schema: a stale serve process never breaks the page).
-const COL_FALLBACK = ['rk', 'player', 'value', 'vs_safe', 'surv', 'adp', 'top_cats', 'neg_cats'];
+const COL_FALLBACK = ['rk', 'player', 'value', 'vs_safe', 'surv', 'flag', 'adp', 'top_cats', 'neg_cats'];
 const COL_HEADER_FALLBACK = { rk: 'rk', player: 'player', value: 'value', vs_safe: 'vs safe',
-                              surv: 'surv', adp: 'adp', adp_dev: 'adp−rk',
+                              surv: 'surv', flag: 'flag', adp: 'adp', adp_dev: 'adp−rk',
                               top_cats: 'top cats', neg_cats: 'neg cats' };
 const COL_CLASS = { rk: 'num', player: 'name', value: 'num', vs_safe: 'num', surv: 'num',
-                    adp: 'num', adp_dev: 'num', top_cats: '', neg_cats: '' };
+                    flag: '', adp: 'num', adp_dev: 'num', top_cats: '', neg_cats: '' };
 const LS_KEY = 'rec-columns';
 const CELL = {
   rk: c => c.board_rank,
@@ -391,6 +399,16 @@ const CELL = {
   value: c => short(c.total),
   vs_safe: c => (c.value_over_safe > 0 ? '+' : '') + short(c.value_over_safe),
   surv: c => pct(c.survival),
+  // R10 news flag: OUT/QUE colored, wire counts and depth promotions plain. Each
+  // token is a separate span so "OUT 2n +1d" reads as three facts at a glance.
+  flag: c => {
+    const f = String(c.flag || '').trim();
+    if (!f) return '—';
+    return f.split(/\s+/).map(tok => {
+      const cls = tok === 'OUT' ? 'cat neg' : (tok === 'QUE' ? 'cat warn' : 'cat');
+      return `<span class="${cls}">${esc(tok)}</span>`;
+    }).join(' ');
+  },
   adp: c => c.adp == null ? '—' : c.adp,
   adp_dev: c => c.adp_dev == null ? '—' : (c.adp_dev > 0 ? '+' : '') + c.adp_dev,
   top_cats: c => Object.entries(c.categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 3)
@@ -551,6 +569,27 @@ function renderRoster(s) {
     `<span class="rpill"><i>#${p.number}</i>${esc(p.name || p.player_id)}</span>`).join('');
 }
 
+// --- news wires strip (R10): per-source freshness, not per-player noise -------------
+function renderNews(srcs) {
+  const body = $('news-body');
+  if (!srcs || !srcs.length) {
+    body.className = 'empty';
+    body.textContent = 'No news events stored yet.';
+    return;
+  }
+  body.className = '';
+  const today = new Date().toISOString().slice(0, 10);
+  body.innerHTML = srcs.map(s => {
+    // freshness vs the latest event the source has produced: today is green, within
+    // three days amber, older red — a stale wire must be visible as stale.
+    const ageDays = s.latest
+      ? (Date.now() - Date.parse(s.latest + 'T00:00:00Z')) / 864e5 : Infinity;
+    const cls = ageDays <= 1 ? 'green' : (ageDays <= 3 ? 'amber' : 'red');
+    return `<span class="pill ${cls}"><b>${esc(s.source)}</b> · ${s.events} event(s) · ` +
+      `latest ${esc(s.latest || '—')}</span>`;
+  }).join(' ');
+}
+
 function render(s) {
   const status = s.status || 'waiting';
   let cls = '';
@@ -605,6 +644,7 @@ function render(s) {
   renderRec(s.recommendation);
   renderDifferential(s.differential);   // additive: absent field -> section stays empty
   renderPunt(s.punt_panel);
+  renderNews(s.news_sources);           // additive: absent field -> "no events yet"
   renderRoster(s);
 
   const picks = s.picks || [];

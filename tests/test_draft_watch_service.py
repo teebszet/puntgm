@@ -200,3 +200,36 @@ def test_ensure_watch_page_never_overwrites_a_deployed_page(svc, tmp_path):
     page.write_text("<html>deployed copy</html>", encoding="utf-8")
     assert svc.ensure_watch_page(tmp_path / "serve_state.json") is None
     assert page.read_text(encoding="utf-8") == "<html>deployed copy</html>"
+
+
+def test_nba_roster_moves_wire(svc, tmp_path, monkeypatch):
+    """The NBA wire (Tim's three-source ask, 2026-10-15) must fetch FRESH — a wire that
+    re-reads a cached capture never sees a draft-night move — and diff against the
+    roster the store knew at the refresh date, storing moves as nba-source events."""
+    from fantasy_gm.data import player_index as pi_mod
+    from fantasy_gm.data.cache import RawCache
+    from fantasy_gm.data.store import Store
+    from fantasy_gm.models import ForwardRoster
+
+    store = Store(":memory:")
+    store.add_forward_roster([ForwardRoster("101", "2026-27", "BOS", 1, "2026-10-01")])
+
+    seen: dict[str, object] = {}
+
+    def fake_fetch(season, cache, refresh=False):
+        seen["season"], seen["refresh"] = season, refresh
+        return [{
+            "PERSON_ID": 101, "PLAYER_FIRST_NAME": "Moved", "PLAYER_LAST_NAME": "Guy",
+            "TEAM_ABBREVIATION": "DAL", "POSITION": "F", "ROSTER_STATUS": 1.0,
+        }]
+
+    monkeypatch.setattr(pi_mod, "_fetch_rows", fake_fetch)
+    new, rows = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
+    assert seen["season"] == "2026-27" and seen["refresh"] is True
+    assert rows == 1 and new == 1
+    ev = store.conn.execute("SELECT source, kind, headline FROM news_events").fetchone()
+    assert ev["source"] == "nba" and ev["kind"] == "roster-move"
+    assert "BOS -> DAL" in ev["headline"]
+    # re-diffing an unchanged league is a no-op (identity-keyed news rows)
+    new2, _ = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
+    assert new2 == 0

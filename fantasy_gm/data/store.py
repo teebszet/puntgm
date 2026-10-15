@@ -28,6 +28,7 @@ from fantasy_gm.models import (
     IncomingPlayer,
     LeagueState,
     Matchup,
+    NewsEvent,
     PlayerGameLog,
     PlayerPosition,
     Transaction,
@@ -196,6 +197,25 @@ CREATE TABLE IF NOT EXISTS adp (
     PRIMARY KEY (player_id, season, source, known_from)
 );
 CREATE INDEX IF NOT EXISTS ix_adp_season ON adp(season, known_from);
+
+-- Dated news events (injury designations, rotation notes, roster moves, wire items),
+-- matched to store players when the item names one. Same ingest discipline as
+-- availability: every row carries its source and the date the item is dated, and an
+-- as-of read never sees a row known only later. A wire item that names no pool player
+-- is still stored (league context) under the empty player id — it can flag nothing.
+CREATE TABLE IF NOT EXISTS news_events (
+    source       TEXT NOT NULL,
+    published_on TEXT NOT NULL,
+    player_id    TEXT NOT NULL DEFAULT '',
+    name         TEXT NOT NULL DEFAULT '',
+    kind         TEXT NOT NULL,
+    headline     TEXT NOT NULL,
+    note         TEXT DEFAULT '',
+    url          TEXT DEFAULT '',
+    known_from   TEXT NOT NULL,
+    PRIMARY KEY (source, published_on, player_id, headline)
+);
+CREATE INDEX IF NOT EXISTS ix_news_player ON news_events(player_id, published_on);
 """
 
 
@@ -706,6 +726,99 @@ class Store:
             return None
         return ForwardRoster(row["player_id"], row["season"], row["team"],
                              row["depth_chart_pos"], row["known_from"], row["role"])
+
+    def forward_roster_team_asof(
+        self, team: str, season: str, as_of: str
+    ) -> list[ForwardRoster]:
+        """Every player's latest-as-of roster row for one team, at that row's own date.
+
+        The team read the promotion rule needs: a player whose latest effective-dated
+        row places them elsewhere is excluded by the team filter even though their
+        history was read — each player is read at their own latest ``known_from``.
+        """
+        rows = self.conn.execute(
+            """SELECT fr.* FROM forward_roster fr
+               WHERE fr.season = ? AND fr.team = ? AND fr.known_from <= ?
+                 AND fr.known_from = (
+                     SELECT MAX(known_from) FROM forward_roster fr2
+                     WHERE fr2.player_id = fr.player_id
+                       AND fr2.season = fr.season AND fr2.known_from <= ?)
+               ORDER BY fr.depth_chart_pos, fr.player_id""",
+            (season, team, as_of, as_of),
+        ).fetchall()
+        return [ForwardRoster(r["player_id"], r["season"], r["team"],
+                              r["depth_chart_pos"], r["known_from"], r["role"])
+                for r in rows]
+
+    def forward_roster_map_asof(
+        self, season: str, as_of: str
+    ) -> dict[str, ForwardRoster]:
+        """Every player's latest-as-of roster row for the season, keyed by player id.
+
+        The whole-forward-roster read the roster-move diff needs: each player at their
+        own latest ``known_from``, so a row written after ``as_of`` is invisible.
+        """
+        rows = self.conn.execute(
+            """SELECT fr.* FROM forward_roster fr
+               WHERE fr.season = ? AND fr.known_from <= ?
+                 AND fr.known_from = (
+                     SELECT MAX(known_from) FROM forward_roster fr2
+                     WHERE fr2.player_id = fr.player_id
+                       AND fr2.season = fr.season AND fr2.known_from <= ?)""",
+            (season, as_of, as_of),
+        ).fetchall()
+        return {r["player_id"]: ForwardRoster(
+                    r["player_id"], r["season"], r["team"],
+                    r["depth_chart_pos"], r["known_from"], r["role"])
+                for r in rows}
+
+    def add_news_events(self, records: Iterable[NewsEvent]) -> int:
+        """Insert news rows (INSERT OR REPLACE — the key is the item's identity).
+
+        Returns the number of rows actually new, so an ingest pass can report what
+        changed rather than recounting what it re-wrote (the refresh diff needs that).
+        """
+        before = self.conn.execute("SELECT COUNT(*) AS n FROM news_events").fetchone()["n"]
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO news_events(
+                   source, published_on, player_id, name, kind, headline, note, url,
+                   known_from)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            [(r.source, r.published_on, r.player_id, r.name, r.kind, r.headline,
+              r.note, r.url, r.known_from or r.published_on) for r in records],
+        )
+        self.conn.commit()
+        after = self.conn.execute("SELECT COUNT(*) AS n FROM news_events").fetchone()["n"]
+        return max(after - before, 0)
+
+    def news_asof(
+        self, player_ids: Iterable[str], as_of: str, *, per_player: int = 3
+    ) -> dict[str, list[NewsEvent]]:
+        """Latest ``per_player`` news rows per player, known on or before ``as_of``.
+
+        Newest first within a player. A player with no rows maps to an empty list —
+        "no news" is a real state, never a silent gap.
+        """
+        ids = list(dict.fromkeys(player_ids))
+        if not ids:
+            return {}
+        out: dict[str, list[NewsEvent]] = {pid: [] for pid in ids}
+        marks = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"SELECT * FROM news_events WHERE player_id IN ({marks}) "  # noqa: S608
+            "AND known_from <= ? ORDER BY player_id, published_on DESC, headline",
+            (*ids, as_of),
+        )
+        for r in rows:
+            bucket = out.get(r["player_id"])
+            if bucket is not None and len(bucket) < per_player:
+                bucket.append(NewsEvent(
+                    source=r["source"], published_on=r["published_on"],
+                    player_id=r["player_id"], name=r["name"], kind=r["kind"],
+                    headline=r["headline"], note=r["note"], url=r["url"],
+                    known_from=r["known_from"],
+                ))
+        return out
 
     def add_player_positions(self, records: Iterable[PlayerPosition]) -> None:
         self.conn.executemany(

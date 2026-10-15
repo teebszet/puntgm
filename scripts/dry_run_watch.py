@@ -36,10 +36,10 @@ def main() -> int:
         return 1
     league = sys.argv[1]
     seat = int(sys.argv[sys.argv.index("--seat") + 1]) if "--seat" in sys.argv else 1
-    interval = (float(sys.argv[sys.argv.index("--interval") + 1])
-                if "--interval" in sys.argv else 15.0)
-    columns_spec = (sys.argv[sys.argv.index("--columns") + 1]
-                    if "--columns" in sys.argv else None)
+    interval = (
+        float(sys.argv[sys.argv.index("--interval") + 1]) if "--interval" in sys.argv else 15.0
+    )
+    columns_spec = sys.argv[sys.argv.index("--columns") + 1] if "--columns" in sys.argv else None
     try:
         columns = parse_columns(columns_spec)
     except ValueError as exc:
@@ -51,8 +51,14 @@ def main() -> int:
     state = DraftState(league_key=league, n_teams=12, my_seat=seat)
 
     print("Building board + market order (once) ...")
-    gm = build_gm(store, "2025-26", "2025-10-20")
-    print(f"  board ready: {len(gm['pool'])} players; watching seat {seat} of league {league}")
+    # as_of is the build date (task 9.7): the old hard-coded 2025-10-20 made every
+    # 2026-dated designation invisible to the board.
+    as_of = time.strftime("%Y-%m-%d", time.gmtime())
+    gm = build_gm(store, "2025-26", as_of)
+    print(
+        f"  board ready: {len(gm['pool'])} players; watching seat {seat} of league {league}"
+        f" (as_of {as_of})"
+    )
 
     seen = 0
     while True:
@@ -72,8 +78,17 @@ def main() -> int:
             seen = len(state.picks)
             save_state(state, state_path)
         if state.is_my_pick():
-            rec = recommend(store, "2025-26", state, gm["pool"], board=gm["board"],
-                            adp_order=gm["adp_order"], names=gm["names"], budget_s=8.0)
+            rec = recommend(
+                store,
+                "2025-26",
+                state,
+                gm["pool"],
+                board=gm["board"],
+                adp_order=gm["adp_order"],
+                names=gm["names"],
+                budget_s=8.0,
+                as_of=as_of,
+            )
             print(render_recommendation(rec, columns), flush=True)
         time.sleep(interval)
 

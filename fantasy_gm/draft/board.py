@@ -210,26 +210,26 @@ class Board:
             + (
                 f", players without a usable {self.season} sample placed by depth on their "
                 f"{self.forward_season} roster"
-                if self.forward_season else ""
+                if self.forward_season
+                else ""
             )
             + (
                 (
                     f", {len(self.rate_sources)} of those priced per-game from their last "
                     "healthy season (named per row)"
                     if self.rate_basis == RateBasis.MEASURED
-                    else
-                    f", {len(self.rate_sources)} priced per-game outside the ranked season "
+                    else f", {len(self.rate_sources)} priced per-game outside the ranked season "
                     "by the derived model or a baseline (named per row)"
                 )
-                if self.rate_sources else ""
+                if self.rate_sources
+                else ""
             )
             + "."
         )
         projected_rates = (
             ""
             if self.rate_basis == RateBasis.MEASURED
-            else
-            " Per-game rates are the derived minutes/role model's projection as of "
+            else " Per-game rates are the derived minutes/role model's projection as of "
             f"{self.projected_as_of}, carried onto each player's forward-season roster — a "
             "model whose minutes edge over naive carry-forward is unproven (backtest "
             "inconclusive)."
@@ -270,8 +270,7 @@ class Board:
             "played with an expected-availability probability projected as of "
             f"{self.availability_as_of} — a beta-binomial rate shrunk toward the pool, not "
             "last season's realized games. No count of the games this player actually went on "
-            f"to play enters the rank. {rates}{projected_rates}"
-            + status
+            f"to play enters the rank. {rates}{projected_rates}" + status
         )
 
     @property
@@ -293,7 +292,10 @@ def _player_names(store, season: str, player_ids: list[str]) -> dict[str, str]:
 
 
 def project_availability(
-    store, season: str, as_of: str, players: list[str] | None = None,
+    store,
+    season: str,
+    as_of: str,
+    players: list[str] | None = None,
     statuses: dict[str, Availability | None] | None = None,
 ) -> dict[str, object]:
     """``{player_id: GamesProjection}`` from history known at ``as_of``.
@@ -388,9 +390,14 @@ def _projected_per_game(
     from fantasy_gm.projections.source import ProjectionBasis
 
     league = league_percentage_rates(store, season, categories, pool)
-    projections = DerivedProjectionSource(store, categories=categories).project(
-        forward_season, as_of, player_ids=pool,
-    )
+    # season_out_promotion=True (task 9.6): the projected basis re-prices on season-OUT
+    # teammates — a designation at the projection date moves the backup's role, which is
+    # exactly the "rosters changed" term this projection exists to carry.
+    projections = DerivedProjectionSource(
+        store,
+        categories=categories,
+        season_out_promotion=True,
+    ).project(forward_season, as_of, player_ids=pool)
     counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
     pcts = [c for c in categories if c in PERCENTAGE_CATEGORIES]
     tag_of = {
@@ -494,8 +501,9 @@ def _basis(
     as_of: str | None,
     forward_season: str | None = None,
     rate_basis: str = "measured",
-) -> tuple[XScoreBasis, dict[str, object], dict[str, Availability | None],
-           dict[str, str], list[str]]:
+) -> tuple[
+    XScoreBasis, dict[str, object], dict[str, Availability | None], dict[str, str], list[str]
+]:
     """Build the standardisation basis under one availability treatment.
 
     Returns ``(basis, projections, statuses, rate_sources, pool)``. ``statuses`` is the
@@ -523,8 +531,13 @@ def _basis(
         # `compound_weekly`. Aggregating to weeks first would smuggle realized availability
         # back in through each player's games-per-active-week.
         per_game, pool = measure_per_game_stats(
-            store, season, categories, pool_size, forward_season=forward_season,
-            min_games=BASELINE_MIN_GAMES, sources=sources,
+            store,
+            season,
+            categories,
+            pool_size,
+            forward_season=forward_season,
+            min_games=BASELINE_MIN_GAMES,
+            sources=sources,
         )
         if rate_basis == "projected":
             # R4/D3: hand the per-game rates to the derived minutes/role model, which
@@ -537,7 +550,12 @@ def _basis(
             if not as_of:
                 raise ValueError("projected rates need an as-of date (the projection date)")
             for pid, (tag, per_cat) in _projected_per_game(
-                store, pool, categories, season, forward_season, as_of,
+                store,
+                pool,
+                categories,
+                season,
+                forward_season,
+                as_of,
             ).items():
                 per_game[pid] = per_cat
                 sources[pid] = tag
@@ -546,8 +564,9 @@ def _basis(
             if not as_of:
                 raise ValueError("projected availability needs an --as-of date")
             statuses = status_for_pool(store, pool, as_of)
-            projections = project_availability(store, season, as_of, players=pool,
-                                               statuses=statuses)
+            projections = project_availability(
+                store, season, as_of, players=pool, statuses=statuses
+            )
             rates = {p: getattr(g, "availability_rate", 1.0) for p, g in projections.items()}
         else:
             rates = dict.fromkeys(per_game, 1.0)
@@ -565,8 +584,12 @@ def _basis(
             typical_tau=median(taus) if taus else 0.0,
         )
     basis = XScoreBasis(
-        categories=categories, bases=bases, stats=stats, pool=scored_players,
-        kappa=kappa, mode=mode,
+        categories=categories,
+        bases=bases,
+        stats=stats,
+        pool=scored_players,
+        kappa=kappa,
+        mode=mode,
     )
     return basis, projections, statuses, sources, pool
 
@@ -620,18 +643,31 @@ def build_board(
     if rate_basis not in RATE_BASES:
         raise ValueError(f"unknown rate basis {rate_basis!r} (known: {RATE_BASES})")
     if rate_basis == "projected" and availability is AvailabilityMode.REALIZED:
-        raise ValueError("projected rates rank a season not yet played; `realized` "
-                         "grades a finished season — the two cannot combine")
+        raise ValueError(
+            "projected rates rank a season not yet played; `realized` "
+            "grades a finished season — the two cannot combine"
+        )
     rate_basis = RateBasis(rate_basis)
 
     basis, projections, statuses, sources, pool = _basis(
-        store, season, scored, pool_size, kappa, mode, availability, as_of,
-        forward_season=forward_season, rate_basis=rate_basis,
+        store,
+        season,
+        scored,
+        pool_size,
+        kappa,
+        mode,
+        availability,
+        as_of,
+        forward_season=forward_season,
+        rate_basis=rate_basis,
     )
     ranked = sorted(
         (
-            (p, round(basis.total(p), 4),
-             {c: round(basis.category_score(p, c), 4) for c in basis.categories})
+            (
+                p,
+                round(basis.total(p), 4),
+                {c: round(basis.category_score(p, c), 4) for c in basis.categories},
+            )
             for p in basis.pool
         ),
         key=lambda r: -r[1],
@@ -651,8 +687,11 @@ def build_board(
     ids = [pid for pid, _, _ in ranked]
     names = _player_names(store, season, ids + unpriced_ids)
     unpriced = tuple(
-        (pid, names.get(pid, pid),
-         f"no usable {season} sample and no earlier season above {BASELINE_MIN_GAMES} games")
+        (
+            pid,
+            names.get(pid, pid),
+            f"no usable {season} sample and no earlier season above {BASELINE_MIN_GAMES} games",
+        )
         for pid in unpriced_ids
     )
 
@@ -665,11 +704,13 @@ def build_board(
             categories=cats,
             expected_games=(
                 round(getattr(projections[pid], "expected_games", 0.0), 1)
-                if pid in projections else None
+                if pid in projections
+                else None
             ),
             availability_rate=(
                 round(getattr(projections[pid], "availability_rate", 0.0), 3)
-                if pid in projections else None
+                if pid in projections
+                else None
             ),
             z_rank=z_rank.get(pid),
             z_delta=(z_rank[pid] - i) if pid in z_rank else None,
@@ -846,8 +887,9 @@ def render_markdown(board: Board, top: int = 150) -> str:
         )
     if any(r.rate_source for r in board.rows[:top]):
         lines.append("")
-        lines.append("\\* rates priced from an earlier healthy season "
-                     "(see `rate_source` in the JSON export)")
+        lines.append(
+            "\\* rates priced from an earlier healthy season (see `rate_source` in the JSON export)"
+        )
     return "\n".join(lines) + "\n"
 
 
