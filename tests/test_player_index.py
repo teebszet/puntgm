@@ -15,6 +15,7 @@ from fantasy_gm.data.cache import RawCache
 from fantasy_gm.data.player_index import (
     _fetch_rows,
     build_forward_roster,
+    fold_forward_roster,
     ingest_player_index,
     parse_player_index,
     to_incoming_players,
@@ -288,3 +289,100 @@ def test_fetch_rows_refresh_bypasses_cache(monkeypatch, tmp_path):
     assert fresh[0]["PLAYER_FIRST_NAME"] == "Fresh" and calls == [SEASON]
     cached_now = cache.get("playerindex", {"season": SEASON})["PlayerIndex"][0]
     assert cached_now["PLAYER_FIRST_NAME"] == "Fresh"
+
+
+# --- the roster fold (9.11): events report a move, the fold re-prices it ------
+
+FOLD_DAY = "2026-10-15"
+
+
+def _rostered_roster(store) -> None:
+    old = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM)]
+        + [_row(f"BBB-{i}", "P", str(i), "BBB") for i in range(PER_TEAM)]
+    )
+    store.add_forward_roster(
+        build_forward_roster(store, old, SEASON, KNOWN_FROM, as_of=DRAFT_DAY)
+    )
+
+
+def test_fold_rewrites_dated_rows_when_the_league_moved(store):
+    """The wire diff only *reports* a trade; the minutes model prices from forward_roster
+    rows, so the fold must put the moved player on his new team's depth, dated the fold
+    day — and reads at an earlier as_of must still see the old team, so a backtest never
+    sees a fold that had not happened yet."""
+    _rostered_roster(store)
+    fresh = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM) if i != 8]
+        + [_row("AAA-8", "P", "8", "BBB")]
+        + [_row(f"BBB-{i}", "P", str(i), "BBB") for i in range(PER_TEAM)]
+    )
+    counts = fold_forward_roster(store, fresh, SEASON, FOLD_DAY, as_of=FOLD_DAY)
+    assert counts["moved"] == 1 and counts["changed_players"] == 1
+
+    moved = store.forward_roster_asof("AAA-8", SEASON, FOLD_DAY)
+    assert moved.team == "BBB" and moved.known_from == FOLD_DAY
+    # Placed by the new roster's own track records: behind the top of BBB, ahead of
+    # whoever earned fewer minutes (the seed's AAA-8 is better than BBB-9).
+    ranks = {
+        r.player_id: r.depth_chart_pos
+        for r in store.forward_roster_team_asof("BBB", SEASON, FOLD_DAY)
+    }
+    assert ranks["AAA-8"] > ranks["BBB-0"] and ranks["AAA-8"] < ranks["BBB-9"]
+    # Earlier reads never see the fold — the old row stands.
+    assert store.forward_roster_asof("AAA-8", SEASON, DRAFT_DAY).team == "AAA"
+
+
+def test_a_departure_is_counted_but_does_not_retrigger_the_fold(store):
+    """A player off the rosters leaves no dated row (the schema has no tombstone), so a
+    departure cannot say 'already folded' — triggering on it would re-fire every cycle.
+    His exit is recorded as a dated news event instead; the rewrite waits for a team
+    change or a call-up."""
+    _rostered_roster(store)
+    fresh = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM) if i != 9]
+        + [_row("AAA-9", "P", "9", "", status=0)]
+        + [_row(f"BBB-{i}", "P", str(i), "BBB") for i in range(PER_TEAM)]
+    )
+    counts = fold_forward_roster(store, fresh, SEASON, FOLD_DAY, as_of=FOLD_DAY)
+    assert counts["departed"] == 1 and counts["changed_players"] == 0
+    n_after = store.conn.execute("SELECT COUNT(*) AS n FROM forward_roster").fetchone()["n"]
+    assert n_after == 20  # the pre-fold snapshot rows only; nothing rewritten
+
+
+def test_fold_writes_nothing_when_the_league_stood_still(store):
+    """A 3-minute wire cycle over an unchanged league must not churn dated snapshots."""
+    entries = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM)]
+        + [_row(f"BBB-{i}", "P", str(i), "BBB") for i in range(PER_TEAM)]
+    )
+    _rostered_roster(store)
+    n_before = store.conn.execute("SELECT COUNT(*) AS n FROM forward_roster").fetchone()["n"]
+    counts = fold_forward_roster(store, entries, SEASON, FOLD_DAY, as_of=FOLD_DAY)
+    assert counts["changed_players"] == 0
+    n_after = store.conn.execute("SELECT COUNT(*) AS n FROM forward_roster").fetchone()["n"]
+    assert n_after == n_before
+
+
+def test_fold_dry_run_counts_but_writes_nothing(store):
+    _rostered_roster(store)
+    fresh = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM) if i != 8]
+        + [_row("AAA-8", "P", "8", "BBB")]
+    )
+    counts = fold_forward_roster(store, fresh, SEASON, FOLD_DAY, as_of=FOLD_DAY, dry_run=True)
+    assert counts["moved"] == 1
+    assert store.forward_roster_asof("AAA-8", SEASON, FOLD_DAY).team == "AAA"
+
+
+def test_fold_is_idempotent_within_a_day(store):
+    """A second fold the same day re-reads its own rows, sees no change, writes nothing."""
+    _rostered_roster(store)
+    fresh = parse_player_index(
+        [_row(f"AAA-{i}", "P", str(i), "AAA") for i in range(PER_TEAM) if i != 8]
+        + [_row("AAA-8", "P", "8", "BBB")]
+        + [_row(f"BBB-{i}", "P", str(i), "BBB") for i in range(PER_TEAM)]
+    )
+    assert fold_forward_roster(store, fresh, SEASON, FOLD_DAY, as_of=FOLD_DAY)["moved"] == 1
+    again = fold_forward_roster(store, fresh, SEASON, FOLD_DAY, as_of=FOLD_DAY)
+    assert again["changed_players"] == 0

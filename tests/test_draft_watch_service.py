@@ -205,7 +205,10 @@ def test_ensure_watch_page_never_overwrites_a_deployed_page(svc, tmp_path):
 def test_nba_roster_moves_wire(svc, tmp_path, monkeypatch):
     """The NBA wire (Tim's three-source ask, 2026-10-15) must fetch FRESH — a wire that
     re-reads a cached capture never sees a draft-night move — and diff against the
-    roster the store knew at the refresh date, storing moves as nba-source events."""
+    roster the store knew at the refresh date, storing moves as nba-source events.
+    Since 9.11 it also FOLDS the move into pricing: the forward-roster rows the minutes
+    model reads are rewritten dated today, so the rebuilt board ranks the player on his
+    new team."""
     from fantasy_gm.data import player_index as pi_mod
     from fantasy_gm.data.cache import RawCache
     from fantasy_gm.data.store import Store
@@ -224,12 +227,17 @@ def test_nba_roster_moves_wire(svc, tmp_path, monkeypatch):
         }]
 
     monkeypatch.setattr(pi_mod, "_fetch_rows", fake_fetch)
-    new, rows = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
+    new, rows, folded = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
     assert seen["season"] == "2026-27" and seen["refresh"] is True
     assert rows == 1 and new == 1
     ev = store.conn.execute("SELECT source, kind, headline FROM news_events").fetchone()
     assert ev["source"] == "nba" and ev["kind"] == "roster-move"
     assert "BOS -> DAL" in ev["headline"]
-    # re-diffing an unchanged league is a no-op (identity-keyed news rows)
-    new2, _ = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
-    assert new2 == 0
+    # the fold: the pricing surface now reads the new team, dated the fold day
+    assert folded == 1
+    row = store.forward_roster_asof("101", "2026-27", "2026-10-15")
+    assert row.team == "DAL" and row.known_from == "2026-10-15"
+    # re-diffing an unchanged league is a no-op (identity-keyed news rows, and the fold
+    # re-reads its own rows and writes nothing)
+    new2, _rows2, folded2 = svc.nba_roster_moves(store, "2026-10-15", RawCache(tmp_path), "2026-27")
+    assert new2 == 0 and folded2 == 0

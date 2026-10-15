@@ -179,6 +179,67 @@ def build_forward_roster(
     return out
 
 
+def fold_forward_roster(
+    store, entries: list[IndexEntry], season: str, known_from: str, *,
+    as_of: str | None = None, dry_run: bool = False,
+) -> dict[str, int]:
+    """Rewrite the forward-season inputs from a fresh fetch when the league moved.
+
+    The roster-move diff (:func:`fantasy_gm.projections.news.roster_move_events`) only
+    *reports* a move; the minutes model prices from ``forward_roster`` rows, so a trade
+    that lands after the last full ingest kept ranking the player on his old team's
+    depth even though the wire carried the headline (the interim state Tim saw
+    2026-10-15: "moves surface as flags"). This is the pricing half: when a rostered
+    player's team differs from his stored row, or a new rostered player appears, the
+    whole snapshot is rewritten dated the fold day — positions, forward rosters (each
+    new roster re-ranked by its members' minutes track records, the same rule the
+    original ingest used), and incoming players. An unchanged league writes nothing, so
+    a 3-minute wire cycle never churns dated snapshots.
+
+    A departure (a player no longer on any NBA roster) is counted but does not trigger
+    the rewrite: the schema has no tombstone row, his exit is already recorded as a
+    dated news event, and his last snapshot row standing is the honest state. Triggering
+    on departures alone would re-fire every cycle, because a departed player leaves no
+    row that says "already folded" — found live on the first same-day re-run. A
+    departure's teammates do slide up when the next team change or call-up triggers a
+    rewrite, since every rewrite re-ranks each roster from the fresh fetch.
+
+    The stored map is read as of ``as_of`` (default: the fold day) and the new rows are
+    dated ``known_from``, so a fold is idempotent per day — a second fold the same day
+    re-reads its own rows, sees no change, and writes nothing — and reads at an earlier
+    ``as_of`` never see a fold dated after it, the effective-dating discipline every
+    forward-season table keeps.
+    """
+    cut = as_of or known_from
+    before = store.forward_roster_map_asof(season, cut)
+    rostered_now = {e.player_id for e in entries if e.is_rostered}
+    moved = [
+        e for e in entries
+        if e.is_rostered and (e.player_id not in before or before[e.player_id].team != e.team)
+    ]
+    departed = [pid for pid in before if pid not in rostered_now]
+    if not moved:
+        return {"changed_players": 0, "moved": 0, "departed": len(departed),
+                "positions": 0, "forward_roster": 0, "incoming": 0}
+    positions = to_positions(entries, known_from)
+    incoming = to_incoming_players(store, entries, season, known_from)
+    rosters = build_forward_roster(store, entries, season, known_from, as_of=cut)
+    counts = {
+        "changed_players": len(moved),
+        "moved": len(moved),
+        "departed": len(departed),
+        "positions": len(positions),
+        "forward_roster": len(rosters),
+        "incoming": len(incoming),
+    }
+    if dry_run:
+        return counts
+    store.add_player_positions(positions)
+    store.add_incoming_players(incoming)
+    store.add_forward_roster(rosters)
+    return counts
+
+
 # --- fetch + ingest ----------------------------------------------------------
 
 

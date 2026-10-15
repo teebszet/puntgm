@@ -117,3 +117,13 @@ cost decision is Tim's.
 - [x] 9.8 Watch page: event flag column on the rec card + per-source age strip
 - [x] 9.9 CLI `fantasy-gm news` (fetch + show; stored view)
 - [x] 9.10 Tests: parsers on saved fixtures, diff/cleared logic, promotion rule, swap
+- [x] 9.11 Roster fold (Tim, 2026-10-15: "fold the trades and latest news into minutes
+      pricing pre-draft"): a fresh playerindex fetch showing a team change or a new
+      rostered player rewrites positions + forward rosters + incoming players dated the
+      fold day, so the rebuilt board's minutes model ranks moved players on their NEW
+      team's depth. Wire diff stays events-only no longer: the watcher cycle and
+      `fantasy-gm news --playerindex` both fold; an unchanged league writes nothing (no
+      snapshot churn on the 3-min cycle); fold is idempotent per day and invisible
+      before its date. A bare departure (no tombstone row exists) is counted, recorded
+      as a dated news event, and does not retrigger the rewrite — found live on the
+      first same-day re-run

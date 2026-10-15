@@ -58,25 +58,31 @@ STATE_VERSION = 1
 WATCHER_MARKER = "draft_watch_service.py watch"
 
 
-def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int, int]:
+def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int, int, int]:
     """One NBA.com wire cycle (Tim asked for this source by name, 2026-10-15).
 
     A fresh ``playerindex`` fetch (``refresh=True`` bypasses the disk cache — a wire
     that re-reads yesterday's capture never sees today's move), parsed and diffed
     against the roster stored *as of today*. Returns ``(new events stored, rows
-    fetched)``; raises when the fetch fails so the caller logs a dead wire loudly.
-    Every capture is written back to the disk cache, so any reported move stays
-    auditable offline.
+    fetched, players the roster fold re-priced)``; raises when the fetch fails so the
+    caller logs a dead wire loudly. Every capture is written back to the disk cache,
+    so any reported move stays auditable offline.
+
+    The fold (task 9.11) is the pricing half the events alone never were: when the
+    league moved, the forward-season inputs are rewritten dated today, so the rebuilt
+    board's minutes model ranks moved players on their NEW team's depth. Events-only
+    was the interim state Tim corrected the same day: the board must reflect the most
+    recent lineups, not merely carry their headlines.
     """
-    from fantasy_gm.data.player_index import _fetch_rows, parse_player_index
+    from fantasy_gm.data.player_index import _fetch_rows, fold_forward_roster, parse_player_index
     from fantasy_gm.projections.news import roster_move_events
 
     entries = parse_player_index(_fetch_rows(forward_season, cache, refresh=True))
     before = store.forward_roster_map_asof(forward_season, today)
     events = roster_move_events(before, entries, today)
-    if not events:
-        return 0, len(entries)
-    return store.add_news_events(events), len(entries)
+    new = store.add_news_events(events) if events else 0
+    fold = fold_forward_roster(store, entries, forward_season, today, as_of=today)
+    return new, len(entries), fold["changed_players"]
 
 
 def new_state(
@@ -510,16 +516,20 @@ def run_watch(
             from fantasy_gm.config import FORWARD_SEASON
             from fantasy_gm.data.cache import RawCache
 
-            new_events, rows = nba_roster_moves(
+            new_events, rows, folded = nba_roster_moves(
                 store2, today, RawCache(Config().cache_dir), FORWARD_SEASON
             )
-            if new_events:
-                changed = True
+            if new_events or folded:
+                changed = True  # a fold re-prices: the board must rebuild on it (9.11)
+            suffix = f", {folded} roster row(s) re-priced" if folded else ""
             if nba_heartbeat["rows"] != rows:  # shape change (or first cycle): say so
                 nba_heartbeat["rows"] = rows
-                log_line(state, f"nba playerindex wire: {rows} rows, {new_events} new move(s)")
-            elif new_events:
-                log_line(state, f"nba playerindex wire: +{new_events} move(s)")
+                log_line(
+                    state,
+                    f"nba playerindex wire: {rows} rows, {new_events} new move(s){suffix}",
+                )
+            elif new_events or folded:
+                log_line(state, f"nba playerindex wire: +{new_events} move(s){suffix}")
         except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
             nba_heartbeat["rows"] = None
             log_line(state, f"nba playerindex wire failed: {exc}")

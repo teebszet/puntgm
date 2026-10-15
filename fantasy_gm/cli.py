@@ -629,7 +629,11 @@ def cmd_news(args: argparse.Namespace) -> int:
         did = True
 
     if args.playerindex:
-        from fantasy_gm.data.player_index import _fetch_rows, parse_player_index
+        from fantasy_gm.data.player_index import (
+            _fetch_rows,
+            fold_forward_roster,
+            parse_player_index,
+        )
 
         entries = parse_player_index(
             _fetch_rows(args.playerindex, RawCache(config.cache_dir), refresh=True)
@@ -637,12 +641,26 @@ def cmd_news(args: argparse.Namespace) -> int:
         before = store.forward_roster_map_asof(args.season, args.before or today)
         events = news_mod.roster_move_events(before, entries, today)
         n_new = store.add_news_events(events) if events else 0
+        fold = fold_forward_roster(
+            store, entries, args.season, today, as_of=args.before or today
+        )
         print(
             f"playerindex roster diff (vs roster known {args.before or today}): "
             f"{len(events)} move(s) -> {n_new} new event(s)"
         )
         for e in events[:10]:
             print(f"    {e.headline}")
+        # The fold is the pricing half (9.11): moved players re-ranked on their new
+        # team's depth, dated today — the diff above only reported them.
+        if fold["changed_players"]:
+            print(
+                f"roster fold: {fold['changed_players']} player(s) re-priced "
+                f"({fold['moved']} moved in, {fold['departed']} off rosters) -> "
+                f"{fold['forward_roster']} roster row(s), {fold['incoming']} incoming, "
+                f"{fold['positions']} position row(s) (known_from {today})"
+            )
+        else:
+            print("roster fold: league unchanged since the stored roster; nothing rewritten")
         did = True
 
     if args.x:
@@ -1286,7 +1304,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SEASON",
         help="diff a fresh playerindex fetch (cache bypassed; each capture kept on "
-        "disk for audit) against the stored forward roster -> roster-move events",
+        "disk for audit) against the stored forward roster -> roster-move events, "
+        "plus the roster fold (9.11): moved players re-ranked on their new team's "
+        "depth so the minutes model prices the newest lineups",
     )
     nw.add_argument(
         "--before",
