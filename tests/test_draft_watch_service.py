@@ -107,13 +107,19 @@ def test_handle_trigger_rejects_bad_params(svc, tmp_path):
         assert not state.exists()  # nothing armed on a rejected arm
 
 
-def test_handle_trigger_arms_and_resets(svc, tmp_path):
+def test_handle_trigger_arms_and_resets(svc, tmp_path, monkeypatch):
+    # The sweep must be stubbed here: the real kill_watchers pgreps the whole machine,
+    # and on draft day 2026-10-17 this test found and killed the LIVE production
+    # watcher. The suite may only ever signal the dummies it spawned itself.
+    swept: list[Path] = []
+    monkeypatch.setattr(svc, "kill_watchers", lambda sf: swept.append(sf) or [])
     state = _old_state(tmp_path)
     code, payload = svc.handle_trigger(
         {"league": "478.l.99999", "seat": "5", "interval": "15", "start": ""},
         state)
     assert code == 200 and payload["ok"]
     assert payload["killed_watchers"] == []
+    assert swept, "arm must still run the watcher sweep"
     trigger = json.loads((tmp_path / "trigger.json").read_text())
     assert trigger["league"] == "478.l.99999" and trigger["seat"] == 5
     on_disk = json.loads(state.read_text())
@@ -122,7 +128,8 @@ def test_handle_trigger_arms_and_resets(svc, tmp_path):
     assert on_disk["seat"] == 5
 
 
-def test_handle_trigger_keeps_start_utc(svc, tmp_path):
+def test_handle_trigger_keeps_start_utc(svc, tmp_path, monkeypatch):
+    monkeypatch.setattr(svc, "kill_watchers", lambda sf: [])  # never sweep the machine
     state = tmp_path / "serve_state.json"
     code, _ = svc.handle_trigger(
         {"league": "478.l.99999", "seat": "1", "interval": "15",

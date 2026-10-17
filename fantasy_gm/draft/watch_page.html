@@ -10,10 +10,10 @@
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif;
-    background: #0f1115; color: #e6e6e6; margin: 0; padding: 0 10px 60px;
+    background: #0f1115; color: #e6e6e6; margin: 0; padding: 0 0 12px;
     display: flex; justify-content: center;
   }
-  .wrap { width: 100%; max-width: 1060px; padding-top: 10px; }
+  .wrap { width: 100%; max-width: none; }
   /* --- fixed clock header (R9): always visible while the page scrolls --- */
   .fixedbar {
     position: sticky; top: 0; z-index: 10; display: flex; gap: 14px;
@@ -33,7 +33,12 @@
   /* minmax(0, …) lets a column shrink below a wide table's min-content — otherwise the
      rec table's width forces the grid past the phone viewport and clips the other cards. */
   .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  @media (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+  @media (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr) 400px; } }
+  /* Draft-day layout (Tim, 2026-10-17): the left column (rec + punt) takes every
+     remaining pixel, the right rail is fixed, and both player lists scroll inside a
+     ~20-row viewport with the header pinned while scrolling. */
+  .scroll20 { max-height: 660px; overflow-y: auto; }
+  .scroll20 th { position: sticky; top: 0; background: #161a21; z-index: 1; }
   .card { background: #161a21; border: 1px solid #2a2f3a; border-radius: 12px;
           padding: 16px 18px 18px; margin-bottom: 12px; overflow-x: auto; }
   .grid .card { margin-bottom: 0; }
@@ -490,7 +495,7 @@ function renderRec(rec) {
     }).join('');
     return `<tr class="${i === 0 ? 'me' : ''}">${tds}</tr>`;
   }).join('');
-  $('rec-body').innerHTML = `<table><tr>${ths}</tr>${rows}</table>`;
+  $('rec-body').innerHTML = `<div class="scroll20"><table><tr>${ths}</tr>${rows}</table></div>`;
 }
 
 // --- differential (additive state: a state without it renders nothing new) ---------
@@ -556,7 +561,7 @@ function renderPunt(p) {
   body.innerHTML = `
     <p class="outlook">roster-so-far under this build: <b>${b.outlook.up} ahead</b> ·
       <b>${b.outlook.down} behind</b> · ${b.outlook.even} even</p>
-    <table><tr><th>rk</th><th>player</th><th>value</th><th>adp</th><th>surv</th></tr>${rows}</table>`;
+    <div class="scroll20"><table><tr><th>rk</th><th>player</th><th>value</th><th>adp</th><th>surv</th></tr>${rows}</table></div>`;
 }
 
 // --- roster rail -------------------------------------------------------------------

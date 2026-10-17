@@ -57,6 +57,11 @@ STATE_VERSION = 1
 # pgrep/ps marker identifying watcher processes (not serve, not the page).
 WATCHER_MARKER = "draft_watch_service.py watch"
 
+# How many players the rec card and each punt build carry (Tim, draft day 2026-10-17):
+# both page lists scroll in a ~20-row viewport, so the state must carry enough rows
+# to fill it and leave something to scroll to.
+PAGE_TOP_N = 24
+
 
 def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int, int, int]:
     """One NBA.com wire cycle (Tim asked for this source by name, 2026-10-15).
@@ -446,6 +451,12 @@ def run_watch(
             )
             for pk in adopted
         ]
+        # The page reads the state FILE, and the next full picks write only happens
+        # after a successful platform poll — restore the visible record now, or a
+        # crash-restart shows an empty draft until the league answers again
+        # (hit for real restarting the finished mock's watcher, 2026-10-17).
+        state["picks"] = prev["picks"]
+        state["pick_count"] = len(draft_state.picks)
         log_line(
             state,
             f"resumed {len(draft_state.picks)} picks from previous run"
@@ -583,7 +594,7 @@ def run_watch(
 
     threading.Thread(target=refresher, name="news-refresher", daemon=True).start()
 
-    seen = 0
+    seen = len(draft_state.picks)  # adopted picks are history, not fresh log lines
     placeholder_logged = False
     last_rec_printed_picks = -1
     last_punt_key: tuple[int, tuple[str, ...]] | None = None
@@ -682,6 +693,7 @@ def run_watch(
                 adp_order=gm["adp_order"],
                 names=names,
                 budget_s=8.0,
+                top_n=PAGE_TOP_N,
                 as_of=as_of,
             )
             # Print the full rec block only when it changed meaningfully: our turn, or a
@@ -726,7 +738,8 @@ def run_watch(
         prev_punt = state.get("punt_panel")
         if punt_key != last_punt_key or not (prev_punt and prev_punt.get("complete")):
             panel = punt_cache.get(
-                draft_state, basis, gm["adp_order"], names, custom=punt_custom, budget_s=punt_budget
+                draft_state, basis, gm["adp_order"], names, custom=punt_custom,
+                budget_s=punt_budget, top_n=PAGE_TOP_N,
             )
             last_punt_key = punt_key
             state["punt_panel"] = punt_panel_json(panel)
