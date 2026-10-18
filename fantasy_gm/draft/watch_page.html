@@ -111,7 +111,11 @@
   .events .t { color: #5d6675; margin-right: 8px; }
   .events .issue { color: #ffd98a; }
   .events .me { color: #8fb7ff; font-weight: 600; }
-  /* --- differential bars (R6): honest |value|/max widths, red when negative --- */
+  /* --- differential bars (R6): honest |value|/max widths. The "ours" bar takes its
+         color from the STANDING (ahead green / behind red / even grey), not the raw
+         sign: percentage-impact cats hover near zero, so "ours" is often negative yet
+         still ahead of the field — the sign-colored bar read red on a green "ahead"
+         row (Tim, mock 10-17). Field bars keep the sign coloring: they are context. */
   .diff-row { display: grid; grid-template-columns: 42px 1fr 62px; gap: 8px;
               align-items: center; padding: 4px 0; border-bottom: 1px solid #1d232e; }
   .diff-row:last-child { border-bottom: 0; }
@@ -123,6 +127,7 @@
   .dbar.ours { background: #4f8cff; } .dbar.avg { background: #555f6e; }
   .dbar.strong { background: #d9a441; }
   .dbar.neg { background: #b3555f; }
+  .dbar.ahead { background: #2fbf71; }
   .ds { font-size: 11px; text-align: right; }
   .ds.ahead { color: #7fd8ac; } .ds.behind { color: #ff9a9a; } .ds.even { color: #8b93a5; }
   .dlegend { font-size: 11px; color: #5d6675; margin: 8px 0 0; display: flex; gap: 12px; }
@@ -512,13 +517,18 @@ function renderDifferential(d) {
   // cats invisible. Within a cat the three bars stay directly comparable.
   body.innerHTML = d.categories.map(c => {
     const max = Math.max(1e-9, Math.abs(c.our), Math.abs(c.avg), Math.abs(c.strong));
-    const bar = (v, cls) => {
+    const bar = (v, cls, standing) => {
       const w = Math.max(1.5, Math.abs(v) / max * 100);
-      return `<div class="dtrack"><div class="dbar ${cls}${v < 0 ? ' neg' : ''}" style="width:${w}%"></div></div>`;
+      // "ours" is colored by standing so bar and label can never disagree; the raw
+      // sign still shows as the bar's position is width-only, so note it in the title.
+      const negCls = cls === 'ours'
+        ? (standing === 'ahead' ? ' ahead' : standing === 'behind' ? ' neg' : '')
+        : (v < 0 ? ' neg' : '');
+      return `<div class="dtrack"><div class="dbar ${cls}${negCls}" style="width:${w}%"></div></div>`;
     };
     return `<div class="diff-row">
       <span class="dl">${esc(c.label || REC_LABEL[c.cat] || c.cat)}</span>
-      <div>${bar(c.our, 'ours')}${bar(c.avg, 'avg')}${bar(c.strong, 'strong')}</div>
+      <div>${bar(c.our, 'ours', c.standing)}${bar(c.avg, 'avg')}${bar(c.strong, 'strong')}</div>
       <span class="ds ${esc(c.standing)}">${esc(c.standing)}</span></div>`;
   }).join('');
   const notes = [];
