@@ -1,0 +1,196 @@
+{
+ "events": [
+  {
+   "id": "401909853",
+   "date": "2026-10-24T22:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "CHA"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "MIA"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909854",
+   "date": "2026-10-24T23:30Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "CLE"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "BKN"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909855",
+   "date": "2026-10-24T23:30Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "PHI"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "MIL"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909857",
+   "date": "2026-10-25T00:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "CHI"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "WSH"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909858",
+   "date": "2026-10-25T00:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "DAL"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "SA"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909856",
+   "date": "2026-10-25T00:30Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "ATL"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "HOU"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909859",
+   "date": "2026-10-25T01:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "DEN"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "NO"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401909860",
+   "date": "2026-10-25T02:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "abbreviation": "PHX"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "abbreviation": "GS"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

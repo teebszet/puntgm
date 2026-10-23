@@ -216,6 +216,20 @@ CREATE TABLE IF NOT EXISTS news_events (
     PRIMARY KEY (source, published_on, player_id, headline)
 );
 CREATE INDEX IF NOT EXISTS ix_news_player ON news_events(player_id, published_on);
+
+-- The platform's scheduled lineup: which slot each rostered player occupies (PG..Util,
+-- BN, IL), as Yahoo serves it. Effective-dated like roster_events so a re-slot is
+-- reconstructable, and the projector can price the *lineup* rather than the full
+-- roster — a bench or IL player accrues nothing until he is actually slotted.
+CREATE TABLE IF NOT EXISTS lineup_slots (
+    league_id  TEXT NOT NULL,
+    team_id    TEXT NOT NULL,
+    player_id  TEXT NOT NULL,
+    slot       TEXT NOT NULL,
+    known_from TEXT NOT NULL,
+    PRIMARY KEY (league_id, team_id, player_id, known_from)
+);
+CREATE INDEX IF NOT EXISTS ix_lineup_team ON lineup_slots(league_id, team_id, known_from);
 """
 
 
@@ -405,6 +419,33 @@ class Store:
             elif r["action"] == "drop":
                 current.discard(r["player_id"])
         return sorted(current)
+
+    def upsert_lineups(
+        self, league_id: str, rows: Iterable[tuple[str, str, str]], known_from: str
+    ) -> int:
+        """Store one platform lineup read as dated slot rows; returns rows actually added."""
+        cur = self.conn.executemany(
+            """INSERT OR IGNORE INTO lineup_slots(
+                   league_id, team_id, player_id, slot, known_from)
+               VALUES (?,?,?,?,?)""",
+            [(league_id, t, p, slot, known_from) for t, p, slot in rows],
+        )
+        self.conn.commit()
+        return cur.rowcount or 0
+
+    def lineup_asof(self, league_id: str, team_id: str, as_of: str) -> dict[str, str]:
+        """{player_id: slot} for a team's most recent lineup read on/before ``as_of``.
+
+        Empty when the platform lineup has never been read for the team — callers treat
+        that as 'no lineup knowledge' and fall back to the full roster.
+        """
+        rows = self.conn.execute(
+            """SELECT player_id, slot, known_from FROM lineup_slots
+               WHERE league_id = ? AND team_id = ? AND known_from <= ?
+               ORDER BY known_from""",
+            (league_id, team_id, as_of),
+        ).fetchall()
+        return {r["player_id"]: r["slot"] for r in rows}
 
     def roster_events_between(
         self, league_id: str, team_id: str, start: str, as_of: str

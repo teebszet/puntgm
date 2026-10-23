@@ -90,6 +90,71 @@ def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int
     return new, len(entries), fold["changed_players"]
 
 
+def yahoo_credentialed_refresh(
+    store, league: str, today: str
+) -> tuple[list[str], bool]:
+    """One credentialed Yahoo pass: player statuses + every team's scheduled lineup.
+
+    The lineup rows (``lineup_slots``) are what the projector now prices off — win
+    projections must use Yahoo's scheduled lineups, not assume the whole roster plays
+    (Tim, 2026-10-23). The raw payloads are written under ``data/raw_cache/`` so any
+    stored row is auditable offline.
+
+    On a 401 the access token is refreshed once from the refresh-token files
+    (``refresh_token_from_files`` persists the rotation) and the pass retries — the
+    token expires every few days and a dead token used to leave the credentialed wires
+    silently off until a manual re-auth.
+
+    Returns ``(log lines, changed)``; raises when both attempts fail.
+    """
+    from fantasy_gm.data.yahoo_fetch import (
+        fetch_league_lineups,
+        refresh_token_from_files,
+    )
+    from fantasy_gm.data.yahoo_import import ingest_lineups
+    from fantasy_gm.projections.status import fetch_league_player_metadata, refresh_statuses
+
+    token_path = Path("data/yahoo_access_token.txt")
+    lines: list[str] = []
+    changed = False
+
+    def _pass() -> None:
+        nonlocal changed
+        token = token_path.read_text().strip()
+        rows = fetch_league_player_metadata(
+            league, token, save_path="data/raw_cache/yahoo_status_live.json"
+        )
+        ref = refresh_statuses(store, rows, today)
+        for name, old, new in ref.changed:
+            lines.append(f"status: {name} {old or 'none'} -> {new or 'none'}")
+        if ref.changed:
+            changed = True
+        slots = fetch_league_lineups(
+            league, token, save_path="data/raw_cache/yahoo_lineups_live.json"
+        )
+        report = ingest_lineups(store, f"yahoo-{league}", slots, today)
+        if report["stored"]:
+            lines.append(
+                f"yahoo lineups: +{report['stored']} slot row(s) stored "
+                f"({report['matched']} players matched)"
+            )
+            changed = True
+        for pid, name in report["unmatched"]:
+            lines.append(f"yahoo lineups: UNMATCHED {name} (yahoo {pid}) — priced at zero")
+        for pid, name, hits in report["ambiguous"]:
+            lines.append(f"yahoo lineups: AMBIGUOUS {name} (yahoo {pid}) -> {hits}")
+
+    try:
+        _pass()
+    except RuntimeError as exc:
+        if "401" not in str(exc):
+            raise
+        refresh_token_from_files()
+        lines.append("yahoo access token refreshed from refresh_token")
+        _pass()
+    return lines, changed
+
+
 def new_state(
     league: str,
     seat: int,
@@ -545,24 +610,32 @@ def run_watch(
             nba_heartbeat["rows"] = None
             log_line(state, f"nba playerindex wire failed: {exc}")
         try:
-            from fantasy_gm.projections.status import (
-                fetch_league_player_metadata,
-                refresh_statuses,
-            )
-
-            token = Path("data/yahoo_access_token.txt").read_text().strip()
-            rows = fetch_league_player_metadata(
-                league, token, save_path="data/raw_cache/yahoo_status_live.json"
-            )
-            ref = refresh_statuses(store2, rows, today)
-            for name, old, new in ref.changed:
-                log_line(state, f"status: {name} {old or 'none'} -> {new or 'none'}")
-            if ref.changed:
+            lines, yahoo_changed = yahoo_credentialed_refresh(store2, league, today)
+            for line in lines:
+                log_line(state, line)
+            if yahoo_changed:
                 changed = True
         except FileNotFoundError:
-            log_line(state, "yahoo token missing — metadata refresh off (wires still live)")
+            log_line(state, "yahoo token missing — credentialed refresh off (wires still live)")
         except Exception as exc:  # noqa: BLE001 - 401 etc: degrade loudly, keep the board
-            log_line(state, f"yahoo metadata refresh unavailable: {exc} — wires still live")
+            log_line(state, f"yahoo credentialed refresh unavailable: {exc} — wires still live")
+        try:
+            from fantasy_gm.config import FORWARD_SEASON
+            from fantasy_gm.data.cache import RawCache
+            from fantasy_gm.data.nba_source import refresh_schedule
+
+            in_window, sched_changed, window_end = refresh_schedule(
+                store2, RawCache(Config().cache_dir), FORWARD_SEASON, today
+            )
+            state["schedule_window_end"] = window_end
+            if sched_changed:
+                changed = True  # remaining-games math reads the games table
+                log_line(
+                    state,
+                    f"schedule refresh: {in_window} games in window through {window_end}",
+                )
+        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+            log_line(state, f"espn schedule wire failed: {exc}")
         state["news_sources"] = news_mod.source_age(store2, today)
         if not changed:
             return

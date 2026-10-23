@@ -320,6 +320,96 @@ def fetch_league_snapshot(
     return snapshot
 
 
+def parse_lineup_payload(payload: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    """Pure mapping: a ``league/.../teams/roster/players`` payload -> slot rows.
+
+    Returns one ``(team_key, player_id, slot, name)`` per rostered player, ``slot``
+    being Yahoo's ``selected_position.position`` for the payload's covered date
+    (``PG``.. ``Util``, ``BN``, ``IL``). The name rides along because Yahoo ids are not
+    the store's NBA.com ids — the caller joins on names (see ``yahoo_import``).
+    Shapes handled from the live league (verified 2026-10-23 on 478.l.25733): the
+    player entry is a list of field dicts followed by a trailing dict whose
+    ``selected_position`` is itself either a dict or a list of dicts
+    (``[{coverage_type...}, {position}, {is_flex}]``).
+    """
+    try:
+        teams = payload["fantasy_content"]["league"][1]["teams"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    rows: list[tuple[str, str, str, str]] = []
+    for key, entry in teams.items():
+        if not str(key).isdigit():
+            continue
+        try:
+            team_block = entry["team"]
+            team_key = next(
+                d["team_key"] for d in team_block[0] if isinstance(d, dict) and "team_key" in d
+            )
+            roster = team_block[1]["roster"]
+            players = roster["0"]["players"]
+        except (KeyError, IndexError, TypeError, StopIteration):
+            continue
+        for pkey, pentry in players.items():
+            if not str(pkey).isdigit():
+                continue
+            try:
+                fields = pentry["player"]
+                pid = next(
+                    d["player_id"] for d in fields[0] if isinstance(d, dict) and "player_id" in d
+                )
+                name = next(
+                    d["name"]["full"] for d in fields[0]
+                    if isinstance(d, dict) and "name" in d
+                )
+                sel_raw = next(
+                    d["selected_position"]
+                    for d in fields
+                    if isinstance(d, dict) and "selected_position" in d
+                )
+            except (KeyError, IndexError, TypeError, StopIteration):
+                continue
+            if isinstance(sel_raw, dict):
+                slot = sel_raw.get("position", "")
+            elif isinstance(sel_raw, list):
+                slot = next(
+                    (d.get("position", "") for d in sel_raw
+                     if isinstance(d, dict) and "position" in d),
+                    "",
+                )
+            else:
+                slot = ""
+            if pid and slot:
+                rows.append((str(team_key), str(pid), str(slot), str(name)))
+    return rows
+
+
+def fetch_league_lineups(
+    league_key: str, access_token: str, save_path: str | Path | None = None
+) -> list[tuple[str, str, str, str]]:
+    """Live fetch of every team's scheduled lineup in one request.
+
+    ``league/{key}/teams/roster/players`` carries every team's roster with each
+    player's ``selected_position`` for the covered date — the platform's scheduled
+    lineup. Rows are ``(team_key, player_id, slot, name)``; the raw payload is written
+    to ``save_path`` when given so any stored row is auditable offline.
+    """
+    import requests
+
+    url = f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/teams/roster/players"
+    resp = requests.get(url, params={"format": "json"},
+                        headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
+    if resp.status_code == 401:
+        raise RuntimeError(
+            "401 from Yahoo — token expired. Refresh (refresh_token_from_files) or "
+            "re-run scripts/yahoo_authorize.py and retry."
+        )
+    resp.raise_for_status()
+    payload = resp.json()
+    if save_path is not None:
+        Path(save_path).write_text(json.dumps(payload, indent=1))
+    return parse_lineup_payload(payload)
+
+
 def _chunks(seq, n):
     for i in range(0, len(seq), n):
         yield seq[i:i + n]

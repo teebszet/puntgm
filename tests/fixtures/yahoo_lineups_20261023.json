@@ -1,0 +1,6305 @@
+{
+ "fantasy_content": {
+  "xml:lang": "en-US",
+  "yahoo:uri": "/fantasy/v2/league/478.l.25733/teams/roster/players",
+  "league": [
+   {
+    "league_key": "478.l.25733",
+    "league_id": "25733",
+    "name": "Chucky Cheese League",
+    "url": "https://basketball.fantasysports.yahoo.com/nba/25733",
+    "recordbook_url": "https://basketball.fantasysports.yahoo.com/nba/25733/recordbook?layout=webview&device=smartphone",
+    "logo_url": "https://s.yimg.com/ep/cx/blendr/v2/image-y-png_1721252122724.png",
+    "draft_status": "postdraft",
+    "num_teams": 12,
+    "max_teams": "12",
+    "edit_key": "2026-10-22",
+    "weekly_deadline": "intraday",
+    "roster_type": "date",
+    "league_update_timestamp": "1792655573",
+    "scoring_type": "head",
+    "scoring_label": "H2H Cat",
+    "league_type": "private",
+    "renew": "466_9764",
+    "renewed": "",
+    "felo_tier": "bronze",
+    "is_highscore": false,
+    "is_guillotine": "0",
+    "matchup_week": 1,
+    "iris_group_chat_id": "",
+    "allow_add_to_dl_extra_pos": 0,
+    "is_pro_league": "0",
+    "is_cash_league": "0",
+    "current_week": 1,
+    "start_week": "1",
+    "start_date": "2026-10-20",
+    "end_week": "20",
+    "end_date": "2027-03-21",
+    "current_date": "2026-10-22",
+    "is_plus_league": "0",
+    "game_code": "nba",
+    "season": "2026"
+   },
+   {
+    "teams": {
+     "0": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.1"
+        },
+        {
+         "team_id": "1"
+        },
+        {
+         "name": "VUCEBITCH"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/1"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/cv/apiv2/default/nba/nba_11_t.png"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 9
+        },
+        [],
+        {
+         "waiver_priority": 5
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 2
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "1"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 8
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "1",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "is_commissioner": "1",
+            "felo_score": "687",
+            "felo_tier": "silver"
+           }
+          },
+          {
+           "manager": {
+            "manager_id": "12",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "is_comanager": "1",
+            "felo_score": "593",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6205"
+              },
+              {
+               "name": {
+                "full": "Nickeil Alexander-Walker",
+                "first": "Nickeil",
+                "last": "Alexander-Walker",
+                "ascii_first": "Nickeil",
+                "ascii_last": "Alexander-Walker"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6698"
+              },
+              {
+               "name": {
+                "full": "Dyson Daniels",
+                "first": "Dyson",
+                "last": "Daniels",
+                "ascii_first": "Dyson",
+                "ascii_last": "Daniels"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "5727"
+              },
+              {
+               "name": {
+                "full": "Fred VanVleet",
+                "first": "Fred",
+                "last": "VanVleet",
+                "ascii_first": "Fred",
+                "ascii_last": "VanVleet"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6515"
+              },
+              {
+               "name": {
+                "full": "Scottie Barnes",
+                "first": "Scottie",
+                "last": "Barnes",
+                "ascii_first": "Scottie",
+                "ascii_last": "Barnes"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "4614"
+              },
+              {
+               "name": {
+                "full": "DeMar DeRozan",
+                "first": "DeMar",
+                "last": "DeRozan",
+                "ascii_first": "DeMar",
+                "ascii_last": "DeRozan"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "5324"
+              },
+              {
+               "name": {
+                "full": "Zach LaVine",
+                "first": "Zach",
+                "last": "LaVine",
+                "ascii_first": "Zach",
+                "ascii_last": "LaVine"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6514"
+              },
+              {
+               "name": {
+                "full": "Evan Mobley",
+                "first": "Evan",
+                "last": "Mobley",
+                "ascii_first": "Evan",
+                "ascii_last": "Mobley"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "4897"
+              },
+              {
+               "name": {
+                "full": "Nikola Vu\u010devi\u0107",
+                "first": "Nikola",
+                "last": "Vu\u010devi\u0107",
+                "ascii_first": "Nikola",
+                "ascii_last": "Vu\u010devi\u0107"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "10104"
+              },
+              {
+               "name": {
+                "full": "Brandon Miller",
+                "first": "Brandon",
+                "last": "Miller",
+                "ascii_first": "Brandon",
+                "ascii_last": "Miller"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "10467"
+              },
+              {
+               "name": {
+                "full": "Dylan Harper",
+                "first": "Dylan",
+                "last": "Harper",
+                "ascii_first": "Dylan",
+                "ascii_last": "Harper"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "5432"
+              },
+              {
+               "name": {
+                "full": "Karl-Anthony Towns",
+                "first": "Karl-Anthony",
+                "last": "Towns",
+                "ascii_first": "Karl-Anthony",
+                "ascii_last": "Towns"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6021"
+              },
+              {
+               "name": {
+                "full": "Mikal Bridges",
+                "first": "Mikal",
+                "last": "Bridges",
+                "ascii_first": "Mikal",
+                "ascii_last": "Bridges"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "10095"
+              },
+              {
+               "name": {
+                "full": "Anthony Black",
+                "first": "Anthony",
+                "last": "Black",
+                "ascii_first": "Anthony",
+                "ascii_last": "Black"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "13": {
+            "player": [
+             [
+              {
+               "player_id": "4912"
+              },
+              {
+               "name": {
+                "full": "Jimmy Butler III",
+                "first": "Jimmy",
+                "last": "Butler III",
+                "ascii_first": "Jimmy",
+                "ascii_last": "Butler III"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 14
+          }
+         }
+        }
+       }
+      ]
+     },
+     "1": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.2"
+        },
+        {
+         "team_id": "2"
+        },
+        {
+         "name": "philc's Swag Team"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/2"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/ep/cx/blendr/v2/image-skull-png_1721174345276.png"
+           }
+          }
+         ]
+        },
+        [],
+        [],
+        {
+         "waiver_priority": 12
+        },
+        {
+         "faab_balance": "998"
+        },
+        {
+         "number_of_moves": 3
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "1"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 1
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "2",
+            "nickname": "--hidden--",
+            "guid": "--hidden--"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6551"
+              },
+              {
+               "name": {
+                "full": "Davion Mitchell",
+                "first": "Davion",
+                "last": "Mitchell",
+                "ascii_first": "Davion",
+                "ascii_last": "Mitchell"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6580"
+              },
+              {
+               "name": {
+                "full": "Ayo Dosunmu",
+                "first": "Ayo",
+                "last": "Dosunmu",
+                "ascii_first": "Ayo",
+                "ascii_last": "Dosunmu"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6422"
+              },
+              {
+               "name": {
+                "full": "Desmond Bane",
+                "first": "Desmond",
+                "last": "Bane",
+                "ascii_first": "Desmond",
+                "ascii_last": "Bane"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "5292"
+              },
+              {
+               "name": {
+                "full": "Andrew Wiggins",
+                "first": "Andrew",
+                "last": "Wiggins",
+                "ascii_first": "Andrew",
+                "ascii_last": "Wiggins"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "5642"
+              },
+              {
+               "name": {
+                "full": "Domantas Sabonis",
+                "first": "Domantas",
+                "last": "Sabonis",
+                "ascii_first": "Domantas",
+                "ascii_last": "Sabonis"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6745"
+              },
+              {
+               "name": {
+                "full": "Gui Santos",
+                "first": "Gui",
+                "last": "Santos",
+                "ascii_first": "Gui",
+                "ascii_last": "Santos"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "5352"
+              },
+              {
+               "name": {
+                "full": "Nikola Joki\u0107",
+                "first": "Nikola",
+                "last": "Joki\u0107",
+                "ascii_first": "Nikola",
+                "ascii_last": "Joki\u0107"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "6581"
+              },
+              {
+               "name": {
+                "full": "Neemias Queta",
+                "first": "Neemias",
+                "last": "Queta",
+                "ascii_first": "Neemias",
+                "ascii_last": "Queta"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6165"
+              },
+              {
+               "name": {
+                "full": "RJ Barrett",
+                "first": "RJ",
+                "last": "Barrett",
+                "ascii_first": "RJ",
+                "ascii_last": "Barrett"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "5602"
+              },
+              {
+               "name": {
+                "full": "Jaylen Brown",
+                "first": "Jaylen",
+                "last": "Brown",
+                "ascii_first": "Jaylen",
+                "ascii_last": "Brown"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "6023"
+              },
+              {
+               "name": {
+                "full": "Miles Bridges",
+                "first": "Miles",
+                "last": "Bridges",
+                "ascii_first": "Miles",
+                "ascii_last": "Bridges"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "5842"
+              },
+              {
+               "name": {
+                "full": "Derrick White",
+                "first": "Derrick",
+                "last": "White",
+                "ascii_first": "Derrick",
+                "ascii_last": "White"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 12
+          }
+         }
+        }
+       }
+      ]
+     },
+     "2": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.3"
+        },
+        {
+         "team_id": "3"
+        },
+        {
+         "name": "Sir this is a Wemby's"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/3"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://yahoofantasysports-res.cloudinary.com/image/upload/t_s192sq/fantasy-logos/fd6e1d9d1562797de69e653a48d21d2584119853a9f091b4a127125696e121a0.jpg"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 2
+        },
+        [],
+        {
+         "waiver_priority": 11
+        },
+        {
+         "faab_balance": "999"
+        },
+        {
+         "number_of_moves": 3
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "2"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 2
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "3",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "is_commissioner": "1",
+            "felo_score": "765",
+            "felo_tier": "gold"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "5638"
+              },
+              {
+               "name": {
+                "full": "Jamal Murray",
+                "first": "Jamal",
+                "last": "Murray",
+                "ascii_first": "Jamal",
+                "ascii_last": "Murray"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "4563"
+              },
+              {
+               "name": {
+                "full": "James Harden",
+                "first": "James",
+                "last": "Harden",
+                "ascii_first": "James",
+                "ascii_last": "Harden"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "10100"
+              },
+              {
+               "name": {
+                "full": "Keyonte George",
+                "first": "Keyonte",
+                "last": "George",
+                "ascii_first": "Keyonte",
+                "ascii_last": "George"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6452"
+              },
+              {
+               "name": {
+                "full": "Sam Merrill",
+                "first": "Sam",
+                "last": "Merrill",
+                "ascii_first": "Sam",
+                "ascii_last": "Merrill"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "10592"
+              },
+              {
+               "name": {
+                "full": "Cameron Boozer",
+                "first": "Cameron",
+                "last": "Boozer",
+                "ascii_first": "Cameron",
+                "ascii_last": "Boozer"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "10272"
+              },
+              {
+               "name": {
+                "full": "Kyshawn George",
+                "first": "Kyshawn",
+                "last": "George",
+                "ascii_first": "Kyshawn",
+                "ascii_last": "George"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "10443"
+              },
+              {
+               "name": {
+                "full": "Collin Murray-Boyles",
+                "first": "Collin",
+                "last": "Murray-Boyles",
+                "ascii_first": "Collin",
+                "ascii_last": "Murray-Boyles"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "6733"
+              },
+              {
+               "name": {
+                "full": "Moussa Diabat\u00e9",
+                "first": "Moussa",
+                "last": "Diabat\u00e9",
+                "ascii_first": "Moussa",
+                "ascii_last": "Diabat\u00e9"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6516"
+              },
+              {
+               "name": {
+                "full": "Jalen Suggs",
+                "first": "Jalen",
+                "last": "Suggs",
+                "ascii_first": "Jalen",
+                "ascii_last": "Suggs"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "6401"
+              },
+              {
+               "name": {
+                "full": "Deni Avdija",
+                "first": "Deni",
+                "last": "Avdija",
+                "ascii_first": "Deni",
+                "ascii_last": "Avdija"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "5506"
+              },
+              {
+               "name": {
+                "full": "Norman Powell",
+                "first": "Norman",
+                "last": "Powell",
+                "ascii_first": "Norman",
+                "ascii_last": "Powell"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "5012"
+              },
+              {
+               "name": {
+                "full": "Damian Lillard",
+                "first": "Damian",
+                "last": "Lillard",
+                "ascii_first": "Damian",
+                "ascii_last": "Lillard"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "10094"
+              },
+              {
+               "name": {
+                "full": "Victor Wembanyama",
+                "first": "Victor",
+                "last": "Wembanyama",
+                "ascii_first": "Victor",
+                "ascii_last": "Wembanyama"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "3": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.4"
+        },
+        {
+         "team_id": "4"
+        },
+        {
+         "name": "West"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/4"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/ep/cx/blendr/v2/image-stallion-1-png_1721175894318.png"
+           }
+          }
+         ]
+        },
+        [],
+        [],
+        {
+         "waiver_priority": 9
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 3
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "2"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 4
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "4",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "594",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6022"
+              },
+              {
+               "name": {
+                "full": "Shai Gilgeous-Alexander",
+                "first": "Shai",
+                "last": "Gilgeous-Alexander",
+                "ascii_first": "Shai",
+                "ascii_last": "Gilgeous-Alexander"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "10108"
+              },
+              {
+               "name": {
+                "full": "Amen Thompson",
+                "first": "Amen",
+                "last": "Thompson",
+                "ascii_first": "Amen",
+                "ascii_last": "Thompson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6167"
+              },
+              {
+               "name": {
+                "full": "Darius Garland",
+                "first": "Darius",
+                "last": "Garland",
+                "ascii_first": "Darius",
+                "ascii_last": "Garland"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "3704"
+              },
+              {
+               "name": {
+                "full": "LeBron James",
+                "first": "LeBron",
+                "last": "James",
+                "ascii_first": "LeBron",
+                "ascii_last": "James"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "6171"
+              },
+              {
+               "name": {
+                "full": "Rui Hachimura",
+                "first": "Rui",
+                "last": "Hachimura",
+                "ascii_first": "Rui",
+                "ascii_last": "Hachimura"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6420"
+              },
+              {
+               "name": {
+                "full": "Jaden McDaniels",
+                "first": "Jaden",
+                "last": "McDaniels",
+                "ascii_first": "Jaden",
+                "ascii_last": "McDaniels"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6712"
+              },
+              {
+               "name": {
+                "full": "Walker Kessler",
+                "first": "Walker",
+                "last": "Kessler",
+                "ascii_first": "Walker",
+                "ascii_last": "Kessler"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "5197"
+              },
+              {
+               "name": {
+                "full": "Rudy Gobert",
+                "first": "Rudy",
+                "last": "Gobert",
+                "ascii_first": "Rudy",
+                "ascii_last": "Gobert"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6417"
+              },
+              {
+               "name": {
+                "full": "Immanuel Quickley",
+                "first": "Immanuel",
+                "last": "Quickley",
+                "ascii_first": "Immanuel",
+                "ascii_last": "Quickley"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "10574"
+              },
+              {
+               "name": {
+                "full": "Kingston Flemings",
+                "first": "Kingston",
+                "last": "Flemings",
+                "ascii_first": "Kingston",
+                "ascii_last": "Flemings"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "10296"
+              },
+              {
+               "name": {
+                "full": "Zaccharie Risacher",
+                "first": "Zaccharie",
+                "last": "Risacher",
+                "ascii_first": "Zaccharie",
+                "ascii_last": "Risacher"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6696"
+              },
+              {
+               "name": {
+                "full": "Bennedict Mathurin",
+                "first": "Bennedict",
+                "last": "Mathurin",
+                "ascii_first": "Bennedict",
+                "ascii_last": "Mathurin"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "6073"
+              },
+              {
+               "name": {
+                "full": "Duncan Robinson",
+                "first": "Duncan",
+                "last": "Robinson",
+                "ascii_first": "Duncan",
+                "ascii_last": "Robinson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "13": {
+            "player": [
+             [
+              {
+               "player_id": "5601"
+              },
+              {
+               "name": {
+                "full": "Brandon Ingram",
+                "first": "Brandon",
+                "last": "Ingram",
+                "ascii_first": "Brandon",
+                "ascii_last": "Ingram"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 14
+          }
+         }
+        }
+       }
+      ]
+     },
+     "4": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.5"
+        },
+        {
+         "team_id": "5"
+        },
+        {
+         "name": "Illionaires"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/5"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://yahoofantasysports-res.cloudinary.com/image/upload/t_s192sq/fantasy-logos/5f18e31a1621ccc8f3251a0ab557abd78d6fadff22e7d865f404bf0b2c8cad9a.jpg"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 12
+        },
+        [],
+        {
+         "waiver_priority": 10
+        },
+        {
+         "faab_balance": "900"
+        },
+        {
+         "number_of_moves": 2
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "1"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 3
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "5",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "502",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "10454"
+              },
+              {
+               "name": {
+                "full": "VJ Edgecombe",
+                "first": "VJ",
+                "last": "Edgecombe",
+                "ascii_first": "VJ",
+                "ascii_last": "Edgecombe"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "4622"
+              },
+              {
+               "name": {
+                "full": "Jrue Holiday",
+                "first": "Jrue",
+                "last": "Holiday",
+                "ascii_first": "Jrue",
+                "ascii_last": "Holiday"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6044"
+              },
+              {
+               "name": {
+                "full": "Jalen Brunson",
+                "first": "Jalen",
+                "last": "Brunson",
+                "ascii_first": "Jalen",
+                "ascii_last": "Brunson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6702"
+              },
+              {
+               "name": {
+                "full": "Jalen Williams",
+                "first": "Jalen",
+                "last": "Williams",
+                "ascii_first": "Jalen",
+                "ascii_last": "Williams"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "6173"
+              },
+              {
+               "name": {
+                "full": "Cameron Johnson",
+                "first": "Cameron",
+                "last": "Johnson",
+                "ascii_first": "Cameron",
+                "ascii_last": "Johnson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "5318"
+              },
+              {
+               "name": {
+                "full": "Julius Randle",
+                "first": "Julius",
+                "last": "Randle",
+                "ascii_first": "Julius",
+                "ascii_last": "Randle"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6174"
+              },
+              {
+               "name": {
+                "full": "P.J. Washington",
+                "first": "P.J.",
+                "last": "Washington",
+                "ascii_first": "P.J.",
+                "ascii_last": "Washington"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "5835"
+              },
+              {
+               "name": {
+                "full": "Jarrett Allen",
+                "first": "Jarrett",
+                "last": "Allen",
+                "ascii_first": "Jarrett",
+                "ascii_last": "Allen"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "10571"
+              },
+              {
+               "name": {
+                "full": "Yaxel Lendeborg",
+                "first": "Yaxel",
+                "last": "Lendeborg",
+                "ascii_first": "Yaxel",
+                "ascii_last": "Lendeborg"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "5069"
+              },
+              {
+               "name": {
+                "full": "Draymond Green",
+                "first": "Draymond",
+                "last": "Green",
+                "ascii_first": "Draymond",
+                "ascii_last": "Green"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "4612"
+              },
+              {
+               "name": {
+                "full": "Stephen Curry",
+                "first": "Stephen",
+                "last": "Curry",
+                "ascii_first": "Stephen",
+                "ascii_last": "Curry"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "5827"
+              },
+              {
+               "name": {
+                "full": "Bam Adebayo",
+                "first": "Bam",
+                "last": "Adebayo",
+                "ascii_first": "Bam",
+                "ascii_last": "Adebayo"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "5832"
+              },
+              {
+               "name": {
+                "full": "John Collins",
+                "first": "John",
+                "last": "Collins",
+                "ascii_first": "John",
+                "ascii_last": "Collins"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "5": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.6"
+        },
+        {
+         "team_id": "6"
+        },
+        {
+         "name": "The Flaggship"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/6"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/ep/cx/blendr/v2/image-star-png_1721175641817.png"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 4
+        },
+        [],
+        {
+         "waiver_priority": 6
+        },
+        {
+         "faab_balance": "997"
+        },
+        {
+         "number_of_moves": 2
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "2"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 7
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "6",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "590",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6164"
+              },
+              {
+               "name": {
+                "full": "Ja Morant",
+                "first": "Ja",
+                "last": "Morant",
+                "ascii_first": "Ja",
+                "ascii_last": "Morant"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6513"
+              },
+              {
+               "name": {
+                "full": "Jalen Green",
+                "first": "Jalen",
+                "last": "Green",
+                "ascii_first": "Jalen",
+                "ascii_last": "Green"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6559"
+              },
+              {
+               "name": {
+                "full": "Trey Murphy III",
+                "first": "Trey",
+                "last": "Murphy III",
+                "ascii_first": "Trey",
+                "ascii_last": "Murphy III"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6411"
+              },
+              {
+               "name": {
+                "full": "Saddiq Bey",
+                "first": "Saddiq",
+                "last": "Bey",
+                "ascii_first": "Saddiq",
+                "ascii_last": "Bey"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "10468"
+              },
+              {
+               "name": {
+                "full": "Cooper Flagg",
+                "first": "Cooper",
+                "last": "Flagg",
+                "ascii_first": "Cooper",
+                "ascii_last": "Flagg"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6691"
+              },
+              {
+               "name": {
+                "full": "Paolo Banchero",
+                "first": "Paolo",
+                "last": "Banchero",
+                "ascii_first": "Paolo",
+                "ascii_last": "Banchero"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6558"
+              },
+              {
+               "name": {
+                "full": "Alperen \u015eeng\u00fcn",
+                "first": "Alperen",
+                "last": "\u015eeng\u00fcn",
+                "ascii_first": "Alperen",
+                "ascii_last": "\u015eeng\u00fcn"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "6596"
+              },
+              {
+               "name": {
+                "full": "Sandro Mamukelashvili",
+                "first": "Sandro",
+                "last": "Mamukelashvili",
+                "ascii_first": "Sandro",
+                "ascii_last": "Mamukelashvili"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6734"
+              },
+              {
+               "name": {
+                "full": "Ryan Rollins",
+                "first": "Ryan",
+                "last": "Rollins",
+                "ascii_first": "Ryan",
+                "ascii_last": "Rollins"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "10595"
+              },
+              {
+               "name": {
+                "full": "Caleb Wilson",
+                "first": "Caleb",
+                "last": "Wilson",
+                "ascii_first": "Caleb",
+                "ascii_last": "Wilson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "10290"
+              },
+              {
+               "name": {
+                "full": "Stephon Castle",
+                "first": "Stephon",
+                "last": "Castle",
+                "ascii_first": "Stephon",
+                "ascii_last": "Castle"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6703"
+              },
+              {
+               "name": {
+                "full": "Jalen Duren",
+                "first": "Jalen",
+                "last": "Duren",
+                "ascii_first": "Jalen",
+                "ascii_last": "Duren"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "6549"
+              },
+              {
+               "name": {
+                "full": "Jonathan Kuminga",
+                "first": "Jonathan",
+                "last": "Kuminga",
+                "ascii_first": "Jonathan",
+                "ascii_last": "Kuminga"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "13": {
+            "player": [
+             [
+              {
+               "player_id": "10599"
+              },
+              {
+               "name": {
+                "full": "AJ Dybantsa",
+                "first": "AJ",
+                "last": "Dybantsa",
+                "ascii_first": "AJ",
+                "ascii_last": "Dybantsa"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 14
+          }
+         }
+        }
+       }
+      ]
+     },
+     "6": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.7"
+        },
+        {
+         "team_id": "7"
+        },
+        {
+         "name": "moose season"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/7"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://yahoofantasysports-res.cloudinary.com/image/upload/t_s192sq/fantasy-logos/221985e36bc3f5c1d64024da86ecb10a2a5696ff073fee488efb6aabf90400ab.jpg"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 7
+        },
+        [],
+        {
+         "waiver_priority": 4
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 0
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "0"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 9
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "7",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "725",
+            "felo_tier": "gold"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "5826"
+              },
+              {
+               "name": {
+                "full": "Donovan Mitchell",
+                "first": "Donovan",
+                "last": "Mitchell",
+                "ascii_first": "Donovan",
+                "ascii_last": "Mitchell"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6711"
+              },
+              {
+               "name": {
+                "full": "Christian Braun",
+                "first": "Christian",
+                "last": "Braun",
+                "ascii_first": "Christian",
+                "ascii_last": "Braun"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6016"
+              },
+              {
+               "name": {
+                "full": "Trae Young",
+                "first": "Trae",
+                "last": "Young",
+                "ascii_first": "Trae",
+                "ascii_last": "Young"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6720"
+              },
+              {
+               "name": {
+                "full": "Peyton Watson",
+                "first": "Peyton",
+                "last": "Watson",
+                "ascii_first": "Peyton",
+                "ascii_last": "Watson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "4725"
+              },
+              {
+               "name": {
+                "full": "Paul George",
+                "first": "Paul",
+                "last": "George",
+                "ascii_first": "Paul",
+                "ascii_last": "George"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "5843"
+              },
+              {
+               "name": {
+                "full": "Josh Hart",
+                "first": "Josh",
+                "last": "Hart",
+                "ascii_first": "Josh",
+                "ascii_last": "Hart"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "5294"
+              },
+              {
+               "name": {
+                "full": "Joel Embiid",
+                "first": "Joel",
+                "last": "Embiid",
+                "ascii_first": "Joel",
+                "ascii_last": "Embiid"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "5295"
+              },
+              {
+               "name": {
+                "full": "Aaron Gordon",
+                "first": "Aaron",
+                "last": "Gordon",
+                "ascii_first": "Aaron",
+                "ascii_last": "Gordon"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6212"
+              },
+              {
+               "name": {
+                "full": "Ty Jerome",
+                "first": "Ty",
+                "last": "Jerome",
+                "ascii_first": "Ty",
+                "ascii_last": "Jerome"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "6571"
+              },
+              {
+               "name": {
+                "full": "Day'Ron Sharpe",
+                "first": "Day'Ron",
+                "last": "Sharpe",
+                "ascii_first": "Day'Ron",
+                "ascii_last": "Sharpe"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "6175"
+              },
+              {
+               "name": {
+                "full": "Tyler Herro",
+                "first": "Tyler",
+                "last": "Herro",
+                "ascii_first": "Tyler",
+                "ascii_last": "Herro"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6562"
+              },
+              {
+               "name": {
+                "full": "Jalen Johnson",
+                "first": "Jalen",
+                "last": "Johnson",
+                "ascii_first": "Jalen",
+                "ascii_last": "Johnson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "10285"
+              },
+              {
+               "name": {
+                "full": "Donovan Clingan",
+                "first": "Donovan",
+                "last": "Clingan",
+                "ascii_first": "Donovan",
+                "ascii_last": "Clingan"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "7": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.8"
+        },
+        {
+         "team_id": "8"
+        },
+        {
+         "name": "Toumani 3s Not Enough Cs"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/8"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://yahoofantasysports-res.cloudinary.com/image/upload/t_s192sq/fantasy-logos/1380fb74a7cfa970d8d30903e1c0a117f238cb9d871074ab0638dcec22770236.jpg"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 3
+        },
+        [],
+        {
+         "waiver_priority": 8
+        },
+        {
+         "faab_balance": "929"
+        },
+        {
+         "number_of_moves": 4
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "3"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 5
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "8",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "631",
+            "felo_tier": "silver"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "10276"
+              },
+              {
+               "name": {
+                "full": "Jared McCain",
+                "first": "Jared",
+                "last": "McCain",
+                "ascii_first": "Jared",
+                "ascii_last": "McCain"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6014"
+              },
+              {
+               "name": {
+                "full": "Luka Don\u010di\u0107",
+                "first": "Luka",
+                "last": "Don\u010di\u0107",
+                "ascii_first": "Luka",
+                "ascii_last": "Don\u010di\u0107"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "5473"
+              },
+              {
+               "name": {
+                "full": "Devin Booker",
+                "first": "Devin",
+                "last": "Booker",
+                "ascii_first": "Devin",
+                "ascii_last": "Booker"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "4896"
+              },
+              {
+               "name": {
+                "full": "Kawhi Leonard",
+                "first": "Kawhi",
+                "last": "Leonard",
+                "ascii_first": "Kawhi",
+                "ascii_last": "Leonard"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "6692"
+              },
+              {
+               "name": {
+                "full": "Chet Holmgren",
+                "first": "Chet",
+                "last": "Holmgren",
+                "ascii_first": "Chet",
+                "ascii_last": "Holmgren"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "5658"
+              },
+              {
+               "name": {
+                "full": "Pascal Siakam",
+                "first": "Pascal",
+                "last": "Siakam",
+                "ascii_first": "Pascal",
+                "ascii_last": "Siakam"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "10274"
+              },
+              {
+               "name": {
+                "full": "Kel'el Ware",
+                "first": "Kel'el",
+                "last": "Ware",
+                "ascii_first": "Kel'el",
+                "ascii_last": "Ware"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "10444"
+              },
+              {
+               "name": {
+                "full": "Derik Queen",
+                "first": "Derik",
+                "last": "Queen",
+                "ascii_first": "Derik",
+                "ascii_last": "Queen"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6751"
+              },
+              {
+               "name": {
+                "full": "Collin Gillespie",
+                "first": "Collin",
+                "last": "Gillespie",
+                "ascii_first": "Collin",
+                "ascii_last": "Gillespie"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "6418"
+              },
+              {
+               "name": {
+                "full": "Payton Pritchard",
+                "first": "Payton",
+                "last": "Pritchard",
+                "ascii_first": "Payton",
+                "ascii_last": "Pritchard"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "10065"
+              },
+              {
+               "name": {
+                "full": "Toumani Camara",
+                "first": "Toumani",
+                "last": "Camara",
+                "ascii_first": "Toumani",
+                "ascii_last": "Camara"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "10462"
+              },
+              {
+               "name": {
+                "full": "Ace Bailey",
+                "first": "Ace",
+                "last": "Bailey",
+                "ascii_first": "Ace",
+                "ascii_last": "Bailey"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "10450"
+              },
+              {
+               "name": {
+                "full": "Kon Knueppel",
+                "first": "Kon",
+                "last": "Knueppel",
+                "ascii_first": "Kon",
+                "ascii_last": "Knueppel"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "13": {
+            "player": [
+             [
+              {
+               "player_id": "5327"
+              },
+              {
+               "name": {
+                "full": "Jusuf Nurki\u0107",
+                "first": "Jusuf",
+                "last": "Nurki\u0107",
+                "ascii_first": "Jusuf",
+                "ascii_last": "Nurki\u0107"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 14
+          }
+         }
+        }
+       }
+      ]
+     },
+     "8": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.9"
+        },
+        {
+         "team_id": "9"
+        },
+        {
+         "name": "Tomato Hawks"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/9"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/ep/cx/blendr/v2/image-dumpster-fire-png_1721175537615.png"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 6
+        },
+        [],
+        {
+         "waiver_priority": 2
+        },
+        {
+         "faab_balance": "985"
+        },
+        {
+         "number_of_moves": 1
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "1"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 11
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "9",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "618",
+            "felo_tier": "silver"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6548"
+              },
+              {
+               "name": {
+                "full": "Josh Giddey",
+                "first": "Josh",
+                "last": "Giddey",
+                "ascii_first": "Josh",
+                "ascii_last": "Giddey"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "10445"
+              },
+              {
+               "name": {
+                "full": "Egor D\u00ebmin",
+                "first": "Egor",
+                "last": "D\u00ebmin",
+                "ascii_first": "Egor",
+                "ascii_last": "D\u00ebmin"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "5161"
+              },
+              {
+               "name": {
+                "full": "CJ McCollum",
+                "first": "CJ",
+                "last": "McCollum",
+                "ascii_first": "CJ",
+                "ascii_last": "McCollum"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "4244"
+              },
+              {
+               "name": {
+                "full": "Kevin Durant",
+                "first": "Kevin",
+                "last": "Durant",
+                "ascii_first": "Kevin",
+                "ascii_last": "Durant"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "6694"
+              },
+              {
+               "name": {
+                "full": "Keegan Murray",
+                "first": "Keegan",
+                "last": "Murray",
+                "ascii_first": "Keegan",
+                "ascii_last": "Murray"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6567"
+              },
+              {
+               "name": {
+                "full": "Quentin Grimes",
+                "first": "Quentin",
+                "last": "Grimes",
+                "ascii_first": "Quentin",
+                "ascii_last": "Grimes"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6398"
+              },
+              {
+               "name": {
+                "full": "Onyeka Okongwu",
+                "first": "Onyeka",
+                "last": "Okongwu",
+                "ascii_first": "Onyeka",
+                "ascii_last": "Okongwu"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "10294"
+              },
+              {
+               "name": {
+                "full": "Alex Sarr",
+                "first": "Alex",
+                "last": "Sarr",
+                "ascii_first": "Alex",
+                "ascii_last": "Sarr"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "10287"
+              },
+              {
+               "name": {
+                "full": "Zach Edey",
+                "first": "Zach",
+                "last": "Edey",
+                "ascii_first": "Zach",
+                "ascii_last": "Edey"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "6402"
+              },
+              {
+               "name": {
+                "full": "Jalen Smith",
+                "first": "Jalen",
+                "last": "Smith",
+                "ascii_first": "Jalen",
+                "ascii_last": "Smith"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "10096"
+              },
+              {
+               "name": {
+                "full": "Ausar Thompson",
+                "first": "Ausar",
+                "last": "Thompson",
+                "ascii_first": "Ausar",
+                "ascii_last": "Thompson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "5765"
+              },
+              {
+               "name": {
+                "full": "Jayson Tatum",
+                "first": "Jayson",
+                "last": "Tatum",
+                "ascii_first": "Jayson",
+                "ascii_last": "Tatum"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "5767"
+              },
+              {
+               "name": {
+                "full": "De'Aaron Fox",
+                "first": "De'Aaron",
+                "last": "Fox",
+                "ascii_first": "De'Aaron",
+                "ascii_last": "Fox"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "13": {
+            "player": [
+             [
+              {
+               "player_id": "6219"
+              },
+              {
+               "name": {
+                "full": "Nic Claxton",
+                "first": "Nic",
+                "last": "Claxton",
+                "ascii_first": "Nic",
+                "ascii_last": "Claxton"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "IL"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 14
+          }
+         }
+        }
+       }
+      ]
+     },
+     "9": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.10"
+        },
+        {
+         "team_id": "10"
+        },
+        {
+         "name": "V"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/10"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/cv/apiv2/default/nba/nba_1.png"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 10
+        },
+        [],
+        {
+         "waiver_priority": 7
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 0
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "0"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 6
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "10",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "516",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "10304"
+              },
+              {
+               "name": {
+                "full": "Ajay Mitchell",
+                "first": "Ajay",
+                "last": "Mitchell",
+                "ascii_first": "Ajay",
+                "ascii_last": "Mitchell"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "10465"
+              },
+              {
+               "name": {
+                "full": "Cedric Coward",
+                "first": "Cedric",
+                "last": "Coward",
+                "ascii_first": "Cedric",
+                "ascii_last": "Coward"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6395"
+              },
+              {
+               "name": {
+                "full": "LaMelo Ball",
+                "first": "LaMelo",
+                "last": "Ball",
+                "ascii_first": "LaMelo",
+                "ascii_last": "Ball"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6025"
+              },
+              {
+               "name": {
+                "full": "Michael Porter Jr.",
+                "first": "Michael",
+                "last": "Porter Jr.",
+                "ascii_first": "Michael",
+                "ascii_last": "Porter Jr."
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "5185"
+              },
+              {
+               "name": {
+                "full": "Giannis Antetokounmpo",
+                "first": "Giannis",
+                "last": "Antetokounmpo",
+                "ascii_first": "Giannis",
+                "ascii_last": "Antetokounmpo"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "10265"
+              },
+              {
+               "name": {
+                "full": "Matas Buzelis",
+                "first": "Matas",
+                "last": "Buzelis",
+                "ascii_first": "Matas",
+                "ascii_last": "Buzelis"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "5663"
+              },
+              {
+               "name": {
+                "full": "Ivica Zubac",
+                "first": "Ivica",
+                "last": "Zubac",
+                "ascii_first": "Ivica",
+                "ascii_last": "Zubac"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "10447"
+              },
+              {
+               "name": {
+                "full": "Khaman Maluach",
+                "first": "Khaman",
+                "last": "Maluach",
+                "ascii_first": "Khaman",
+                "ascii_last": "Maluach"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "5660"
+              },
+              {
+               "name": {
+                "full": "Dejounte Murray",
+                "first": "Dejounte",
+                "last": "Murray",
+                "ascii_first": "Dejounte",
+                "ascii_last": "Murray"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "10590"
+              },
+              {
+               "name": {
+                "full": "Darryn Peterson",
+                "first": "Darryn",
+                "last": "Peterson",
+                "ascii_first": "Darryn",
+                "ascii_last": "Peterson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "6721"
+              },
+              {
+               "name": {
+                "full": "Andrew Nembhard",
+                "first": "Andrew",
+                "last": "Nembhard",
+                "ascii_first": "Andrew",
+                "ascii_last": "Nembhard"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6606"
+              },
+              {
+               "name": {
+                "full": "Austin Reaves",
+                "first": "Austin",
+                "last": "Reaves",
+                "ascii_first": "Austin",
+                "ascii_last": "Reaves"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "5640"
+              },
+              {
+               "name": {
+                "full": "Jakob Poeltl",
+                "first": "Jakob",
+                "last": "Poeltl",
+                "ascii_first": "Jakob",
+                "ascii_last": "Poeltl"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "10": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.11"
+        },
+        {
+         "team_id": "11"
+        },
+        {
+         "name": "Walk in the Park"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/11"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://yahoofantasysports-res.cloudinary.com/image/upload/t_s192sq/fantasy-logos/b764caad5bd72c5cc7d00ef222afcb0854245b61be10786d13df15ec626eb581.jpg"
+           }
+          }
+         ]
+        },
+        {
+         "previous_season_team_rank": 11
+        },
+        [],
+        {
+         "waiver_priority": 1
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 0
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "0"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 12
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "11",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "523",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6404"
+              },
+              {
+               "name": {
+                "full": "Tyrese Haliburton",
+                "first": "Tyrese",
+                "last": "Haliburton",
+                "ascii_first": "Tyrese",
+                "ascii_last": "Haliburton"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "6355"
+              },
+              {
+               "name": {
+                "full": "Anthony Edwards",
+                "first": "Anthony",
+                "last": "Edwards",
+                "ascii_first": "Anthony",
+                "ascii_last": "Edwards"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "4840"
+              },
+              {
+               "name": {
+                "full": "Kyrie Irving",
+                "first": "Kyrie",
+                "last": "Irving",
+                "ascii_first": "Kyrie",
+                "ascii_last": "Irving"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "6550"
+              },
+              {
+               "name": {
+                "full": "Franz Wagner",
+                "first": "Franz",
+                "last": "Wagner",
+                "ascii_first": "Franz",
+                "ascii_last": "Wagner"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "5007"
+              },
+              {
+               "name": {
+                "full": "Anthony Davis",
+                "first": "Anthony",
+                "last": "Davis",
+                "ascii_first": "Anthony",
+                "ascii_last": "Davis"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6163"
+              },
+              {
+               "name": {
+                "full": "Zion Williamson",
+                "first": "Zion",
+                "last": "Williamson",
+                "ascii_first": "Zion",
+                "ascii_last": "Williamson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "5471"
+              },
+              {
+               "name": {
+                "full": "Myles Turner",
+                "first": "Myles",
+                "last": "Turner",
+                "ascii_first": "Myles",
+                "ascii_last": "Turner"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "10289"
+              },
+              {
+               "name": {
+                "full": "Yves Missi",
+                "first": "Yves",
+                "last": "Missi",
+                "ascii_first": "Yves",
+                "ascii_last": "Missi"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6693"
+              },
+              {
+               "name": {
+                "full": "Jabari Smith Jr.",
+                "first": "Jabari",
+                "last": "Smith Jr.",
+                "ascii_first": "Jabari",
+                "ascii_last": "Smith Jr."
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "4892"
+              },
+              {
+               "name": {
+                "full": "Klay Thompson",
+                "first": "Klay",
+                "last": "Thompson",
+                "ascii_first": "Klay",
+                "ascii_last": "Thompson"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "5836"
+              },
+              {
+               "name": {
+                "full": "OG Anunoby",
+                "first": "OG",
+                "last": "Anunoby",
+                "ascii_first": "OG",
+                "ascii_last": "Anunoby"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "10115"
+              },
+              {
+               "name": {
+                "full": "Brandin Podziemski",
+                "first": "Brandin",
+                "last": "Podziemski",
+                "ascii_first": "Brandin",
+                "ascii_last": "Podziemski"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "10092"
+              },
+              {
+               "name": {
+                "full": "Jaime Jaquez Jr.",
+                "first": "Jaime",
+                "last": "Jaquez Jr.",
+                "ascii_first": "Jaime",
+                "ascii_last": "Jaquez Jr."
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "11": {
+      "team": [
+       [
+        {
+         "team_key": "478.l.25733.t.12"
+        },
+        {
+         "team_id": "12"
+        },
+        {
+         "name": "Jinwoo's Neat Team"
+        },
+        [],
+        {
+         "url": "https://basketball.fantasysports.yahoo.com/nba/25733/12"
+        },
+        {
+         "team_logos": [
+          {
+           "team_logo": {
+            "size": "large",
+            "url": "https://s.yimg.com/ep/cx/blendr/v2/image-avatar-poses-circle-cropped-17-120-x-png_1728591723438.png"
+           }
+          }
+         ]
+        },
+        [],
+        [],
+        {
+         "waiver_priority": 3
+        },
+        {
+         "faab_balance": "1000"
+        },
+        {
+         "number_of_moves": 0
+        },
+        {
+         "number_of_trades": 0
+        },
+        {
+         "roster_adds": {
+          "coverage_type": "week",
+          "coverage_value": 1,
+          "value": "0"
+         }
+        },
+        [],
+        {
+         "league_scoring_type": "head"
+        },
+        [],
+        {
+         "draft_position": 10
+        },
+        {
+         "has_draft_grade": 0
+        },
+        [],
+        [],
+        [],
+        [],
+        [],
+        {
+         "managers": [
+          {
+           "manager": {
+            "manager_id": "13",
+            "nickname": "--hidden--",
+            "guid": "--hidden--",
+            "felo_score": "550",
+            "felo_tier": "bronze"
+           }
+          }
+         ]
+        }
+       ],
+       {
+        "roster": {
+         "coverage_type": "date",
+         "date": "2026-10-22",
+         "is_prescoring": 0,
+         "is_editable": 0,
+         "0": {
+          "players": {
+           "0": {
+            "player": [
+             [
+              {
+               "player_id": "6413"
+              },
+              {
+               "name": {
+                "full": "Tyrese Maxey",
+                "first": "Tyrese",
+                "last": "Maxey",
+                "ascii_first": "Tyrese",
+                "ascii_last": "Maxey"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "1": {
+            "player": [
+             [
+              {
+               "player_id": "5754"
+              },
+              {
+               "name": {
+                "full": "Alex Caruso",
+                "first": "Alex",
+                "last": "Caruso",
+                "ascii_first": "Alex",
+                "ascii_last": "Caruso"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SG"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "2": {
+            "player": [
+             [
+              {
+               "player_id": "6557"
+              },
+              {
+               "name": {
+                "full": "Corey Kispert",
+                "first": "Corey",
+                "last": "Kispert",
+                "ascii_first": "Corey",
+                "ascii_last": "Kispert"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "G"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "3": {
+            "player": [
+             [
+              {
+               "player_id": "5769"
+              },
+              {
+               "name": {
+                "full": "Lauri Markkanen",
+                "first": "Lauri",
+                "last": "Markkanen",
+                "ascii_first": "Lauri",
+                "ascii_last": "Markkanen"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "SF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "4": {
+            "player": [
+             [
+              {
+               "player_id": "6015"
+              },
+              {
+               "name": {
+                "full": "Jaren Jackson Jr.",
+                "first": "Jaren",
+                "last": "Jackson Jr.",
+                "ascii_first": "Jaren",
+                "ascii_last": "Jackson Jr."
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "PF"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "5": {
+            "player": [
+             [
+              {
+               "player_id": "6253"
+              },
+              {
+               "name": {
+                "full": "Naz Reid",
+                "first": "Naz",
+                "last": "Reid",
+                "ascii_first": "Naz",
+                "ascii_last": "Reid"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "F"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "6": {
+            "player": [
+             [
+              {
+               "player_id": "6018"
+              },
+              {
+               "name": {
+                "full": "Wendell Carter Jr.",
+                "first": "Wendell",
+                "last": "Carter Jr.",
+                "ascii_first": "Wendell",
+                "ascii_last": "Carter Jr."
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "7": {
+            "player": [
+             [
+              {
+               "player_id": "5856"
+              },
+              {
+               "name": {
+                "full": "Isaiah Hartenstein",
+                "first": "Isaiah",
+                "last": "Hartenstein",
+                "ascii_first": "Isaiah",
+                "ascii_last": "Hartenstein"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "C"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "8": {
+            "player": [
+             [
+              {
+               "player_id": "6707"
+              },
+              {
+               "name": {
+                "full": "Tari Eason",
+                "first": "Tari",
+                "last": "Eason",
+                "ascii_first": "Tari",
+                "ascii_last": "Eason"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "9": {
+            "player": [
+             [
+              {
+               "player_id": "5825"
+              },
+              {
+               "name": {
+                "full": "Luke Kennard",
+                "first": "Luke",
+                "last": "Kennard",
+                "ascii_first": "Luke",
+                "ascii_last": "Kennard"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "Util"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "10": {
+            "player": [
+             [
+              {
+               "player_id": "6169"
+              },
+              {
+               "name": {
+                "full": "Coby White",
+                "first": "Coby",
+                "last": "White",
+                "ascii_first": "Coby",
+                "ascii_last": "White"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "11": {
+            "player": [
+             [
+              {
+               "player_id": "6753"
+              },
+              {
+               "name": {
+                "full": "Keon Ellis",
+                "first": "Keon",
+                "last": "Ellis",
+                "ascii_first": "Keon",
+                "ascii_last": "Ellis"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "12": {
+            "player": [
+             [
+              {
+               "player_id": "6512"
+              },
+              {
+               "name": {
+                "full": "Cade Cunningham",
+                "first": "Cade",
+                "last": "Cunningham",
+                "ascii_first": "Cade",
+                "ascii_last": "Cunningham"
+               }
+              }
+             ],
+             {
+              "selected_position": [
+               {
+                "coverage_type": "date",
+                "date": "2026-10-22"
+               },
+               {
+                "position": "BN"
+               },
+               {
+                "is_flex": 0
+               }
+              ]
+             }
+            ]
+           },
+           "count": 13
+          }
+         }
+        }
+       }
+      ]
+     },
+     "count": 12
+    }
+   }
+  ],
+  "time": "128.95607948303ms",
+  "copyright": "Certain Data by Sportradar, Stats Perform and Rotowire",
+  "refresh_rate": "30"
+ }
+}

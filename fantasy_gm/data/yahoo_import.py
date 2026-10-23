@@ -184,3 +184,67 @@ def import_snapshot(
         "verified": recon.verified,
         "warnings": recon.warnings + recon.conflicts,
     }
+
+
+def _lineup_name_index(store) -> dict[str, list[str]]:
+    """Normalised name -> NBA id over every name-bearing player table.
+
+    The ranked-data seasons' logs plus the incoming-rookie rows (a 2026 draftee has no
+    logs yet but is in ``incoming_players`` with his NBA id), so a live lineup read can
+    join every rostered player.
+    """
+    from fantasy_gm.data.player_crosswalk import normalize_name
+
+    index: dict[str, list[str]] = {}
+    for r in store.conn.execute("SELECT DISTINCT player_id, player_name FROM player_logs"):
+        index.setdefault(normalize_name(r["player_name"]), []).append(r["player_id"])
+    for r in store.conn.execute("SELECT player_id, player_name FROM incoming_players"):
+        index.setdefault(normalize_name(r["player_name"]), []).append(r["player_id"])
+    return index
+
+
+def ingest_lineups(
+    store, league_id: str, rows: list[tuple[str, str, str, str]], known_from: str,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Join a live Yahoo lineup read to NBA ids and store it as slot rows.
+
+    ``rows`` are ``(team_key, yahoo_player_id, slot, name)`` from
+    ``yahoo_fetch.parse_lineup_payload``. The join is the same conservative
+    name-match the snapshot import uses (``player_crosswalk``), extended with
+    ``incoming_players`` so draftees without logs resolve too. Unmatched/ambiguous
+    players are *reported, never guessed*: their slot row is skipped, which prices
+    them at zero remaining games — visible in the report, not silently wrong.
+
+    Returns ``{"stored", "matched", "unmatched", "ambiguous"}``.
+    """
+    index = _lineup_name_index(store)
+    overrides = overrides or {}
+    from fantasy_gm.data.player_crosswalk import normalize_name
+
+    mapping: dict[str, str] = {}
+    unmatched: list[tuple[str, str]] = []
+    ambiguous: list[tuple[str, str, list[str]]] = []
+    for _team_key, pid, _slot, name in rows:
+        if pid in mapping or any(pid == u[0] for u in unmatched):
+            continue
+        if pid in overrides:
+            mapping[pid] = overrides[pid]
+            continue
+        hits = index.get(normalize_name(name), [])
+        if len(hits) == 1:
+            mapping[pid] = hits[0]
+        elif len(hits) > 1:
+            ambiguous.append((pid, name, hits))
+        else:
+            unmatched.append((pid, name))
+
+    slots = [(team_key, mapping[pid], slot) for team_key, pid, slot, _n in rows
+             if pid in mapping]
+    stored = store.upsert_lineups(league_id, slots, known_from)
+    return {
+        "stored": stored,
+        "matched": len(mapping),
+        "unmatched": unmatched,
+        "ambiguous": ambiguous,
+    }
