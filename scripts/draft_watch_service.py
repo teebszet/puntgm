@@ -636,6 +636,35 @@ def run_watch(
                 )
         except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
             log_line(state, f"espn schedule wire failed: {exc}")
+        # In-season box scores: refetch the current season's LeagueGameLog payload once
+        # per calendar day so the banked tally and every per-player rate read live data
+        # instead of last season's tail. The payload is the whole season (~26k rows), so
+        # a failed attempt is retried at most once per hour, not once per cycle.
+        if state.get("box_backfill_date") != today:
+            hour_key = time.strftime("%Y%m%d%H", time.gmtime())
+            if state.get("box_backfill_attempt") != hour_key:
+                state["box_backfill_attempt"] = hour_key
+                try:
+                    from fantasy_gm.config import FORWARD_SEASON
+                    from fantasy_gm.data.cache import RawCache
+                    from fantasy_gm.data.nba_source import refresh_box_scores
+
+                    counts, advanced = refresh_box_scores(
+                        store2, RawCache(Config().cache_dir), FORWARD_SEASON
+                    )
+                    state["box_backfill_date"] = today
+                    if advanced:
+                        changed = True  # fresh logs re-price rates and the banked tally
+                        newest = store2.conn.execute(
+                            "SELECT MAX(game_date) AS m FROM player_logs WHERE season = ?",
+                            (FORWARD_SEASON,),
+                        ).fetchone()["m"]
+                        log_line(
+                            state,
+                            f"box-score backfill: {counts['logs']} logs through {newest}",
+                        )
+                except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+                    log_line(state, f"box-score backfill failed: {exc}")
         state["news_sources"] = news_mod.source_age(store2, today)
         if not changed:
             return

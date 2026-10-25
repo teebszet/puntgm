@@ -127,10 +127,12 @@ def test_refresh_schedule_replaces_window_and_reports_change(tmp_path):
     from fantasy_gm.data.cache import RawCache
     from fantasy_gm.data.store import SCHEMA
 
-    # Two-day window, cached payloads. Day 1 is the "today" slate and is scored, so it
-    # stays cached (only unscored past payloads get refetched — no network in tests);
-    # day 2 is strictly future and always cached.
+    # Two-day window, cached payloads. Day 1 is the "today" slate and is COMPLETED
+    # (status carries it — score presence is not the readiness signal, ESPN emits
+    # score "0" pre-game), so it stays cached; day 2 is strictly future and always
+    # cached.
     day1 = {"events": [{"id": "e1", "date": "2026-10-24T23:00Z",
+                        "status": {"type": {"completed": True}},
                         "competitions": [{"competitors": [
                             {"homeAway": "home", "score": "110",
                              "team": {"abbreviation": "BOS"}},
@@ -186,3 +188,146 @@ def test_refresh_schedule_replaces_window_and_reports_change(tmp_path):
     assert {r["home_team"] for r in store.conn.execute(
         "SELECT home_team FROM games WHERE game_id='esp-e2'").fetchall()} == {"MIA"}
     assert store.conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
+
+
+def test_dual_wire_game_rows_dedupe():
+    """The ESPN schedule wire (esp-* ids) and the LeagueGameLog backfill (NBA gids) both
+    store the same real game — remaining-games and participation must count it once."""
+    from fantasy_gm.data.store import Store
+
+    store = Store(":memory:")
+    store.conn.executemany(
+        """INSERT INTO games(game_id, season, game_date, home_team, away_team)
+           VALUES (?,?,?,?,?)""",
+        [
+            ("esp-e1", "2026-27", "2026-10-22", "BOS", "NYK"),
+            ("0022500001", "2026-27", "2026-10-22", "BOS", "NYK"),
+            ("esp-e2", "2026-27", "2026-10-24", "BOS", "NYK"),
+        ],
+    )
+    store.conn.executemany(
+        """INSERT INTO player_logs(game_id, season, game_date, player_id, player_name,
+                                   team, stats_json)
+           VALUES (?,?,?,?,?,?,?)""",
+        [
+            ("esp-e1", "2026-27", "2026-10-22", "1", "P One", "BOS", "{}"),
+            ("0022500001", "2026-27", "2026-10-22", "1", "P One", "BOS", "{}"),
+        ],
+    )
+    store.conn.commit()
+    # Two real games (the 10-22 duplicate collapses), not three rows.
+    assert store.remaining_games_for_team("BOS", "2026-10-21", "2026-10-25") == 2
+    # Played 1 of 2 distinct scheduled dates; the duplicate row must not dilute the rate.
+    assert store.participation_rate("1", "2026-10-25") == 0.5
+
+
+def test_refresh_box_scores_bypasses_cache_and_reports_advance(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from fantasy_gm.data.cache import RawCache
+    from fantasy_gm.data.nba_source import refresh_box_scores
+    from fantasy_gm.data.store import Store
+
+    calls = {"n": 0}
+
+    class _FakeLeagueGameLog:
+        def __init__(self, **kw):
+            pass
+
+        def get_normalized_dict(self):
+            calls["n"] += 1
+            return {"LeagueGameLog": [
+                _row(GAME_DATE="2026-10-22"),
+                _row(GAME_ID="0022500001", PLAYER_ID=2, GAME_DATE="2026-10-22",
+                     MATCHUP="NYK @ BOS", TEAM_ABBREVIATION="NYK"),
+            ]}
+
+    stub = types.SimpleNamespace(LeagueGameLog=_FakeLeagueGameLog)
+    # Stub the parent package too: importing the real ``nba_api.stats.endpoints`` binds
+    # its real submodules as attributes, which then shadow another test's sys.modules
+    # stub for ``playerindex`` (seen live as a full-suite-only failure).
+    endpoints_stub = types.SimpleNamespace(leaguegamelog=stub)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints", endpoints_stub)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints.leaguegamelog", stub)
+
+    cache = RawCache(tmp_path / "cache")
+    # A stale snapshot from an earlier (historical) backfill sits in the cache...
+    cache.set("leaguegamelog.player", {"season": "2026-27", "player_or_team": "P"},
+              {"LeagueGameLog": []})
+    store = Store(":memory:")
+
+    counts, advanced = refresh_box_scores(store, cache, "2026-27")
+    # ...but refresh bypasses it (the network stub was hit) and the new logs land.
+    assert calls["n"] == 1
+    assert counts["logs"] == 2 and advanced
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM player_logs WHERE season='2026-27'").fetchone()[0] == 2
+
+    # Re-running the identical payload stores nothing new and reports no advance —
+    # and it refetched again, proving the cache never shadows the live payload.
+    counts, advanced = refresh_box_scores(store, cache, "2026-27")
+    assert calls["n"] == 2
+    assert counts["logs"] == 2 and not advanced
+
+
+def test_remaining_games_counts_unplayed_same_day_slate():
+    """A game on the as_of day is remaining while unscored — once a final score lands
+    it is played, leaves this count, and its box scores become the banked tally."""
+    from fantasy_gm.data.store import Store
+
+    store = Store(":memory:")
+    store.conn.executemany(
+        """INSERT INTO games(game_id, season, game_date, home_team, away_team)
+           VALUES (?,?,?,?,?)""",
+        [
+            ("g1", "2026-27", "2026-10-25", "BOS", "NYK"),
+            ("g2", "2026-27", "2026-10-26", "BOS", "LAL"),
+        ],
+    )
+    store.conn.commit()
+    assert store.remaining_games_for_team("BOS", "2026-10-25", "2026-10-26") == 2
+
+    # The ESPN wire stores the final: tonight's game is played, Monday's is not.
+    store.conn.execute("UPDATE games SET home_pts=110, away_pts=99 WHERE game_id='g1'")
+    store.conn.commit()
+    assert store.remaining_games_for_team("BOS", "2026-10-25", "2026-10-26") == 1
+
+    # A scored duplicate row settles the real game even if an unscored twin exists.
+    store.conn.execute(
+        """INSERT INTO games(game_id, season, game_date, home_team, away_team)
+           VALUES ('g1-twin','2026-27','2026-10-25','BOS','NYK')"""
+    )
+    store.conn.commit()
+    assert store.remaining_games_for_team("BOS", "2026-10-25", "2026-10-26") == 1
+
+
+def test_parse_espn_scoreboard_scores_only_completed_events():
+    """ESPN emits score "0" on pre-game events; storing placeholders as finals made
+    unscored games read as played everywhere the score is consulted."""
+    raw = {"events": [
+        {"id": "pre", "date": "2026-10-25T23:00Z",
+         "status": {"type": {"state": "pre", "completed": False}},
+         "competitions": [{"competitors": [
+             {"homeAway": "home", "score": "0", "team": {"abbreviation": "UTA"}},
+             {"homeAway": "away", "score": "0", "team": {"abbreviation": "LAL"}}]}]},
+        {"id": "final", "date": "2026-10-24T23:00Z",
+         "status": {"type": {"state": "post", "completed": True}},
+         "competitions": [{"competitors": [
+             {"homeAway": "home", "score": "110", "team": {"abbreviation": "BOS"}},
+             {"homeAway": "away", "score": "99", "team": {"abbreviation": "NY"}}]}]},
+    ]}
+    games = {g.game_id: g for g in parse_espn_scoreboard(raw, "2026-27")}
+    assert games["esp-pre"].home_pts is None and games["esp-pre"].away_pts is None
+    assert (games["esp-final"].home_pts, games["esp-final"].away_pts) == (110, 99)
+
+
+def test_espn_all_scored_reads_completion_not_score_presence():
+    from fantasy_gm.data.nba_source import _espn_all_scored
+
+    pre_game = {"events": [{"status": {"type": {"completed": False}},
+                            "competitions": [{"competitors": [
+                                {"score": "0"}, {"score": "0"}]}]}]}
+    final = {"events": [{"status": {"type": {"completed": True}}}]}
+    assert not _espn_all_scored(pre_game)
+    assert _espn_all_scored(final)

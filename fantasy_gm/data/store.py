@@ -541,11 +541,20 @@ class Store:
         categories = json.loads(meta["categories_json"])
         rosters = {tid: self.roster_asof(league_id, tid, as_of) for tid in self.team_ids(league_id)}
         active = self.active_matchup(league_id, as_of)
+        # Every live matchup's teams get their banked tally, not just one representative
+        # pair: ``active_matchup`` returns a single row, and keying the tally to it left
+        # every other team's projection pricing zero banked points (found live 2026-10-25
+        # — week 1 tallied only t.1/t.4, so t.8's projection read 0.0 across the board).
+        live = self.conn.execute(
+            """SELECT team_a, team_b, period_start FROM matchups
+               WHERE league_id = ? AND period_start <= ? AND period_end >= ?""",
+            (league_id, as_of, as_of),
+        ).fetchall()
         tally: dict[str, dict[str, float]] = {}
-        if active is not None:
-            for tid in (active.team_a, active.team_b):
+        for row in live:
+            for tid in (row["team_a"], row["team_b"]):
                 tally[tid] = self._team_category_tally(
-                    rosters.get(tid, []), active.period_start, as_of, categories
+                    rosters.get(tid, []), row["period_start"], as_of, categories
                 )
         return LeagueState(
             league_id=league_id,
@@ -756,18 +765,33 @@ class Store:
         return row["s"] or ""
 
     def remaining_games_for_team(self, team: str, after: str, end: str) -> int:
-        """Scheduled games for an NBA team strictly after ``after`` through ``end``
-        (a priori schedule — not gated by as-of).
+        """Scheduled games for an NBA team still to be played from ``after`` through
+        ``end`` (a priori schedule — not gated by as-of).
 
         Counted as DISTINCT (date, home, away) real games: the ESPN schedule wire keys
         ``esp-*`` ids while the LeagueGameLog backfill keys NBA gids, so once both load
         the same season a plain COUNT double-counts every game both wires carry.
+
+        The ``after`` day itself counts when the game is still unscored: a game tonight
+        is neither banked (``player_logs`` stop yesterday) nor remaining under a strict
+        ``> after`` cut, so a same-day projection silently dropped the whole day's
+        slate. Played-ness reads the stored final score — the ESPN wire marks a slate
+        final as results land — so once a game finishes it leaves this count, and when
+        the daily backfill stores its box scores it appears in the banked tally. The
+        two buckets never overlap. (Any scored duplicate row marks the real game
+        played, so a wire that carries scores settles it for its unscored twin.)
         """
         row = self.conn.execute(
-            """SELECT COUNT(DISTINCT game_date || '|' || home_team || '|' || away_team) AS n
-               FROM games
-               WHERE game_date > ? AND game_date <= ? AND (home_team = ? OR away_team = ?)""",
-            (after, end, team, team),
+            """SELECT COUNT(*) AS n FROM (
+                   SELECT game_date, home_team, away_team
+                   FROM games
+                   WHERE game_date >= ? AND game_date <= ?
+                     AND (home_team = ? OR away_team = ?)
+                   GROUP BY game_date, home_team, away_team
+                   HAVING MIN(game_date) > ?
+                       OR SUM(home_pts IS NULL AND away_pts IS NULL) = COUNT(*)
+               )""",
+            (after, end, team, team, after),
         ).fetchone()
         return int(row["n"])
 
@@ -1040,7 +1064,7 @@ class Store:
         sched = [
             r["game_date"]
             for r in self.conn.execute(
-                """SELECT game_date FROM games
+                """SELECT DISTINCT game_date FROM games
                    WHERE game_date <= ? AND (home_team = ? OR away_team = ?)
                    ORDER BY game_date DESC LIMIT ?""",
                 (as_of, team, team, window),

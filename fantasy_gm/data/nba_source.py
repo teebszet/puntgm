@@ -94,9 +94,9 @@ def parse_league_game_log(
     return list(games.values()), logs, usage
 
 
-def _fetch_rows(season: str, cache: RawCache) -> list[dict]:
+def _fetch_rows(season: str, cache: RawCache, refresh: bool = False) -> list[dict]:
     endpoint, params = "leaguegamelog.player", {"season": season, "player_or_team": "P"}
-    if cache.has(endpoint, params):
+    if not refresh and cache.has(endpoint, params):
         raw = cache.get(endpoint, params)
     else:  # pragma: no cover - network path, runs on the user's machine
         from nba_api.stats.endpoints import leaguegamelog
@@ -110,14 +110,21 @@ def _fetch_rows(season: str, cache: RawCache) -> list[dict]:
 
 
 def backfill_season(
-    store: Store, season: str, cache: RawCache, dry_run: bool = False
+    store: Store, season: str, cache: RawCache, dry_run: bool = False,
+    refresh: bool = False,
 ) -> dict[str, int]:
     """Backfill a full season's games + player box-score logs (+ usage) into the store.
 
     ``dry_run`` fetches and parses but does not write — a fast check that the parse mapping
     matches the live payload before committing a full store write.
+
+    ``refresh`` bypasses the disk cache and refetches. The historical backfill never needs
+    it (a finished season is immutable), but the *current* season's payload keeps growing
+    as games complete — the in-season daily refresh calls this with ``refresh=True`` so
+    yesterday's cached snapshot does not shadow the new box scores. Upserts are idempotent,
+    so re-reading already-stored days is a no-op.
     """
-    rows = _fetch_rows(season, cache)
+    rows = _fetch_rows(season, cache, refresh=refresh)
     games, logs, usage = parse_league_game_log(rows, season)
     counts = {"rows": len(rows), "games": len(games), "logs": len(logs), "usage": len(usage)}
     if dry_run:
@@ -126,6 +133,28 @@ def backfill_season(
     store.upsert_player_logs(logs)
     store.add_usage_role(usage)
     return counts
+
+
+def refresh_box_scores(store: Store, cache: RawCache, season: str) -> tuple[dict[str, int], bool]:
+    """One in-season box-score refresh: refetch the season's LeagueGameLog payload with
+    the disk cache bypassed (completed games keep arriving — see ``backfill_season``) and
+    upsert games + player logs + usage.
+
+    Returns ``(counts, advanced)`` where ``advanced`` says whether the stored logs for the
+    season actually changed (row count or newest game date moved) — the signal the watcher
+    uses to decide the board needs a rebuild.
+    """
+    before = store.conn.execute(
+        "SELECT COUNT(*) AS n, MAX(game_date) AS m FROM player_logs WHERE season = ?",
+        (season,),
+    ).fetchone()
+    counts = backfill_season(store, season, cache, refresh=True)
+    after = store.conn.execute(
+        "SELECT COUNT(*) AS n, MAX(game_date) AS m FROM player_logs WHERE season = ?",
+        (season,),
+    ).fetchone()
+    advanced = (int(after["n"]), after["m"]) != (int(before["n"]), before["m"])
+    return counts, advanced
 
 
 # --- ESPN scoreboard schedule wire (in-season, 2026-10-23) ---------------------------------
@@ -158,15 +187,16 @@ def espn_team_code(abbrev: str) -> str:
 
 
 def _espn_all_scored(raw: dict) -> bool:
-    """True when every event in an ESPN payload already carries both final scores."""
+    """True when every event in an ESPN payload has completed.
+
+    Readiness is the event's ``status.type.completed`` flag, not score presence: ESPN
+    emits ``score: "0"`` on pre-game events (found live 2026-10-25 — a cached pre-game
+    slate read as 'scored' and was never refetched, so finals never landed).
+    """
     for event in raw.get("events", []):
-        try:
-            comps = event["competitions"][0]["competitors"]
-        except (KeyError, IndexError, TypeError):
-            continue
-        for comp in comps:
-            if comp.get("score") in (None, ""):
-                return False
+        status = (event.get("status") or {}).get("type") or {}
+        if not status.get("completed"):
+            return False
     return True
 
 
@@ -176,7 +206,9 @@ def parse_espn_scoreboard(raw: dict, season: str) -> list[Game]:
     ``game_date`` is the US/Eastern calendar date of the tip, matching the convention
     the store's player_logs already use (NBA.com GAME_DATE is also the US date) — a
     UTC-midnight-crossing late tip belongs to the previous US day. Unplayed games carry
-    no score; played ones carry final scores when ESPN has them.
+    no score; scores are recorded only when the event's status says ``completed`` —
+    ESPN emits ``score: "0"`` on pre-game events, and storing those placeholders as
+    final scores made unscored games read as played everywhere the score is consulted.
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -189,15 +221,16 @@ def parse_espn_scoreboard(raw: dict, season: str) -> list[Game]:
             continue
         home = away = None
         home_pts = away_pts = None
+        completed = bool(((event.get("status") or {}).get("type") or {}).get("completed"))
         for comp in comps:
             abbrev = espn_team_code(str(comp.get("team", {}).get("abbreviation", "")))
             if comp.get("homeAway") == "home":
                 home = abbrev
-                if comp.get("score") not in (None, ""):
+                if completed and comp.get("score") not in (None, ""):
                     home_pts = int(float(comp["score"]))
             else:
                 away = abbrev
-                if comp.get("score") not in (None, ""):
+                if completed and comp.get("score") not in (None, ""):
                     away_pts = int(float(comp["score"]))
         if not home or not away:
             continue
