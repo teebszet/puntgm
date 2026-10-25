@@ -60,11 +60,17 @@ class DecisionEngine:
         winnable = self._winnable_categories(state, team_id, perspective.opponent_team_id)
 
         rostered = state.rostered_player_ids()
-        candidates = [
-            (pid, name, team)
-            for pid, name, team in store.player_universe(season, as_of)
-            if pid not in rostered
-        ]
+        # Candidate pool keys the ranked-data season (week 1 of a fresh season has no box
+        # scores — the league-season universe would be empty), and each candidate's team
+        # comes from the current team read, not the logged-season team.
+        data_season = store.latest_logged_season() or season
+        candidates = []
+        for pid, name, _t in store.player_universe(data_season, as_of):
+            if pid in rostered:
+                continue
+            team = store.player_team(pid, as_of)
+            if team:
+                candidates.append((pid, name, team))
 
         scored: list[Recommendation] = []
         w = self.config.weights

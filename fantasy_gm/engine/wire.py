@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fantasy_gm.config import CATEGORY_DIRECTION, PERCENTAGE_CATEGORIES, Config
+from fantasy_gm.config import CATEGORY_DIRECTION, FORWARD_SEASON, PERCENTAGE_CATEGORIES, Config
 from fantasy_gm.engine.projection import Projector
 from fantasy_gm.models import Perspective
 from fantasy_gm.valuation import _player_games, player_values, rosterable_pool
@@ -66,6 +66,11 @@ class WireAnalyzer:
         if not proj.opponent_id:
             return WireAnalysis(Perspective(league_id, team_id, -1, ""), [], {})
         season = store.league_meta(league_id)["season"]
+        # The pool/valuation reads must key the ranked-data season, not the league season:
+        # week 1 of a fresh season has no box scores yet, and an empty pool reads as
+        # "everything infeasible" rather than as an error (seen live 2026-10-20 on the
+        # real league's first matchup).
+        data_season = store.latest_logged_season() or season
         matchup = store.matchup_for_team(league_id, team_id, as_of)
         state = store.league_state_asof(league_id, as_of)
         my_roster = list(state.rosters.get(team_id, []))
@@ -73,23 +78,25 @@ class WireAnalyzer:
         persp = Perspective(league_id, team_id, proj.period_index, proj.opponent_id)
         base = {c: proj.categories[c].win_prob for c in self.config.categories}
 
-        values = player_values(store, season)
+        values = player_values(store, data_season)
         drop = min(my_roster, key=lambda p: values.get(p, -999.0)) if my_roster else None
 
         wire = []
-        for pid, name, _t in store.player_universe(season, as_of):
+        for pid, name, _t in store.player_universe(data_season, as_of):
             if pid in rostered:
                 continue
+            if store.forward_roster_asof(pid, FORWARD_SEASON, as_of) is None:
+                continue  # not on an NBA roster this season — retired/unsigned, no games
             nba_team = store.player_team(pid, as_of)
             if nba_team and store.remaining_games_for_team(nba_team, as_of, matchup.period_end) > 0:
                 wire.append((pid, name))
 
         options = [
             self._best_for_cat(store, league_id, team_id, as_of, my_roster, drop, wire, cat,
-                               base, shortlist, season)
+                               base, shortlist, data_season)
             for cat in proj.contested()
         ]
-        return WireAnalysis(persp, options, self._bundle_depth(store, season, wire))
+        return WireAnalysis(persp, options, self._bundle_depth(store, data_season, wire))
 
     def _best_for_cat(self, store, league_id, team_id, as_of, my_roster, drop, wire, cat,
                       base, shortlist, season=None) -> WireOption:

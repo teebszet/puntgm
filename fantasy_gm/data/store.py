@@ -19,7 +19,7 @@ import statistics
 from collections.abc import Iterable
 from pathlib import Path
 
-from fantasy_gm.config import PERCENTAGE_CATEGORIES
+from fantasy_gm.config import FORWARD_SEASON, PERCENTAGE_CATEGORIES
 from fantasy_gm.models import (
     ADP,
     Availability,
@@ -723,6 +723,21 @@ class Store:
         ]
 
     def player_team(self, player_id: str, as_of: str) -> str | None:
+        """The NBA team the player plays for as of ``as_of``.
+
+        The forward-season row wins when one exists (an offseason move is a current fact
+        the logs cannot express — the 2026-27 fold placed Kawhi Leonard on TOR while his
+        last logged game is LAC), else the last logged team. Forward rows are known-from
+        dated, so an earlier ``as_of`` never sees a later move and replays of logged
+        seasons behave exactly as before."""
+        row = self.conn.execute(
+            """SELECT team FROM forward_roster
+               WHERE player_id = ? AND season = ? AND known_from <= ?
+               ORDER BY known_from DESC LIMIT 1""",
+            (player_id, FORWARD_SEASON, as_of),
+        ).fetchone()
+        if row and row["team"]:
+            return row["team"]
         row = self.conn.execute(
             """SELECT team FROM player_logs WHERE player_id = ? AND game_date <= ?
                ORDER BY game_date DESC LIMIT 1""",
@@ -730,11 +745,27 @@ class Store:
         ).fetchone()
         return row["team"] if row else None
 
+    def latest_logged_season(self) -> str:
+        """The most recent season with player logs — the ranked-data season.
+
+        Week 1 of a fresh league season has no box scores yet, so every pool, valuation,
+        and league-rate read that derives from logged games (wire, recommend) must read
+        the last season's data; the league's own season stays what the schedule and
+        rosters key on."""
+        row = self.conn.execute("SELECT MAX(season) AS s FROM player_logs").fetchone()
+        return row["s"] or ""
+
     def remaining_games_for_team(self, team: str, after: str, end: str) -> int:
         """Scheduled games for an NBA team strictly after ``after`` through ``end``
-        (a priori schedule — not gated by as-of)."""
+        (a priori schedule — not gated by as-of).
+
+        Counted as DISTINCT (date, home, away) real games: the ESPN schedule wire keys
+        ``esp-*`` ids while the LeagueGameLog backfill keys NBA gids, so once both load
+        the same season a plain COUNT double-counts every game both wires carry.
+        """
         row = self.conn.execute(
-            """SELECT COUNT(*) AS n FROM games
+            """SELECT COUNT(DISTINCT game_date || '|' || home_team || '|' || away_team) AS n
+               FROM games
                WHERE game_date > ? AND game_date <= ? AND (home_team = ? OR away_team = ?)""",
             (after, end, team, team),
         ).fetchone()

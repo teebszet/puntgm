@@ -199,13 +199,52 @@ def refresh_token_from_files(
     return payload["access_token"]
 
 
+def _transaction_player_fields(entry: Any) -> tuple[str, dict[str, Any]]:
+    """Extract (yahoo_player_id, transaction_data) from one player entry.
+
+    Two live shapes, both seen on the real league (verified 2026-10-20):
+
+    * the recorded fixture shape — the entry IS the player:
+      ``{"player_id": "6018", "transaction_data": {...}}``
+    * the live API shape — the entry wraps a nested ``player`` list whose first element
+      is a list of field dicts and whose last element holds ``transaction_data``:
+      ``{"player": [[{"player_id": "6745"}, ..., {"name": {...}}],
+      {"transaction_data": [...]}]}``
+    """
+    if not isinstance(entry, dict):
+        return "", {}
+    data = entry.get("transaction_data") or {}
+    if isinstance(data, list):           # Yahoo sometimes wraps it in a list
+        data = data[0] if data else {}
+    pid = str(entry.get("player_id", ""))
+    if pid or data:
+        return pid, data
+    player = entry.get("player")
+    if not player:
+        return "", {}
+    for item in player:
+        if isinstance(item, list):
+            for field in item:
+                if isinstance(field, dict) and field.get("player_id"):
+                    pid = str(field["player_id"])
+        elif isinstance(item, dict):
+            if item.get("player_id"):
+                pid = str(item["player_id"])
+            td = item.get("transaction_data")
+            if td:
+                data = td[0] if isinstance(td, list) and td else td
+    return pid, data or {}
+
+
 def normalize_transactions(raw: list[dict[str, Any]]) -> list[Transaction]:
     """Convert Yahoo's transaction payload into provider-agnostic movements.
 
-    Yahoo represents each transaction as a list of player entries carrying a
+    Yahoo represents each transaction as player entries carrying a
     ``transaction_data`` block with ``type`` (add/drop) and source/destination team keys.
     A single add/drop transaction contains two such entries; a trade contains one per
-    player moved. Timestamps are epoch seconds and are reduced to the local ISO date,
+    player moved. The ``players`` field arrives either as a list of player dicts or as a
+    dict keyed by index (with a trailing ``count``) — see ``_transaction_player_fields``.
+    Timestamps are epoch seconds and are reduced to the local ISO date,
     which is the granularity the store's as-of layer keys on.
     """
     from datetime import UTC, datetime
@@ -216,16 +255,15 @@ def normalize_transactions(raw: list[dict[str, Any]]) -> list[Transaction]:
         when = (datetime.fromtimestamp(int(ts), UTC).date().isoformat() if ts else
                 tx.get("date", ""))
         movements: list[Movement] = []
-        for p in tx.get("players", []):
-            data = p.get("transaction_data") or {}
-            if isinstance(data, list):           # Yahoo sometimes wraps it in a list
-                data = data[0] if data else {}
+        raw_players = tx.get("players") or []
+        entries = raw_players.values() if isinstance(raw_players, dict) else raw_players
+        for entry in entries:
+            pid, data = _transaction_player_fields(entry)
+            if not pid:
+                continue
             kind = data.get("type")
             src = data.get("source_team_key")
             dst = data.get("destination_team_key")
-            pid = str(p.get("player_id", ""))
-            if not pid:
-                continue
             if kind == "add":
                 movements.append(Movement(pid, from_team=None, to_team=dst))
             elif kind == "drop":
@@ -291,8 +329,23 @@ def fetch_league_snapshot(
             player_names[str(det["player_id"])] = det.get("name", {}).get("full", "")
 
     matchups = []
+    good_week, good_start = 0, None
     for week in range(1, int(lg.end_week()) + 1):
-        start, end = lg.week_date_range(week)
+        try:
+            start, end = lg.week_date_range(week)
+        except RuntimeError:
+            # Yahoo refuses date ranges more than one week past the current week. Weeks are
+            # always 7 days, so extrapolate from the last fetched week instead of failing
+            # the whole snapshot (verified live 2026-10-20 on 478.l.25733).
+            if good_start is None:
+                raise
+            from datetime import date, timedelta
+
+            base = date.fromisoformat(str(good_start))
+            start = base + timedelta(days=7 * (week - good_week))
+            end = start + timedelta(days=6)
+        else:
+            good_week, good_start = week, str(start)
         seen: set[frozenset] = set()
         for m in _matchup_pairs(lg, week):
             if frozenset(m) in seen:
