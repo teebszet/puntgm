@@ -72,9 +72,14 @@ def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str) 
         "| cat | mine | opp | win | call |",
         "|---|---|---|---|---|",
     ]
+    from fantasy_gm.config import PERCENTAGE_CATEGORIES
+
     for p in cats:
+        # Percentage cats print at 3dp: at 1dp two rates like .500/.460 both read "0.5"
+        # and a safe call looks like a rounding bug (Tim, 2026-10-26).
+        fmt = ".3f" if p.category in PERCENTAGE_CATEGORIES else ".1f"
         lines.append(
-            f"| {p.category} | {p.mine_total:.1f} | {p.opp_total:.1f} "
+            f"| {p.category} | {p.mine_total:{fmt}} | {p.opp_total:{fmt}} "
             f"| {p.win_prob:.2f} | {p.label} |"
         )
     contested = proj.contested()

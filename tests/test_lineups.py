@@ -49,6 +49,44 @@ def test_store_roundtrip_and_effective_dating():
     assert s.upsert_lineups("L", [("T0", "P0", "BN"), ("T0", "P1", "PG")], "2025-10-20") == 0
 
 
+def test_rosters_asof_reads_snapshot_not_fold():
+    """The roster set at as_of is the rows of the LATEST full read, not a fold across
+    reads: a player dropped after read 1 must vanish, a player added after read 1 must
+    appear — roster_events (manual imports only) is too stale to own this (live 10-26)."""
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    s.add_team("L", "T0", "T0")
+    s.add_team("L", "T1", "T1")
+    s.add_roster_event("L", "T0", "P0", "add", "2025-10-01")
+    s.add_roster_event("L", "T1", "P2", "add", "2025-10-01")
+    s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P2", "Util")], "2025-10-20")
+    # 10-23 read: P0 dropped, P2 traded to T0 for P3. A fold would keep P0 and miss P2.
+    s.upsert_lineups("L", [("T0", "P2", "Util"), ("T1", "P3", "Util")], "2025-10-23")
+    assert s.rosters_asof("L", "2025-10-21") == {"T0": ["P0"], "T1": ["P2"]}
+    assert s.rosters_asof("L", "2025-10-23") == {"T0": ["P2"], "T1": ["P3"]}
+
+
+def test_rosters_asof_ignores_partial_reads():
+    """A read that doesn't cover every team is not a snapshot: fall back to the events
+    fold rather than zeroing the teams the read didn't fetch."""
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    s.add_team("L", "T0", "T0")
+    s.add_team("L", "T1", "T1")
+    s.add_roster_event("L", "T0", "P0", "add", "2025-10-01")
+    s.add_roster_event("L", "T1", "P2", "add", "2025-10-01")
+    s.upsert_lineups("L", [("T0", "P1", "Util")], "2025-10-20")
+    assert s.rosters_asof("L", "2025-10-23") == {"T0": ["P0"], "T1": ["P2"]}
+
+
+def test_rosters_asof_falls_back_to_events_without_a_read():
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    s.add_team("L", "T0", "T0")
+    s.add_roster_event("L", "T0", "P0", "add", "2025-10-01")
+    assert s.rosters_asof("L", "2025-10-23") == {"T0": ["P0"]}
+
+
 def _store_with_lineup(lineup_known_from: str = "2025-10-01") -> Store:
     """One team, two players: P0 slotted (Util), P1 benched (BN). One shared NBA team
     with two remaining games, so the only difference is the lineup restriction."""

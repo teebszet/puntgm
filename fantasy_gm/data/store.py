@@ -447,6 +447,43 @@ class Store:
         ).fetchall()
         return {r["player_id"]: r["slot"] for r in rows}
 
+    def rosters_asof(self, league_id: str, as_of: str) -> dict[str, list[str]]:
+        """Rosters per team as of ``as_of``.
+
+        Preferred source: the platform's latest full lineup read on/before ``as_of`` —
+        every rostered player (bench and IL included) under a name-resolved id. Fantasy
+        ownership moves daily, and nothing in the refresh wires writes ``roster_events``
+        (that table is fed only by manual Yahoo imports), so an events fold goes stale:
+        dropped players keep pricing into their old team and adds read as free agents
+        (seen live 2026-10-26 — Mark Williams read as owned a week after he was dropped,
+        and the wire pool offered players other teams had already claimed). Reads are
+        full-league snapshots, so the roster set is the rows of the latest read, never a
+        fold across reads. Falls back to the roster_events fold when no read exists yet.
+        """
+        read = self.conn.execute(
+            """SELECT MAX(known_from) AS k FROM lineup_slots
+               WHERE league_id = ? AND known_from <= ?""",
+            (league_id, as_of),
+        ).fetchone()["k"]
+        if read is not None:
+            rows = self.conn.execute(
+                """SELECT team_id, player_id FROM lineup_slots
+                   WHERE league_id = ? AND known_from = ?""",
+                (league_id, read),
+            ).fetchall()
+            # A read owns the roster set only when it is a FULL-league snapshot; a
+            # partial read (one team fetched by hand, a draft-era probe) must not
+            # silently zero the teams it didn't cover.
+            if {r["team_id"] for r in rows} >= set(self.team_ids(league_id)):
+                rosters: dict[str, list[str]] = {tid: [] for tid in self.team_ids(league_id)}
+                for r in rows:
+                    rosters[r["team_id"]].append(r["player_id"])
+                for ids in rosters.values():
+                    ids.sort()
+                return rosters
+        return {tid: self.roster_asof(league_id, tid, as_of)
+                for tid in self.team_ids(league_id)}
+
     def roster_events_between(
         self, league_id: str, team_id: str, start: str, as_of: str
     ) -> list[dict]:
@@ -557,7 +594,7 @@ class Store:
         if meta is None:
             raise KeyError(f"unknown league {league_id!r}")
         categories = json.loads(meta["categories_json"])
-        rosters = {tid: self.roster_asof(league_id, tid, as_of) for tid in self.team_ids(league_id)}
+        rosters = self.rosters_asof(league_id, as_of)
         active = self.active_matchup(league_id, as_of)
         # Every live matchup's teams get their banked tally, not just one representative
         # pair: ``active_matchup`` returns a single row, and keying the tally to it left
