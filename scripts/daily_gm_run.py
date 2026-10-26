@@ -60,7 +60,59 @@ def send_to_channel(channel: str, text: str) -> bool:
     return True
 
 
-def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str) -> str:
+def games_remaining(store, league_id: str, team_id: str, as_of: str
+                    ) -> tuple[int, int, int] | None:
+    """Yahoo-style games remaining for one team over its current matchup week.
+
+    Yahoo's matchup counter sums remaining scheduled games over every rostered
+    player NOT on IL — bench included (IL never accrues, bench can be slotted
+    any day by a lineup change). Returns (starters, bench, il) game counts, or
+    None when the team has no active matchup. Rosters/slots read post-refresh,
+    so a same-day add/drop or slot move is priced the day the wire sees it.
+    """
+    matchup = store.matchup_for_team(league_id, team_id, as_of)
+    if matchup is None:
+        return None
+    rosters = store.rosters_asof(league_id, as_of)
+    inactive = {"IL", "IR", "NA", "INACT"}
+    out: dict[str, tuple[int, int, int]] = {}
+    for tid in (team_id, matchup.team_b if matchup.team_a == team_id else matchup.team_a):
+        slots = store.lineup_asof(league_id, tid, as_of)
+        starters = bench = il = 0
+        for pid in rosters.get(tid, []):
+            slot = slots.get(pid, "BN")  # unslotted roster rows price like bench
+            nba_team = store.player_team(pid, as_of)
+            rg = store.remaining_games_for_team(
+                nba_team, as_of, matchup.period_end) if nba_team else 0
+            if slot in inactive:
+                il += rg
+            elif slot == "BN":
+                bench += rg
+            else:
+                starters += rg
+        out[tid] = (starters, bench, il)
+    opp = matchup.team_b if matchup.team_a == team_id else matchup.team_a
+    return out[team_id], out[opp]
+
+
+def render_games_block(gr, my_name: str, opp_name: str) -> list[str]:
+    """Digest block for the games-remaining counts, Yahoo-comparable."""
+    if gr is None:
+        return []
+    (ms, mb, mil), (os_, ob, oil) = gr
+    return [
+        "",
+        "**Games remaining this week** (Yahoo-style: every rostered player not on IL — "
+        "bench included; projections price scheduled starters only):",
+        f"- {my_name}: **{ms + mb}** ({ms} starters + {mb} bench"
+        + (f"; {mil} on IL don't count" if mil else "") + ")",
+        f"- {opp_name}: **{os_ + ob}** ({os_} starters + {ob} bench"
+        + (f"; {oil} on IL don't count" if oil else "") + ")",
+    ]
+
+
+def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str,
+                  games_block: list[str] | None = None) -> str:
     cats = sorted(proj.categories.values(), key=lambda p: -p.win_prob)
     lines = [
         f"🏀 **Daily GM run — {proj.as_of}** "
@@ -87,6 +139,8 @@ def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str) 
         lines += ["", f"Live cats: **{', '.join(contested)}** — the rest are decided."]
     else:
         lines += ["", "No contested cats left this week."]
+    if games_block:
+        lines += games_block
     lines += ["", "**Waiver add analysis** (WireAnalyzer, contested cats first):", ""]
     if wa.options:
         for o in wa.options:
@@ -164,6 +218,11 @@ def main() -> int:
                 proj, wa, wire_lines,
                 names.get(proj.opponent_id, proj.opponent_id),
                 names.get(proj.team_id, proj.team_id),
+                games_block=render_games_block(
+                    games_remaining(store, args.league, proj.team_id, today),
+                    names.get(proj.team_id, proj.team_id),
+                    names.get(proj.opponent_id, proj.opponent_id),
+                ),
             )
 
         # 4. publish: files for the record, then the channel post (deduped per date)
