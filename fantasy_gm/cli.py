@@ -24,6 +24,16 @@ def _store(config: Config) -> Store:
     return Store(config.db_path)
 
 
+def _resolve_team(store: Store, league: str, team: str) -> str:
+    """Accept the short suffix (``t.8``) as well as the stored full id (found live
+    2026-10-26: a raw short id read as 'no active matchup' instead of an id mismatch)."""
+    resolved = store.resolve_team_id(league, team)
+    if resolved is None:
+        print(f"unknown team {team!r} in league {league!r}", file=sys.stderr)
+        raise SystemExit(1)
+    return resolved
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     config = Config()
     store = _store(config)
@@ -66,8 +76,9 @@ def cmd_simulate(args: argparse.Namespace) -> int:
 def cmd_recommend(args: argparse.Namespace) -> int:
     config = Config()
     store = _store(config)
+    team = _resolve_team(store, args.league, args.team)
     engine = DecisionEngine(config)
-    recs = engine.recommend(store, args.league, args.team, args.as_of, top_n=args.top)
+    recs = engine.recommend(store, args.league, team, args.as_of, top_n=args.top)
     if not recs:
         print("no candidates (is the league backfilled and simulated?)", file=sys.stderr)
         return 1
@@ -92,7 +103,8 @@ def cmd_project(args: argparse.Namespace) -> int:
 
     config = Config()
     store = _store(config)
-    proj = Projector(config, method=args.method).project(store, args.league, args.team, args.as_of)
+    team = _resolve_team(store, args.league, args.team)
+    proj = Projector(config, method=args.method).project(store, args.league, team, args.as_of)
     if not proj.opponent_id:
         print("no active matchup for that team/date", file=sys.stderr)
         return 1
@@ -117,8 +129,9 @@ def cmd_feed(args: argparse.Namespace) -> int:
 
     config = Config()
     store = _store(config)
-    signals = SignalEngine(config).detect(store, args.league, args.team, args.as_of)
-    moves = Reconciler(config).reconcile(store, args.league, args.team, args.as_of)
+    team = _resolve_team(store, args.league, args.team)
+    signals = SignalEngine(config).detect(store, args.league, team, args.as_of)
+    moves = Reconciler(config).reconcile(store, args.league, team, args.as_of)
 
     strong = [s for s in signals if s.band == "strong"]
     shown = strong if (strong and not args.all) else signals
@@ -140,9 +153,9 @@ def cmd_feed(args: argparse.Namespace) -> int:
 
     if moves or signals:
         log = FeedLog(store)
-        m = store.matchup_for_team(args.league, args.team, args.as_of)
-        opp = (m.team_b if m.team_a == args.team else m.team_a) if m else ""
-        persp = Perspective(args.league, args.team, m.period_index if m else -1, opp)
+        m = store.matchup_for_team(args.league, team, args.as_of)
+        opp = (m.team_b if m.team_a == team else m.team_a) if m else ""
+        persp = Perspective(args.league, team, m.period_index if m else -1, opp)
         ns = log.append_signals(signals, persp)
         nm = log.append_moves(moves)
         print(
@@ -184,7 +197,8 @@ def cmd_wire(args: argparse.Namespace) -> int:
 
     config = Config()
     store = _store(config)
-    wa = WireAnalyzer(config).analyze(store, args.league, args.team, args.as_of)
+    team = _resolve_team(store, args.league, args.team)
+    wa = WireAnalyzer(config).analyze(store, args.league, team, args.as_of)
     if not wa.perspective.opponent_team_id:
         print("no active matchup for that team/date", file=sys.stderr)
         return 1

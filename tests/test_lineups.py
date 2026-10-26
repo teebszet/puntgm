@@ -152,3 +152,20 @@ def test_ingest_lineups_resolves_rookie_from_incoming_players():
     rep = ingest_lineups(s, "L", [("T1", "Y4", "SF", "P Three")], "2025-10-20")
     assert rep["stored"] == 1
     assert s.lineup_asof("L", "T1", "2025-10-20") == {"R1": "SF"}
+
+
+def test_ingest_lineups_drafted_rookie_in_both_tables_is_not_ambiguous():
+    """A 2026 draftee who has now logged games sits in player_logs AND
+    incoming_players with the same NBA id. The name index must dedupe by id:
+    duplicate rows are not ambiguity, and flagging one skipped his slot row so
+    the projector priced him at zero remaining games (found live 2026-10-26 with
+    six rookies)."""
+    from fantasy_gm.data.yahoo_import import ingest_lineups
+
+    s = _store_with_lineup()
+    s.add_incoming_players(
+        [IncomingPlayer("P2", "2026-27", "P Two", known_from="2025-06-01")])
+    rep = ingest_lineups(s, "L", [("T1", "Y5", "PF", "P Two")], "2025-10-20")
+    assert rep["ambiguous"] == []
+    assert rep["matched"] == 1 and rep["stored"] == 1
+    assert s.lineup_asof("L", "T1", "2025-10-20") == {"P2": "PF"}

@@ -115,3 +115,20 @@ def test_same_day_round_trip_is_flagged_as_a_conflict():
     recon = reconstruct({"1": ["p1", "p2", "p3"]}, txns, DRAFT)
     assert recon.conflicts
     assert "same-day round trip" in recon.conflicts[0]
+
+
+def test_resolve_team_id_accepts_the_short_suffix():
+    """The store keys teams by the full id but humans say ``t.8``; a raw short id used
+    to reach every matchup lookup and read as 'no active matchup' instead of an id
+    mismatch (found live 2026-10-26). The suffix match must be unambiguous — ``t.1``
+    must not match ``...t.10``."""
+    store = Store(":memory:")
+    store.create_league("yahoo-478.l.25733", "CCL", "2026-27", "daily-change", ["pts"],
+                        is_real=True)
+    store.add_team("yahoo-478.l.25733", "478.l.25733.t.8", "Toumani 3s Not Enough Cs")
+    store.add_team("yahoo-478.l.25733", "478.l.25733.t.10", "Jinwoo's Neat Team")
+    r = store.resolve_team_id
+    assert r("yahoo-478.l.25733", "478.l.25733.t.8") == "478.l.25733.t.8"
+    assert r("yahoo-478.l.25733", "t.8") == "478.l.25733.t.8"
+    assert r("yahoo-478.l.25733", "t.10") == "478.l.25733.t.10"
+    assert r("yahoo-478.l.25733", "t.99") is None

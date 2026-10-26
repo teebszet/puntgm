@@ -196,10 +196,20 @@ def _lineup_name_index(store) -> dict[str, list[str]]:
     from fantasy_gm.data.player_crosswalk import normalize_name
 
     index: dict[str, list[str]] = {}
+
+    def _add(name: str, pid: str) -> None:
+        # A 2026 draftee who has now logged games sits in BOTH tables — the same NBA
+        # id twice read as two candidates, flagged AMBIGUOUS, and his slot row
+        # skipped (priced at zero remaining games; found live 2026-10-26 with six
+        # rookies). Dedupe by id: duplicate rows are not ambiguity.
+        bucket = index.setdefault(normalize_name(name), [])
+        if pid not in bucket:
+            bucket.append(pid)
+
     for r in store.conn.execute("SELECT DISTINCT player_id, player_name FROM player_logs"):
-        index.setdefault(normalize_name(r["player_name"]), []).append(r["player_id"])
+        _add(r["player_name"], r["player_id"])
     for r in store.conn.execute("SELECT player_id, player_name FROM incoming_players"):
-        index.setdefault(normalize_name(r["player_name"]), []).append(r["player_id"])
+        _add(r["player_name"], r["player_id"])
     return index
 
 

@@ -107,6 +107,10 @@ def yahoo_credentialed_refresh(
 
     Returns ``(log lines, changed)``; raises when both attempts fail.
     """
+    # Callers pass either the Yahoo key (478.l.25733, the draft watcher) or the
+    # store id (yahoo-478.l.25733, the daily run); Yahoo's API only accepts the
+    # bare key (400 on the prefixed form, found live 2026-10-26).
+    league = league.removeprefix("yahoo-")
     from fantasy_gm.data.yahoo_fetch import (
         fetch_league_lineups,
         refresh_token_from_files,
@@ -153,6 +157,135 @@ def yahoo_credentialed_refresh(
         lines.append("yahoo access token refreshed from refresh_token")
         _pass()
     return lines, changed
+
+
+def run_refresh_wires(
+    store: Store,
+    log,
+    league: str,
+    cadence: dict | None = None,
+    heartbeat: dict | None = None,
+) -> dict:
+    """One pass over every refresh wire; returns {'changed', 'schedule_window_end',
+    'news_sources'}.
+
+    Shared by the draft watcher's refresher thread and the daily in-season run
+    (Tim, 2026-10-26) so there is one refresh implementation, not two. Each wire
+    is independent and degrades loudly, never fatally. ``cadence`` carries the
+    box-backfill dedup keys for callers that run more often than daily (the draft
+    watcher); ``None`` means the caller IS the daily run, so the backfill always
+    fires. ``heartbeat`` tracks the NBA wire's row count so a shape-identical
+    pass stays silent; a fresh dict per call logs one heartbeat line per run.
+    """
+    from fantasy_gm.config import Config
+    from fantasy_gm.projections import news as news_mod
+
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    heartbeat = heartbeat if heartbeat is not None else {}
+    changed = False
+    try:
+        rows = news_mod.fetch_yahoo_injuries_page(
+            save_path="data/raw_cache/yahoo_injuries_page.html"
+        )
+        r = news_mod.ingest_yahoo_injuries(store, rows, today, today=today)
+        if r.stored_designations or r.stored_events:
+            changed = True
+            extra = (
+                f"; {len(r.unresolved)} unresolved, {len(r.unmapped)} unmapped"
+                if r.unresolved or r.unmapped
+                else ""
+            )
+            log(
+                f"yahoo-web injuries: +{r.stored_designations} status, "
+                f"+{r.stored_events} event(s){extra}"
+            )
+    except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+        log(f"yahoo-web injuries wire failed: {exc}")
+    try:
+        items = news_mod.fetch_yahoo_rss(save_path="data/raw_cache/yahoo_news_rss.xml")
+        r = news_mod.ingest_yahoo_news(store, items, today)
+        if r.stored_events:
+            changed = True
+            log(f"yahoo news RSS: +{r.stored_events} item(s)")
+    except Exception as exc:  # noqa: BLE001
+        log(f"yahoo news RSS wire failed: {exc}")
+    try:
+        from fantasy_gm.config import FORWARD_SEASON
+        from fantasy_gm.data.cache import RawCache
+
+        new_events, rows, folded = nba_roster_moves(
+            store, today, RawCache(Config().cache_dir), FORWARD_SEASON
+        )
+        if new_events or folded:
+            changed = True  # a fold re-prices: the board must rebuild on it (9.11)
+        suffix = f", {folded} roster row(s) re-priced" if folded else ""
+        if heartbeat.get("rows") != rows:  # shape change (or first run): say so
+            heartbeat["rows"] = rows
+            log(f"nba playerindex wire: {rows} rows, {new_events} new move(s){suffix}")
+        elif new_events or folded:
+            log(f"nba playerindex wire: +{new_events} move(s){suffix}")
+    except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+        heartbeat["rows"] = None
+        log(f"nba playerindex wire failed: {exc}")
+    try:
+        lines, yahoo_changed = yahoo_credentialed_refresh(store, league, today)
+        for line in lines:
+            log(line)
+        if yahoo_changed:
+            changed = True
+    except FileNotFoundError:
+        log("yahoo token missing — credentialed refresh off (wires still live)")
+    except Exception as exc:  # noqa: BLE001 - 401 etc: degrade loudly, keep the board
+        log(f"yahoo credentialed refresh unavailable: {exc} — wires still live")
+    schedule_window_end = None
+    try:
+        from fantasy_gm.config import FORWARD_SEASON
+        from fantasy_gm.data.cache import RawCache
+        from fantasy_gm.data.nba_source import refresh_schedule
+
+        in_window, sched_changed, window_end = refresh_schedule(
+            store, RawCache(Config().cache_dir), FORWARD_SEASON, today
+        )
+        schedule_window_end = window_end
+        if sched_changed:
+            changed = True  # remaining-games math reads the games table
+            log(f"schedule refresh: {in_window} games in window through {window_end}")
+    except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+        log(f"espn schedule wire failed: {exc}")
+    # In-season box scores: refetch the current season's LeagueGameLog payload once
+    # per calendar day so the banked tally and every per-player rate read live data
+    # instead of last season's tail. The payload is the whole season (~26k rows), so
+    # a frequent caller dedups per day (cadence) and retries a failure at most once
+    # per hour; the daily run has no dedup -- one attempt, next run catches up.
+    if cadence is None or cadence.get("box_backfill_date") != today:
+        hour_key = time.strftime("%Y%m%d%H", time.gmtime())
+        if cadence is None or cadence.get("box_backfill_attempt") != hour_key:
+            if cadence is not None:
+                cadence["box_backfill_attempt"] = hour_key
+            try:
+                from fantasy_gm.config import FORWARD_SEASON
+                from fantasy_gm.data.cache import RawCache
+                from fantasy_gm.data.nba_source import refresh_box_scores
+
+                counts, advanced = refresh_box_scores(
+                    store, RawCache(Config().cache_dir), FORWARD_SEASON
+                )
+                if cadence is not None:
+                    cadence["box_backfill_date"] = today
+                if advanced:
+                    changed = True  # fresh logs re-price rates and the banked tally
+                    newest = store.conn.execute(
+                        "SELECT MAX(game_date) AS m FROM player_logs WHERE season = ?",
+                        (FORWARD_SEASON,),
+                    ).fetchone()["m"]
+                    log(f"box-score backfill: {counts['logs']} logs through {newest}")
+            except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
+                log(f"box-score backfill failed: {exc}")
+    return {
+        "changed": changed,
+        "schedule_window_end": schedule_window_end,
+        "news_sources": news_mod.source_age(store, today),
+    }
 
 
 def new_state(
@@ -559,115 +692,18 @@ def run_watch(
             store2.close()
 
     def _news_refresh_cycle_body(store2) -> None:
-        today = time.strftime("%Y-%m-%d", time.gmtime())
-        changed = False
-        try:
-            rows = news_mod.fetch_yahoo_injuries_page(
-                save_path="data/raw_cache/yahoo_injuries_page.html"
-            )
-            r = news_mod.ingest_yahoo_injuries(store2, rows, today, today=today)
-            if r.stored_designations or r.stored_events:
-                changed = True
-                extra = (
-                    f"; {len(r.unresolved)} unresolved, {len(r.unmapped)} unmapped"
-                    if r.unresolved or r.unmapped
-                    else ""
-                )
-                log_line(
-                    state,
-                    f"yahoo-web injuries: +{r.stored_designations} status, "
-                    f"+{r.stored_events} event(s){extra}",
-                )
-        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
-            log_line(state, f"yahoo-web injuries wire failed: {exc}")
-        try:
-            items = news_mod.fetch_yahoo_rss(save_path="data/raw_cache/yahoo_news_rss.xml")
-            r = news_mod.ingest_yahoo_news(store2, items, today)
-            if r.stored_events:
-                changed = True
-                log_line(state, f"yahoo news RSS: +{r.stored_events} item(s)")
-        except Exception as exc:  # noqa: BLE001
-            log_line(state, f"yahoo news RSS wire failed: {exc}")
-        try:
-            from fantasy_gm.config import FORWARD_SEASON
-            from fantasy_gm.data.cache import RawCache
-
-            new_events, rows, folded = nba_roster_moves(
-                store2, today, RawCache(Config().cache_dir), FORWARD_SEASON
-            )
-            if new_events or folded:
-                changed = True  # a fold re-prices: the board must rebuild on it (9.11)
-            suffix = f", {folded} roster row(s) re-priced" if folded else ""
-            if nba_heartbeat["rows"] != rows:  # shape change (or first cycle): say so
-                nba_heartbeat["rows"] = rows
-                log_line(
-                    state,
-                    f"nba playerindex wire: {rows} rows, {new_events} new move(s){suffix}",
-                )
-            elif new_events or folded:
-                log_line(state, f"nba playerindex wire: +{new_events} move(s){suffix}")
-        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
-            nba_heartbeat["rows"] = None
-            log_line(state, f"nba playerindex wire failed: {exc}")
-        try:
-            lines, yahoo_changed = yahoo_credentialed_refresh(store2, league, today)
-            for line in lines:
-                log_line(state, line)
-            if yahoo_changed:
-                changed = True
-        except FileNotFoundError:
-            log_line(state, "yahoo token missing — credentialed refresh off (wires still live)")
-        except Exception as exc:  # noqa: BLE001 - 401 etc: degrade loudly, keep the board
-            log_line(state, f"yahoo credentialed refresh unavailable: {exc} — wires still live")
-        try:
-            from fantasy_gm.config import FORWARD_SEASON
-            from fantasy_gm.data.cache import RawCache
-            from fantasy_gm.data.nba_source import refresh_schedule
-
-            in_window, sched_changed, window_end = refresh_schedule(
-                store2, RawCache(Config().cache_dir), FORWARD_SEASON, today
-            )
-            state["schedule_window_end"] = window_end
-            if sched_changed:
-                changed = True  # remaining-games math reads the games table
-                log_line(
-                    state,
-                    f"schedule refresh: {in_window} games in window through {window_end}",
-                )
-        except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
-            log_line(state, f"espn schedule wire failed: {exc}")
-        # In-season box scores: refetch the current season's LeagueGameLog payload once
-        # per calendar day so the banked tally and every per-player rate read live data
-        # instead of last season's tail. The payload is the whole season (~26k rows), so
-        # a failed attempt is retried at most once per hour, not once per cycle.
-        if state.get("box_backfill_date") != today:
-            hour_key = time.strftime("%Y%m%d%H", time.gmtime())
-            if state.get("box_backfill_attempt") != hour_key:
-                state["box_backfill_attempt"] = hour_key
-                try:
-                    from fantasy_gm.config import FORWARD_SEASON
-                    from fantasy_gm.data.cache import RawCache
-                    from fantasy_gm.data.nba_source import refresh_box_scores
-
-                    counts, advanced = refresh_box_scores(
-                        store2, RawCache(Config().cache_dir), FORWARD_SEASON
-                    )
-                    state["box_backfill_date"] = today
-                    if advanced:
-                        changed = True  # fresh logs re-price rates and the banked tally
-                        newest = store2.conn.execute(
-                            "SELECT MAX(game_date) AS m FROM player_logs WHERE season = ?",
-                            (FORWARD_SEASON,),
-                        ).fetchone()["m"]
-                        log_line(
-                            state,
-                            f"box-score backfill: {counts['logs']} logs through {newest}",
-                        )
-                except Exception as exc:  # noqa: BLE001 - a dead wire is visible, never fatal
-                    log_line(state, f"box-score backfill failed: {exc}")
-        state["news_sources"] = news_mod.source_age(store2, today)
-        if not changed:
+        result = run_refresh_wires(
+            store2,
+            lambda text: log_line(state, text),
+            league,
+            cadence=state,
+            heartbeat=nba_heartbeat,
+        )
+        state["schedule_window_end"] = result["schedule_window_end"]
+        state["news_sources"] = result["news_sources"]
+        if not result["changed"]:
             return
+        today = time.strftime("%Y-%m-%d", time.gmtime())
         try:
             new_gm = build_gm(store2, "2025-26", today)
         except Exception as exc:  # noqa: BLE001

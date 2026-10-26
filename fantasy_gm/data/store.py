@@ -470,6 +470,24 @@ class Store:
             )
         ]
 
+    def resolve_team_id(self, league_id: str, team_id: str) -> str | None:
+        """Accept either the stored full id (``yahoo-478.l.25733.t.8``) or the short
+        suffix (``t.8``) and return the stored form, or None when neither matches.
+
+        The store keys teams by the full id, but humans and the CLI naturally say
+        ``t.8`` — a raw short id reached every matchup/team lookup and came back
+        "no active matchup", which read as missing projections rather than an id
+        mismatch (found live, 2026-10-26).
+        """
+        ids = self.team_ids(league_id)
+        if team_id in ids:
+            return team_id
+        # Suffix match rather than prefix reconstruction: the stored league key is
+        # ``yahoo-478.l.25733`` but the stored team ids are ``478.l.25733.t.8`` —
+        # they do not share a prefix, so ``league_id + "." + team_id`` never matches.
+        matches = [tid for tid in ids if tid.endswith("." + team_id)]
+        return matches[0] if len(matches) == 1 else None
+
     def league_meta(self, league_id: str) -> sqlite3.Row | None:
         return self.conn.execute(
             "SELECT * FROM leagues WHERE league_id = ?", (league_id,)
