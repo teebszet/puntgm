@@ -90,6 +90,27 @@ def nba_roster_moves(store, today: str, cache, forward_season: str) -> tuple[int
     return new, len(entries), fold["changed_players"]
 
 
+def _remaining_lineup_dates(
+    store, league_id: str, today: str, max_days: int = 10
+) -> list[str]:
+    """Dates to read scheduled lineups for: today through the active matchup's end.
+
+    The matchup week is league-wide, so the active matchup's period works for every
+    team. ``max_days`` caps the fetch count if a matchup period is ever degenerate.
+    """
+    from datetime import date, timedelta
+
+    matchup = store.active_matchup(league_id, today)
+    if matchup is None:
+        return [today]
+    d, out = date.fromisoformat(today), []
+    end = date.fromisoformat(matchup.period_end)
+    while d <= end and len(out) < max_days:
+        out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out or [today]
+
+
 def yahoo_credentialed_refresh(
     store, league: str, today: str
 ) -> tuple[list[str], bool]:
@@ -133,16 +154,28 @@ def yahoo_credentialed_refresh(
             lines.append(f"status: {name} {old or 'none'} -> {new or 'none'}")
         if ref.changed:
             changed = True
-        slots = fetch_league_lineups(
-            league, token, save_path="data/raw_cache/yahoo_lineups_live.json"
-        )
-        report = ingest_lineups(store, f"yahoo-{league}", slots, today)
-        if report["stored"]:
-            lines.append(
-                f"yahoo lineups: +{report['stored']} slot row(s) stored "
-                f"({report['matched']} players matched)"
+        # One date-scoped read per remaining date of the active matchup week: Yahoo
+        # serves each date's SCHEDULED lineup (roster;date=...), which is what
+        # per-day games-remaining pricing needs — a manager who re-slots daily to
+        # maximise games has future days' slots already set, and they are invisible
+        # in today's read. Each read stores with known_from = its covered date, so
+        # the fold takes effect on the right day (no active matchup -> today only,
+        # the pre-per-date behaviour).
+        last_report = None
+        for day in _remaining_lineup_dates(store, f"yahoo-{league}", today):
+            slots = fetch_league_lineups(
+                league, token, save_path=f"data/raw_cache/yahoo_lineups_live_{day}.json",
+                date=day,
             )
-            changed = True
+            report = ingest_lineups(store, f"yahoo-{league}", slots, day)
+            last_report = report
+            if report["stored"]:
+                lines.append(
+                    f"yahoo lineups {day}: {report['stored']} slot row(s) changed "
+                    f"({report['matched']} players matched)"
+                )
+                changed = True
+        report = last_report
         for pid, name in report["unmatched"]:
             lines.append(f"yahoo lineups: UNMATCHED {name} (yahoo {pid}) — priced at zero")
         for pid, name, hits in report["ambiguous"]:

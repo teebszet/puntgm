@@ -17,6 +17,7 @@ import json
 import sqlite3
 import statistics
 from collections.abc import Iterable
+from datetime import date, timedelta
 from pathlib import Path
 
 from fantasy_gm.config import FORWARD_SEASON, PERCENTAGE_CATEGORIES
@@ -34,6 +35,11 @@ from fantasy_gm.models import (
     Transaction,
     UsageRole,
 )
+
+# Platform slots that accrue nothing until an explicit move slates the player:
+# bench and IL (same set Projector.INACTIVE_SLOTS prices; kept local so the data
+# layer does not import the engine).
+NON_ACCRUING_SLOTS = frozenset({"BN", "IL", "IR", "NA", "INACT"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS games (
@@ -423,15 +429,40 @@ class Store:
     def upsert_lineups(
         self, league_id: str, rows: Iterable[tuple[str, str, str]], known_from: str
     ) -> int:
-        """Store one platform lineup read as dated slot rows; returns rows actually added."""
-        cur = self.conn.executemany(
-            """INSERT OR IGNORE INTO lineup_slots(
+        """Store one platform lineup read as a dated slot snapshot; returns rows changed.
+
+        A read owns its ``known_from`` date per team: the snapshot is replaced
+        wholesale (slot rows absent from the new payload are deleted, changed slots
+        updated), so a lineup edited between two reads of the same date cannot stay
+        stale in the fold. Idempotent: re-storing an identical read changes nothing
+        and returns 0, which keeps the refresh wires quiet on a shape-identical pass.
+        """
+        rows = list(rows)
+        old = {
+            (r["team_id"], r["player_id"]): r["slot"]
+            for r in self.conn.execute(
+                """SELECT team_id, player_id, slot FROM lineup_slots
+                   WHERE league_id = ? AND known_from = ?""",
+                (league_id, known_from),
+            )
+        }
+        new = {(t, p): slot for t, p, slot in rows}
+        changed = sum(1 for k, v in new.items() if old.get(k) != v)
+        changed += sum(1 for k in old if k not in new)
+        for team_id in {t for t, _p, _s in rows}:
+            self.conn.execute(
+                """DELETE FROM lineup_slots
+                   WHERE league_id = ? AND known_from = ? AND team_id = ?""",
+                (league_id, known_from, team_id),
+            )
+        self.conn.executemany(
+            """INSERT INTO lineup_slots(
                    league_id, team_id, player_id, slot, known_from)
                VALUES (?,?,?,?,?)""",
             [(league_id, t, p, slot, known_from) for t, p, slot in rows],
         )
         self.conn.commit()
-        return cur.rowcount or 0
+        return changed
 
     def lineup_asof(self, league_id: str, team_id: str, as_of: str) -> dict[str, str]:
         """{player_id: slot} for a team's most recent lineup read on/before ``as_of``.
@@ -446,6 +477,71 @@ class Store:
             (league_id, team_id, as_of),
         ).fetchall()
         return {r["player_id"]: r["slot"] for r in rows}
+
+    def scheduled_active_games(
+        self, league_id: str, team_id: str, as_of: str, period_end: str
+    ) -> dict[str, int] | None:
+        """Per-player remaining games priced off per-date scheduled lineups.
+
+        Yahoo's own games-remaining counter counts, for each remaining date of the
+        matchup week, the players in that date's *starting* slots whose NBA team
+        plays that date — bench and IL never count (verified live 2026-10-26: the
+        per-day sum over Yahoo's own scheduled-lineup reads reproduced Yahoo's
+        40/41 exactly, where the current-lineup-for-the-whole-week model gave
+        30/33 and a bench-inclusive model gave 40/42). A manager who re-slots daily
+        to maximise games must have each player priced on exactly the days he is
+        scheduled to be slotted — not the whole window, and not zero.
+
+        Lineup coverage per date comes from date-scoped lineup reads stored with
+        ``known_from = covered date``; a date's effective lineup is the
+        ``lineup_asof`` fold on that date (a scheduled change takes effect on its
+        own date; where nothing is scheduled the previous lineup carries forward).
+
+        Returns ``{player_id: remaining games}`` over the team's rostered players,
+        or ``None`` when any remaining date has no lineup read covering it exactly
+        — callers then fall back to the current-lineup behaviour rather than
+        silently mis-pricing the days in between.
+        """
+        dates: list[str] = []
+        d = date.fromisoformat(as_of)
+        end = date.fromisoformat(period_end)
+        while d <= end:
+            dates.append(d.isoformat())
+            d += timedelta(days=1)
+        reads = {
+            r["known_from"]
+            for r in self.conn.execute(
+                "SELECT DISTINCT known_from FROM lineup_slots WHERE league_id = ?",
+                (league_id,),
+            )
+        }
+        if not dates or any(d not in reads for d in dates):
+            return None
+        # Remaining games per date, same played-ness rule as remaining_games_for_team:
+        # a game on the as-of day itself counts only while it is still unscored.
+        teams_by_date: dict[str, set[str]] = {}
+        for r in self.conn.execute(
+            """SELECT game_date, home_team, away_team FROM games
+               WHERE game_date >= ? AND game_date <= ?
+                 AND (game_date > ? OR (home_pts IS NULL AND away_pts IS NULL))""",
+            (as_of, period_end, as_of),
+        ):
+            teams_by_date.setdefault(r["game_date"], set()).update(
+                (r["home_team"], r["away_team"])
+            )
+        out: dict[str, int] = {}
+        team_cache: dict[str, str | None] = {}
+        for day in dates:
+            playing = teams_by_date.get(day, set())
+            for pid, slot in self.lineup_asof(league_id, team_id, day).items():
+                if slot in NON_ACCRUING_SLOTS:
+                    continue
+                if pid not in team_cache:
+                    team_cache[pid] = self.player_team(pid, as_of)
+                nba_team = team_cache[pid]
+                if nba_team and nba_team in playing:
+                    out[pid] = out.get(pid, 0) + 1
+        return out
 
     def rosters_asof(self, league_id: str, as_of: str) -> dict[str, list[str]]:
         """Rosters per team as of ``as_of``.

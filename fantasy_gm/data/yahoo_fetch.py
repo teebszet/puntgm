@@ -437,7 +437,8 @@ def parse_lineup_payload(payload: dict[str, Any]) -> list[tuple[str, str, str, s
 
 
 def fetch_league_lineups(
-    league_key: str, access_token: str, save_path: str | Path | None = None
+    league_key: str, access_token: str, save_path: str | Path | None = None,
+    date: str | None = None,
 ) -> list[tuple[str, str, str, str]]:
     """Live fetch of every team's scheduled lineup in one request.
 
@@ -445,10 +446,19 @@ def fetch_league_lineups(
     player's ``selected_position`` for the covered date — the platform's scheduled
     lineup. Rows are ``(team_key, player_id, slot, name)``; the raw payload is written
     to ``save_path`` when given so any stored row is auditable offline.
+
+    ``date`` scopes the read to that date's scheduled lineup via Yahoo's
+    ``roster;date=YYYY-MM-DD`` filter (verified live 2026-10-26 at league scope):
+    the payload then reflects every scheduled lineup change the manager has set
+    for that date, which is what per-day games-remaining pricing needs. Without
+    it Yahoo serves the lineup for its covered date (today).
     """
     import requests
 
-    url = f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/teams/roster/players"
+    roster = f"teams/roster;date={date}/players" if date else "teams/roster/players"
+    url = (
+        f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/{roster}"
+    )
     resp = requests.get(url, params={"format": "json"},
                         headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
     if resp.status_code == 401:

@@ -61,53 +61,73 @@ def send_to_channel(channel: str, text: str) -> bool:
 
 
 def games_remaining(store, league_id: str, team_id: str, as_of: str
-                    ) -> tuple[int, int, int] | None:
+                    ) -> tuple[int, int, bool] | None:
     """Yahoo-style games remaining for one team over its current matchup week.
 
-    Yahoo's matchup counter sums remaining scheduled games over every rostered
-    player NOT on IL — bench included (IL never accrues, bench can be slotted
-    any day by a lineup change). Returns (starters, bench, il) game counts, or
-    None when the team has no active matchup. Rosters/slots read post-refresh,
-    so a same-day add/drop or slot move is priced the day the wire sees it.
+    Yahoo's matchup counter counts, per remaining date, the players slotted into
+    starting slots that date whose NBA team plays that date — bench and IL never
+    count (verified live 2026-10-26: the per-day sum over Yahoo's own scheduled
+    lineups reproduced Yahoo's 40/41 exactly). A manager who re-slots daily to
+    maximise games earns those per-day slots, so the count prices each date's
+    scheduled lineup, not the current one held for the whole week.
+
+    Returns ``(mine_total, opp_total, per_day)`` — ``per_day`` True when priced
+    off per-date scheduled-lineup reads, False for the current-lineup fallback —
+    or ``None`` when the team has no active matchup.
     """
     matchup = store.matchup_for_team(league_id, team_id, as_of)
     if matchup is None:
         return None
-    rosters = store.rosters_asof(league_id, as_of)
-    inactive = {"IL", "IR", "NA", "INACT"}
-    out: dict[str, tuple[int, int, int]] = {}
-    for tid in (team_id, matchup.team_b if matchup.team_a == team_id else matchup.team_a):
-        slots = store.lineup_asof(league_id, tid, as_of)
-        starters = bench = il = 0
-        for pid in rosters.get(tid, []):
-            slot = slots.get(pid, "BN")  # unslotted roster rows price like bench
-            nba_team = store.player_team(pid, as_of)
-            rg = store.remaining_games_for_team(
-                nba_team, as_of, matchup.period_end) if nba_team else 0
-            if slot in inactive:
-                il += rg
-            elif slot == "BN":
-                bench += rg
-            else:
-                starters += rg
-        out[tid] = (starters, bench, il)
     opp = matchup.team_b if matchup.team_a == team_id else matchup.team_a
-    return out[team_id], out[opp]
+    totals: dict[str, int] = {}
+    per_day = True
+    for tid in (team_id, opp):
+        counts = store.scheduled_active_games(
+            league_id, tid, as_of, matchup.period_end)
+        if counts is None:
+            per_day = False
+            counts = _legacy_starters(store, league_id, tid, as_of, matchup.period_end)
+        totals[tid] = sum(counts.values())
+    return totals[team_id], totals[opp], per_day
+
+
+def _legacy_starters(store, league_id: str, team_id: str, as_of: str,
+                     period_end: str) -> dict[str, int]:
+    """Fallback games count: current-lineup starters over the whole window.
+
+    Used only when the store lacks per-date lineup reads for some remaining date.
+    Bench and IL never count (a bench player accrues nothing until he is slotted),
+    but a scheduled change inside the week is invisible here — the digest says so.
+    """
+    from fantasy_gm.data.store import NON_ACCRUING_SLOTS
+
+    out: dict[str, int] = {}
+    for pid, slot in store.lineup_asof(league_id, team_id, as_of).items():
+        if slot in NON_ACCRUING_SLOTS:
+            continue
+        nba_team = store.player_team(pid, as_of)
+        if not nba_team:
+            continue
+        rg = store.remaining_games_for_team(nba_team, as_of, period_end)
+        if rg:
+            out[pid] = rg
+    return out
 
 
 def render_games_block(gr, my_name: str, opp_name: str) -> list[str]:
     """Digest block for the games-remaining counts, Yahoo-comparable."""
     if gr is None:
         return []
-    (ms, mb, mil), (os_, ob, oil) = gr
+    mine, opp, per_day = gr
+    basis = ("per-day scheduled starters — bench and IL never count"
+             if per_day else
+             "current-lineup starters only — per-date lineup reads missing, so a "
+             "mid-week re-slot is not priced")
     return [
         "",
-        "**Games remaining this week** (Yahoo-style: every rostered player not on IL — "
-        "bench included; projections price scheduled starters only):",
-        f"- {my_name}: **{ms + mb}** ({ms} starters + {mb} bench"
-        + (f"; {mil} on IL don't count" if mil else "") + ")",
-        f"- {opp_name}: **{os_ + ob}** ({os_} starters + {ob} bench"
-        + (f"; {oil} on IL don't count" if oil else "") + ")",
+        f"**Games remaining this week** ({basis}):",
+        f"- {my_name}: **{mine}**",
+        f"- {opp_name}: **{opp}**",
     ]
 
 

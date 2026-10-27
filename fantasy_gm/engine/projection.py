@@ -80,22 +80,36 @@ class Projector:
         # accrue remaining games — a bench or IL player accumulates nothing until he is
         # actually slotted (daily-change league; the banked tally still counts everyone
         # who already played). No lineup knowledge -> fall back to the full roster.
-        mine_active = self._active_ids(store, league_id, team_id, as_of,
-                                       state.rosters.get(team_id, []))
-        opp_active = self._active_ids(store, league_id, opponent, as_of,
-                                      state.rosters.get(opponent, []))
+        # Per-date scheduled-lineup coverage (date-scoped reads stored with
+        # known_from = covered date) prices each player on exactly the days he is
+        # scheduled to be slotted — Yahoo's own games-remaining semantics, and what
+        # a daily re-slotted roster actually earns (verified live 2026-10-26). Any
+        # missing date falls back to the current-lineup-for-the-whole-window model.
+        mine_per_day = store.scheduled_active_games(
+            league_id, team_id, as_of, period_end)
+        opp_per_day = store.scheduled_active_games(
+            league_id, opponent, as_of, period_end)
+        mine_active = (None if mine_per_day is not None
+                       else self._active_ids(store, league_id, team_id, as_of,
+                                             state.rosters.get(team_id, [])))
+        opp_active = (None if opp_per_day is not None
+                      else self._active_ids(store, league_id, opponent, as_of,
+                                            state.rosters.get(opponent, [])))
         mine = self.team_projection(
             store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
-            as_of, ps, period_end, categories, season, active_ids=mine_active)
+            as_of, ps, period_end, categories, season, active_ids=mine_active,
+            per_day_games=mine_per_day)
         opp = self.team_projection(
             store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
-            as_of, ps, period_end, categories, season, active_ids=opp_active)
+            as_of, ps, period_end, categories, season, active_ids=opp_active,
+            per_day_games=opp_per_day)
 
         win_probs = None
         if self.method == "bootstrap":
             win_probs = self._bootstrap_winprobs(
                 store, state.rosters.get(team_id, []), state.rosters.get(opponent, []),
-                as_of, ps, period_end, my_active=mine_active, op_active=opp_active)
+                as_of, ps, period_end, my_active=mine_active, op_active=opp_active,
+                my_per_day=mine_per_day, op_per_day=opp_per_day)
         return self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories, win_probs)
 
@@ -141,7 +155,8 @@ class Projector:
                 if slot not in Projector.INACTIVE_SLOTS and pid in on_roster]
 
     def _bootstrap_winprobs(self, store, my_roster, opp_roster, as_of, period_start,
-                            period_end, my_active=None, op_active=None) -> dict[str, float]:
+                            period_end, my_active=None, op_active=None,
+                            my_per_day=None, op_per_day=None) -> dict[str, float]:
         """Per-category win prob by Monte-Carlo: resample each player's recent real per-game
         lines over their remaining games (whole lines, so within-game category structure is
         preserved) and compare team totals. Windowed to the projector's recent-games window."""
@@ -153,18 +168,22 @@ class Projector:
                             for k in PERCENTAGE_CATEGORIES[c]})
         window = self.config.recent_games_window
 
-        def _side(roster, active):
+        def _side(roster, active, per_day=None):
             bt = store.category_totals(roster, period_start, as_of, counting + comp_keys)
             banked = {k: bt.get(k, 0.0) for k in counting + comp_keys}
             draws = []
-            for pid in (active if active is not None else roster):
+            for pid in (per_day if per_day is not None
+                        else (active if active is not None else roster)):
                 avail = store.availability_asof(pid, as_of)
                 if avail and avail.status == "OUT":
                     continue
-                nba_team = store.player_team(pid, as_of)
-                if not nba_team:
-                    continue
-                rg = store.remaining_games_for_team(nba_team, as_of, period_end)
+                if per_day is not None:
+                    rg = per_day.get(pid, 0)
+                else:
+                    nba_team = store.player_team(pid, as_of)
+                    if not nba_team:
+                        continue
+                    rg = store.remaining_games_for_team(nba_team, as_of, period_end)
                 if rg == 0:
                     continue
                 lines = [lg.stats for lg in store.player_logs_asof(as_of, player_id=pid)][-window:]
@@ -172,8 +191,8 @@ class Projector:
                     draws.append((rg, lines))
             return banked, draws
 
-        my_banked, my_draws = _side(my_roster, my_active)
-        op_banked, op_draws = _side(opp_roster, op_active)
+        my_banked, my_draws = _side(my_roster, my_active, my_per_day)
+        op_banked, op_draws = _side(opp_roster, op_active, op_per_day)
         rng = random.Random(self.seed)
         keys = counting + comp_keys
         wins = {c: 0.0 for c in cats}
@@ -244,7 +263,8 @@ class Projector:
 
     def team_projection(
         self, store, tally: dict, roster_ids: list[str], as_of, period_start, period_end,
-        categories, season: str | None = None, active_ids: list[str] | None = None
+        categories, season: str | None = None, active_ids: list[str] | None = None,
+        per_day_games: dict[str, int] | None = None,
     ) -> dict[str, tuple[float, float]]:
         """Return {cat: (projected_total, projected_std)} for a roster over the period.
         Counting cats: banked tally + Σ(remaining games × expected/g), variance Σ rg·σ².
@@ -254,8 +274,16 @@ class Projector:
 
         ``active_ids`` restricts who accrues remaining games (the platform's scheduled
         lineup: BN/IL accrue nothing); the banked tally is always over ``roster_ids``.
-        None prices every rostered player, the pre-lineup behaviour."""
-        contributing = active_ids if active_ids is not None else roster_ids
+        None prices every rostered player, the pre-lineup behaviour.
+
+        ``per_day_games`` (when the store has per-date scheduled-lineup coverage)
+        supersedes ``active_ids``: it carries each player's remaining games counted
+        day by day off the scheduled lineups — a daily re-slotted roster earns
+        exactly those games, not his team's whole remaining schedule. Games come
+        pre-scaled to the days he is slotted, so the participation rescale below
+        stays off, exactly as for a scheduled lineup."""
+        contributing = roster_ids if per_day_games is not None else (
+            active_ids if active_ids is not None else roster_ids)
         counting = [c for c in categories if c not in PERCENTAGE_CATEGORIES]
         pct = [c for c in categories if c in PERCENTAGE_CATEGORIES]
         comp_keys = sorted({k for c in pct for k in PERCENTAGE_CATEGORIES[c]})
@@ -273,10 +301,13 @@ class Projector:
             if avail and avail.status == "OUT":
                 continue  # D3: OUT contributes nothing to remaining games
             scale = 0.5 if (avail and avail.status == "QUESTIONABLE") else 1.0
-            nba_team = store.player_team(pid, as_of)
-            if nba_team is None:
-                continue
-            rg = store.remaining_games_for_team(nba_team, as_of, period_end)
+            if per_day_games is not None:
+                rg = per_day_games.get(pid, 0)
+            else:
+                nba_team = store.player_team(pid, as_of)
+                if nba_team is None:
+                    continue
+                rg = store.remaining_games_for_team(nba_team, as_of, period_end)
             if rg == 0:
                 continue
             # A13: a *scheduled* team game is not a *played* player game. Measured mean
@@ -287,7 +318,7 @@ class Projector:
             # DNPs — Siakam and Dončić sat their teams' last five 2025-26 games (rest)
             # and would project at zero while slotted. Health still scales below.
             q = 1.0
-            if self.participation and active_ids is None:
+            if self.participation and active_ids is None and per_day_games is None:
                 measured = store.participation_rate(
                     pid, as_of, window=self.config.participation_window)
                 if measured is not None:
