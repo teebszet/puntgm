@@ -493,9 +493,14 @@ class Store:
         scheduled to be slotted — not the whole window, and not zero.
 
         Lineup coverage per date comes from date-scoped lineup reads stored with
-        ``known_from = covered date``; a date's effective lineup is the
-        ``lineup_asof`` fold on that date (a scheduled change takes effect on its
-        own date; where nothing is scheduled the previous lineup carries forward).
+        ``known_from = covered date``. A dated read is a FULL per-team snapshot, so a
+        date's lineup is its covering read priced directly — a per-player fold cannot
+        do this: it is keyed by player, so when a player is traded away his last row
+        for the old team (an active slot) is never overwritten and he prices into the
+        old team forever (live 2026-10-27: two t.12 -> t.9 trades read +5 phantom
+        games). Absence from the covering read is exactly the signal a fold misses.
+        The fold is only a fallback for a date whose read covered other teams but not
+        this one (a hand-run single-team probe).
 
         Returns ``{player_id: remaining games}`` over the team's rostered players,
         or ``None`` when any remaining date has no lineup read covering it exactly
@@ -533,7 +538,17 @@ class Store:
         team_cache: dict[str, str | None] = {}
         for day in dates:
             playing = teams_by_date.get(day, set())
-            for pid, slot in self.lineup_asof(league_id, team_id, day).items():
+            # Price the covering dated read directly (see docstring): a fold would
+            # resurrect traded-away players from their last rows for this team.
+            day_rows = self.conn.execute(
+                """SELECT player_id, slot FROM lineup_slots
+                   WHERE league_id = ? AND team_id = ? AND known_from = ?""",
+                (league_id, team_id, day),
+            ).fetchall()
+            day_lineup = ({r["player_id"]: r["slot"] for r in day_rows}
+                          if day_rows else
+                          self.lineup_asof(league_id, team_id, day))
+            for pid, slot in day_lineup.items():
                 if slot in NON_ACCRUING_SLOTS:
                     continue
                 if pid not in team_cache:
@@ -704,8 +719,9 @@ class Store:
         tally: dict[str, dict[str, float]] = {}
         for row in live:
             for tid in (row["team_a"], row["team_b"]):
-                tally[tid] = self._team_category_tally(
-                    rosters.get(tid, []), row["period_start"], as_of, categories
+                tally[tid] = self.banked_tally_for_team(
+                    league_id, tid, row["period_start"], as_of, categories,
+                    fallback_ids=rosters.get(tid, []),
                 )
         return LeagueState(
             league_id=league_id,
@@ -717,6 +733,114 @@ class Store:
             active_matchup=active,
             category_tally=tally,
         )
+
+    def _tally_stats_rows(self, rows, categories: list[str]) -> dict[str, float]:
+        """Accumulate player_logs rows into a per-category tally: counting cats summed;
+        percentage cats (A8) volume-weighted (Σmakes / Σattempts), never a sum of
+        per-game percentages."""
+        tally = {c: 0.0 for c in categories}
+        # component accumulators for percentage categories: {cat: [makes, attempts]}
+        comps = {c: [0.0, 0.0] for c in categories if c in PERCENTAGE_CATEGORIES}
+        for r in rows:
+            stats = json.loads(r["stats_json"])
+            for c in categories:
+                if c in PERCENTAGE_CATEGORIES:
+                    mk, at = PERCENTAGE_CATEGORIES[c]
+                    comps[c][0] += float(stats.get(mk, 0.0))
+                    comps[c][1] += float(stats.get(at, 0.0))
+                else:
+                    tally[c] += float(stats.get(c, 0.0))
+        for c, (makes, attempts) in comps.items():
+            tally[c] = (makes / attempts) if attempts > 0 else 0.0
+        return tally
+
+    def _banked_team_logs(self, league_id: str, team_id: str, period_start: str,
+                          as_of: str, fallback_ids: list[str] | None = None) -> list:
+        """player_logs rows in [period_start, as_of] the platform credits this fantasy
+        team: each game is attributed to the team whose LATEST dated lineup read
+        on/before the game date lists the player, and only when that read has him in
+        an accruing slot. Completed stats credit the fantasy team he was on and the
+        slot he occupied at game time — not the current roster over the whole window
+        (live 2026-10-27: a player added after Monday read +21 phantom banked pts for
+        the adder while a dropped player's Monday line vanished; roster-wide
+        whole-window sums did both, and bench players' Monday lines would count too).
+
+        A game date with no read on/before it falls back to ``fallback_ids`` membership
+        (the pre-attribution roster-wide behaviour) — replays of logged seasons have no
+        dated reads and behave exactly as before.
+        """
+        reads = [r["known_from"] for r in self.conn.execute(
+            """SELECT DISTINCT known_from FROM lineup_slots
+               WHERE league_id = ? AND known_from <= ? ORDER BY known_from""",
+            (league_id, as_of),
+        )]
+        out: list = []
+        if not reads:
+            ids = set(fallback_ids or [])
+            if not ids:
+                return out
+            for r in self.conn.execute(
+                """SELECT player_id, game_date, stats_json FROM player_logs
+                   WHERE game_date >= ? AND game_date <= ? ORDER BY game_date""",
+                (period_start, as_of),
+            ):
+                if r["player_id"] in ids:
+                    out.append(r)
+            return out
+        # Per read: {team_id: {player_id: slot}} — dated reads are full-league snapshots.
+        read_teams: dict[str, dict[str, dict[str, str]]] = {}
+        for rd in reads:
+            by_team: dict[str, dict[str, str]] = {}
+            for r in self.conn.execute(
+                """SELECT team_id, player_id, slot FROM lineup_slots
+                   WHERE league_id = ? AND known_from = ?""",
+                (league_id, rd),
+            ):
+                by_team.setdefault(r["team_id"], {})[r["player_id"]] = r["slot"]
+            read_teams[rd] = by_team
+        idx = 0
+        for r in self.conn.execute(
+            """SELECT player_id, game_date, stats_json FROM player_logs
+               WHERE game_date >= ? AND game_date <= ? ORDER BY game_date""",
+            (period_start, as_of),
+        ):
+            while idx + 1 < len(reads) and reads[idx + 1] <= r["game_date"]:
+                idx += 1
+            rd = reads[idx] if reads[idx] <= r["game_date"] else None
+            if rd is None:
+                if r["player_id"] in set(fallback_ids or []):
+                    out.append(r)
+                continue
+            slot = read_teams[rd].get(team_id, {}).get(r["player_id"])
+            if slot is not None and slot not in NON_ACCRUING_SLOTS:
+                out.append(r)
+        return out
+
+    def banked_tally_for_team(
+        self, league_id: str, team_id: str, period_start: str, as_of: str,
+        categories: list[str], fallback_ids: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Rate-form banked tally (percentage cats as Σmakes/Σattempts) with game-time
+        attribution — see :meth:`_banked_team_logs`."""
+        return self._tally_stats_rows(
+            self._banked_team_logs(league_id, team_id, period_start, as_of, fallback_ids),
+            categories,
+        )
+
+    def banked_totals_for_team(
+        self, league_id: str, team_id: str, period_start: str, as_of: str,
+        categories: list[str], fallback_ids: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Sum-form banked totals (percentage-cat components stay makes and attempts)
+        with the same game-time attribution — the form the projector's remaining-games
+        pricing needs. See :meth:`_banked_team_logs`."""
+        out = {c: 0.0 for c in categories}
+        for r in self._banked_team_logs(league_id, team_id, period_start, as_of,
+                                        fallback_ids):
+            stats = json.loads(r["stats_json"])
+            for c in categories:
+                out[c] += float(stats.get(c, 0.0))
+        return out
 
     def _team_category_tally(
         self, player_ids: list[str], period_start: str, as_of: str, categories: list[str]

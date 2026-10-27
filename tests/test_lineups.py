@@ -87,6 +87,79 @@ def test_rosters_asof_falls_back_to_events_without_a_read():
     assert s.rosters_asof("L", "2025-10-23") == {"T0": ["P0"]}
 
 
+def test_scheduled_active_games_does_not_resurrect_traded_player():
+    """A dated read is a FULL per-team snapshot: a player traded away must vanish from
+    his old team's per-day pricing, not ride his last slot row forever (live 2026-10-27:
+    two t.12 -> t.9 trades read +5 phantom games — the per-player fold cannot see an
+    absence from the covering read)."""
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    for t in ("T0", "T1", "T2"):
+        s.add_team("L", t, t)
+    s.add_matchup(Matchup("L", 0, PERIOD[0], PERIOD[1], "T0", "T1"))
+    # NBA team X plays twice inside the remaining window.
+    s.upsert_games([Game("g1", "2026-27", "2025-10-23", "X", "Y"),
+                    Game("g2", "2026-27", "2025-10-25", "Y", "X")])
+    line = {"pts": 10.0, "reb": 5.0, "ast": 3.0, "stl": 1.0, "blk": 1.0, "fg3m": 1.0,
+            "tov": 2.0, "fgm": 4.0, "fga": 9.0, "ftm": 2.0, "fta": 3.0}
+    s.upsert_player_logs([PlayerGameLog("g0", SEASON, "2025-10-15", "P9", "P9", "X", line)])
+    # 10-21 read: P9 starts for T1. 10-23 read (post-trade): P9 is on T2 and T1's
+    # snapshot no longer lists him; dated reads cover every remaining date.
+    s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P9", "Util")], "2025-10-21")
+    s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P3", "BN"), ("T2", "P9", "Util")],
+                     "2025-10-23")
+    for day in ("2025-10-24", "2025-10-25", "2025-10-26"):
+        s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P3", "BN"),
+                               ("T2", "P9", "Util")], day)
+    old_counts = s.scheduled_active_games("L", "T1", "2025-10-23", "2025-10-26")
+    assert old_counts is not None and "P9" not in old_counts  # a fold would price 2
+    new_counts = s.scheduled_active_games("L", "T2", "2025-10-23", "2025-10-26")
+    assert new_counts is not None and new_counts["P9"] == 2
+
+
+def test_banked_tally_credits_game_time_team_and_slot():
+    """Completed stats credit the fantasy team and slot the player had AT GAME TIME:
+    a player traded from T0 to T1 stops accruing for T0 on the trade date, a benched
+    player accrues nothing while benched, and a player added after the game does not
+    import his old line (live 2026-10-27: a same-day add read +21 phantom banked pts)."""
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts", "fg_pct"])
+    for t in ("T0", "T1"):
+        s.add_team("L", t, t)
+    line = {"pts": 10.0, "fgm": 4.0, "fga": 9.0}
+    s.upsert_player_logs([PlayerGameLog("g1", SEASON, "2025-10-22", "P9", "P9", "X", line),
+                          PlayerGameLog("g2", SEASON, "2025-10-23", "P9", "P9", "X", line),
+                          PlayerGameLog("g3", SEASON, "2025-10-24", "P10", "P10", "X", line),
+                          PlayerGameLog("g4", SEASON, "2025-10-25", "P10", "P10", "X", line)])
+    # 10-21: P9 starts for T0. 10-23: P9 traded to T1 (starts); P10 on T1's bench.
+    # 10-25: P10 slotted (the 10-24 benching carries through the 10-24 game).
+    s.upsert_lineups("L", [("T0", "P9", "Util")], "2025-10-21")
+    s.upsert_lineups("L", [("T1", "P9", "Util"), ("T1", "P10", "BN")], "2025-10-23")
+    s.upsert_lineups("L", [("T1", "P9", "Util"), ("T1", "P10", "Util")], "2025-10-25")
+    t0 = s.banked_tally_for_team("L", "T0", "2025-10-20", "2025-10-26", ["pts", "fg_pct"],
+                                 fallback_ids=["P9"])
+    assert t0["pts"] == 10.0          # only the pre-trade game
+    assert t0["fg_pct"] == 4.0 / 9.0  # volume-weighted, not per-game averaged
+    t1 = s.banked_tally_for_team("L", "T1", "2025-10-20", "2025-10-26", ["pts"],
+                                 fallback_ids=[])
+    assert t1["pts"] == 20.0          # P9's trade-day game + P10's slotted game only
+    totals = s.banked_totals_for_team("L", "T1", "2025-10-20", "2025-10-26",
+                                      ["fgm", "fga"], fallback_ids=[])
+    assert totals == {"fgm": 8.0, "fga": 18.0}  # components stay sums
+
+
+def test_banked_tally_falls_back_without_dated_reads():
+    """No dated reads at all -> the pre-attribution whole-window roster behaviour."""
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    s.add_team("L", "T0", "T0")
+    s.upsert_player_logs([PlayerGameLog("g1", SEASON, "2025-10-22", "P9", "P9", "X",
+                                        {"pts": 10.0})])
+    t0 = s.banked_tally_for_team("L", "T0", "2025-10-20", "2025-10-26", ["pts"],
+                                 fallback_ids=["P9"])
+    assert t0["pts"] == 10.0
+
+
 def _store_with_lineup(lineup_known_from: str = "2025-10-01") -> Store:
     """One team, two players: P0 slotted (Util), P1 benched (BN). One shared NBA team
     with two remaining games, so the only difference is the lineup restriction."""

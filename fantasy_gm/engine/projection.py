@@ -98,18 +98,19 @@ class Projector:
         mine = self.team_projection(
             store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
             as_of, ps, period_end, categories, season, active_ids=mine_active,
-            per_day_games=mine_per_day)
+            per_day_games=mine_per_day, league_id=league_id, team_id=team_id)
         opp = self.team_projection(
             store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
             as_of, ps, period_end, categories, season, active_ids=opp_active,
-            per_day_games=opp_per_day)
+            per_day_games=opp_per_day, league_id=league_id, team_id=opponent)
 
         win_probs = None
         if self.method == "bootstrap":
             win_probs = self._bootstrap_winprobs(
                 store, state.rosters.get(team_id, []), state.rosters.get(opponent, []),
                 as_of, ps, period_end, my_active=mine_active, op_active=opp_active,
-                my_per_day=mine_per_day, op_per_day=opp_per_day)
+                my_per_day=mine_per_day, op_per_day=opp_per_day,
+                league_id=league_id, my_team=team_id, opp_team=opponent)
         return self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories, win_probs)
 
@@ -156,7 +157,8 @@ class Projector:
 
     def _bootstrap_winprobs(self, store, my_roster, opp_roster, as_of, period_start,
                             period_end, my_active=None, op_active=None,
-                            my_per_day=None, op_per_day=None) -> dict[str, float]:
+                            my_per_day=None, op_per_day=None, league_id=None,
+                            my_team=None, opp_team=None) -> dict[str, float]:
         """Per-category win prob by Monte-Carlo: resample each player's recent real per-game
         lines over their remaining games (whole lines, so within-game category structure is
         preserved) and compare team totals. Windowed to the projector's recent-games window."""
@@ -168,8 +170,16 @@ class Projector:
                             for k in PERCENTAGE_CATEGORIES[c]})
         window = self.config.recent_games_window
 
-        def _side(roster, active, per_day=None):
-            bt = store.category_totals(roster, period_start, as_of, counting + comp_keys)
+        def _side(roster, active, per_day=None, team: str | None = None):
+            # Banked totals credit game-time team/slot (game-time attribution when the
+            # league context is known), matching the point projection's banked source.
+            if league_id and team:
+                bt = store.banked_totals_for_team(
+                    league_id, team, period_start, as_of, counting + comp_keys,
+                    fallback_ids=roster)
+            else:
+                bt = store.category_totals(roster, period_start, as_of,
+                                           counting + comp_keys)
             banked = {k: bt.get(k, 0.0) for k in counting + comp_keys}
             draws = []
             for pid in (per_day if per_day is not None
@@ -191,8 +201,8 @@ class Projector:
                     draws.append((rg, lines))
             return banked, draws
 
-        my_banked, my_draws = _side(my_roster, my_active, my_per_day)
-        op_banked, op_draws = _side(opp_roster, op_active, op_per_day)
+        my_banked, my_draws = _side(my_roster, my_active, my_per_day, team=my_team)
+        op_banked, op_draws = _side(opp_roster, op_active, op_per_day, team=opp_team)
         rng = random.Random(self.seed)
         keys = counting + comp_keys
         wins = {c: 0.0 for c in cats}
@@ -235,10 +245,11 @@ class Projector:
         season = meta["season"] if meta else None
         mine = self.team_projection(store, state.category_tally.get(team_id, {}),
                                     roster_ids, as_of, ps, matchup.period_end, categories,
-                                    season)
+                                    season, league_id=league_id, team_id=team_id)
         opp = self.team_projection(store, state.category_tally.get(opponent, {}),
                                    state.rosters.get(opponent, []), as_of, ps,
-                                   matchup.period_end, categories, season)
+                                   matchup.period_end, categories, season,
+                                   league_id=league_id, team_id=opponent)
         proj = self._assemble(as_of, league_id, team_id, opponent, matchup.period_index,
                               mine, opp, categories)
         return {c: p.win_prob for c, p in proj.categories.items()}
@@ -264,7 +275,8 @@ class Projector:
     def team_projection(
         self, store, tally: dict, roster_ids: list[str], as_of, period_start, period_end,
         categories, season: str | None = None, active_ids: list[str] | None = None,
-        per_day_games: dict[str, int] | None = None,
+        per_day_games: dict[str, int] | None = None, league_id: str | None = None,
+        team_id: str | None = None,
     ) -> dict[str, tuple[float, float]]:
         """Return {cat: (projected_total, projected_std)} for a roster over the period.
         Counting cats: banked tally + Σ(remaining games × expected/g), variance Σ rg·σ².
@@ -291,9 +303,17 @@ class Projector:
 
         totals = {c: tally.get(c, 0.0) for c in counting}
         variances = {c: 0.0 for c in counting}
-        # banked (already-played) makes/attempts over [period_start, as_of]
-        proj_comp = dict(store.category_totals(roster_ids, period_start, as_of, comp_keys)) \
-            if comp_keys else {}
+        # banked (already-played) makes/attempts over [period_start, as_of], credited
+        # at game time when the league context is known (a player added after a game
+        # does not import that game's line — Yahoo credits the team he played for)
+        if comp_keys and league_id and team_id:
+            proj_comp = dict(store.banked_totals_for_team(
+                league_id, team_id, period_start, as_of, comp_keys,
+                fallback_ids=roster_ids))
+        elif comp_keys:
+            proj_comp = dict(store.category_totals(roster_ids, period_start, as_of, comp_keys))
+        else:
+            proj_comp = {}
         window = self.config.recent_games_window
 
         for pid in contributing:
