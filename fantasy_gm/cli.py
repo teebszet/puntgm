@@ -208,6 +208,8 @@ def cmd_wire(args: argparse.Namespace) -> int:
         f"opp={p.opponent_team_id} as_of={args.as_of}"
     )
     print("bundle depth on wire: " + ", ".join(f"{b}={n}" for b, n in wa.bundle_depth.items()))
+    if wa.drop_name:
+        print(f"every swap drops: {wa.drop_name} (lowest-valued roster player)")
     if not wa.options:
         print("  no contested categories")
     for o in wa.options:

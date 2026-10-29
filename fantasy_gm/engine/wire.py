@@ -53,6 +53,8 @@ class WireAnalysis:
     perspective: Perspective
     options: list[WireOption]      # one per contested category
     bundle_depth: dict[str, int]   # available player count per bundle
+    drop_id: str = ""              # the roster player each swap would drop
+    drop_name: str = ""            #   (lowest current-season value; shown in the digest)
 
 
 class WireAnalyzer:
@@ -81,8 +83,10 @@ class WireAnalyzer:
         values = player_values(store, data_season)
         drop = min(my_roster, key=lambda p: values.get(p, -999.0)) if my_roster else None
 
+        names: dict[str, str] = {}
         wire = []
         for pid, name, _t in store.player_universe(data_season, as_of):
+            names[pid] = name
             if pid in rostered:
                 continue
             if store.forward_roster_asof(pid, FORWARD_SEASON, as_of) is None:
@@ -96,7 +100,8 @@ class WireAnalyzer:
                                base, shortlist, data_season)
             for cat in proj.contested()
         ]
-        return WireAnalysis(persp, options, self._bundle_depth(store, data_season, wire))
+        return WireAnalysis(persp, options, self._bundle_depth(store, data_season, wire),
+                            drop or "", names.get(drop, "") if drop else "")
 
     def _best_for_cat(self, store, league_id, team_id, as_of, my_roster, drop, wire, cat,
                       base, shortlist, season=None) -> WireOption:

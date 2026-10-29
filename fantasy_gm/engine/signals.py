@@ -13,6 +13,8 @@ which categories are live in this matchup, and the stage of the season.
 
 from __future__ import annotations
 
+import statistics
+from dataclasses import dataclass
 from datetime import date
 
 from fantasy_gm.config import (
@@ -142,3 +144,135 @@ class SignalEngine:
         return [Signal(as_of, "", f"opponent {proj.opponent_id}", "opponent", "opponent_move",
                        evidence, 0.8, 1.0, 0.8, round(0.8 * 1.0 * 0.8, 4), "strong",
                        tuple(sorted(added_cats | dropped_cats)))]
+
+
+# --- injury-driven usage-spike watch -----------------------------------------
+
+# A designation this fresh counts as "injury news": its minutes are up for grabs.
+SPIKE_NEWS_DAYS = 14
+# A candidate matters when his recent minutes sit at least this far below the injured
+# player's — room to absorb, not a co-starter.
+SPIKE_MIN_GAP = 8.0
+# The injured player must have actually logged these minutes in his last games for
+# "minutes available" to mean anything.
+SPIKE_MIN_INJURED_MIN = 16.0
+
+
+@dataclass(frozen=True)
+class SpikeCandidate:
+    player_id: str
+    name: str
+    position: str
+    minutes_per_game: float   # the player's own recent-5-games average
+    is_starter: bool
+    minutes_gap: float        # injured player's recent minutes − this player's
+
+
+@dataclass(frozen=True)
+class UsageSpike:
+    injured_player_id: str
+    injured_name: str
+    injured_team: str
+    injured_status: str       # OUT | QUESTIONABLE
+    injured_minutes: float    # the injured player's recent-5-games average
+    candidates: tuple[SpikeCandidate, ...]
+
+
+@dataclass(frozen=True)
+class SpikeWatch:
+    """League-wide: every rostered player with an OUT designation (fresh injury) and
+    the same-position teammates who could absorb his minutes."""
+    as_of: str
+    spikes: list[UsageSpike]
+
+
+def injury_usage_spikes(store, league_id: str, as_of: str,
+                        *, max_candidates: int = 3) -> SpikeWatch:
+    """The usage-spike watch: who absorbs an injured teammate's minutes?
+
+    An OUT designation is unpriced opportunity for the rest of that NBA team — the box
+    score cannot say who takes the minutes, but it does say who plays the same position
+    and how many minutes each currently sits on. The watch is:
+
+    1. every rostered player with an OUT designation, dated within ``SPIKE_NEWS_DAYS``,
+       whose recent-5-games minutes are real (``SPIKE_MIN_INJURED_MIN``);
+    2. his NBA-team teammates listed at the same position (overlap on any shared slot,
+       so "G-F" matches "F" or "G") who are not OUT themselves;
+    3. ranked by minutes gap (the injured player's minutes − the candidate's) — the
+       bench player with the most room to gain — capped at ``max_candidates``.
+
+    The output names the *watch*, not a projection: the engine does not yet propagate an
+    injury's minutes to a teammate's projection (each player is projected from his own
+    trailing distribution), so this is the read that surfaces who to watch, not a
+    projection that re-prices him.
+    """
+    state = store.league_state_asof(league_id, as_of)
+    rostered = set().union(set(), *(set(v) for v in state.rosters.values()))
+    season = store.latest_logged_season() or store.league_meta(league_id)["season"]
+    positions = store.player_positions_asof(as_of)
+    # Names across every logged season, not just the latest: a player whose only rows
+    # are 2025-26 (the 2026-27 backfill is still filling) is exactly the kind of injured
+    # veteran who was printing as a bare Yahoo id (found live 2026-10-29).
+    names = store.player_names(as_of)
+    today = date.fromisoformat(as_of)
+
+    # Rostered players currently OUT, with real recent minutes.
+    out: list[tuple[str, float]] = []
+    for pid in sorted(rostered):
+        avail = store.availability_asof(pid, as_of)
+        if avail is None or avail.status != "OUT":
+            continue
+        try:
+            if (today - date.fromisoformat(avail.known_from)).days > SPIKE_NEWS_DAYS:
+                continue
+        except ValueError:
+            continue
+        hist = store.usage_role_history(pid, as_of)
+        if len(hist) < 2:
+            continue
+        recent = statistics.fmean([u.minutes for u in hist[-5:]])
+        if recent < SPIKE_MIN_INJURED_MIN:
+            continue
+        out.append((pid, recent))
+
+    # Teammates by NBA team, read once: player_universe's team column is the last logged
+    # team, so a player whose current team differs is re-checked against player_team.
+    team_ids_by_team: dict[str, list[str]] = {}
+    for pid2, _n, t in store.player_universe(season, as_of):
+        team_ids_by_team.setdefault(t, []).append(pid2)
+
+    spikes: list[UsageSpike] = []
+    for pid, injured_min in out:
+        team = store.player_team(pid, as_of)
+        if not team:
+            continue
+        inj_pos = positions.get(pid)
+        if inj_pos is None or not inj_pos.position:
+            continue
+        inj_slots = set(inj_pos.position.split("-"))
+        candidates: list[SpikeCandidate] = []
+        for pid2 in team_ids_by_team.get(team, []):
+            if pid2 == pid:
+                continue
+            avail2 = store.availability_asof(pid2, as_of)
+            if avail2 is not None and avail2.status == "OUT":
+                continue
+            pos2 = positions.get(pid2)
+            if pos2 is None or not pos2.position:
+                continue
+            if not (inj_slots & set(pos2.position.split("-"))):
+                continue
+            hist2 = store.usage_role_history(pid2, as_of)
+            if len(hist2) < 2:
+                continue
+            mins2 = statistics.fmean([u.minutes for u in hist2[-5:]])
+            gap = injured_min - mins2
+            if gap < SPIKE_MIN_GAP:
+                continue
+            candidates.append(SpikeCandidate(
+                pid2, names.get(pid2, pid2), pos2.position, round(mins2, 1),
+                hist2[-1].is_starter, round(gap, 1)))
+        candidates.sort(key=lambda c: -c.minutes_gap)
+        spikes.append(UsageSpike(pid, names.get(pid, pid), team, "OUT",
+                                 round(injured_min, 1), tuple(candidates[:max_candidates])))
+    return SpikeWatch(as_of, spikes)

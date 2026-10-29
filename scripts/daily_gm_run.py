@@ -132,7 +132,8 @@ def render_games_block(gr, my_name: str, opp_name: str) -> list[str]:
 
 
 def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str,
-                  games_block: list[str] | None = None) -> str:
+                  games_block: list[str] | None = None,
+                  spikes=None) -> str:
     cats = sorted(proj.categories.values(), key=lambda p: -p.win_prob)
     lines = [
         f"🏀 **Daily GM run — {proj.as_of}** "
@@ -162,6 +163,8 @@ def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str,
     if games_block:
         lines += games_block
     lines += ["", "**Waiver add analysis** (WireAnalyzer, contested cats first):", ""]
+    if wa.drop_name:
+        lines.append(f"- every swap drops: **{wa.drop_name}** (lowest-valued roster player)")
     if wa.options:
         for o in wa.options:
             if o.verdict == "infeasible":
@@ -174,11 +177,32 @@ def render_digest(proj, wa, wire_lines: list[str], opp_name: str, my_name: str,
                 )
     else:
         lines.append("- no contested categories — nothing on the wire is worth a drop")
+    lines += _render_spikes(spikes)
     if wire_lines:
         lines += ["", "<details><summary>refresh log</summary>", "", "```"]
         lines += wire_lines
         lines += ["```", "</details>"]
     return "\n".join(lines) + "\n"
+
+
+def _render_spikes(spikes) -> list[str]:
+    """The usage-spike watch: injured players' minutes and the same-position teammates
+    who could absorb them. None when no fresh OUT designation is priced."""
+    if not spikes or not spikes.spikes:
+        return []
+    lines = ["", "**Usage-spike watch** (fresh OUT designations; the engine does not yet "
+             "re-price a teammate's projection when a teammate goes out — this is the "
+             "watch list, not a projection):", ""]
+    for s in spikes.spikes:
+        if not s.candidates:
+            continue
+        cand = "; ".join(
+            f"**{c.name}** ({c.position}, {c.minutes_per_game:.1f} min/gm, "
+            f"{'starter' if c.is_starter else 'bench'}, +{c.minutes_gap:.1f} min room)"
+            for c in s.candidates)
+        lines.append(f"- {s.injured_name} ({s.injured_team}, {s.injured_status}, "
+                     f"was {s.injured_minutes:.1f} min/gm) → watch: {cand}")
+    return lines
 
 
 def main() -> int:
@@ -227,6 +251,9 @@ def main() -> int:
         else:
             # 3. waiver add analysis
             wa = WireAnalyzer(config).analyze(store, args.league, team, today)
+            # 4. usage-spike watch (injury news -> same-position teammates absorbing minutes)
+            from fantasy_gm.engine.signals import injury_usage_spikes
+            spikes = injury_usage_spikes(store, args.league, today)
             names = {
                 r["team_id"]: r["team_name"]
                 for r in store.conn.execute(
@@ -243,6 +270,7 @@ def main() -> int:
                     names.get(proj.team_id, proj.team_id),
                     names.get(proj.opponent_id, proj.opponent_id),
                 ),
+                spikes=spikes,
             )
 
         # 4. publish: files for the record, then the channel post (deduped per date)

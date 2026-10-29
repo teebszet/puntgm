@@ -1039,6 +1039,22 @@ class Store:
         row = self.conn.execute("SELECT MAX(season) AS s FROM player_logs").fetchone()
         return row["s"] or ""
 
+    def player_names(self, as_of: str | None = None) -> dict[str, str]:
+        """player_id → name across every logged season (optionally as-of).
+
+        ``player_universe`` keys on one season, so a player whose only rows are last
+        season (2025-26) disappears from the names map the moment 2026-27 backfill
+        starts — which is exactly where injured veterans were printing as bare Yahoo
+        ids in the spike watch (found live 2026-10-29). Names are season-stable, so a
+        cross-season fold is the right read for any display name lookup."""
+        q = "SELECT player_id, player_name FROM player_logs"
+        args: list = []
+        if as_of:
+            q += " WHERE game_date <= ?"
+            args.append(as_of)
+        q += " GROUP BY player_id"
+        return {r["player_id"]: r["player_name"] for r in self.conn.execute(q, args)}
+
     def remaining_games_for_team(self, team: str, after: str, end: str) -> int:
         """Scheduled games for an NBA team still to be played from ``after`` through
         ``end`` (a priori schedule — not gated by as-of).

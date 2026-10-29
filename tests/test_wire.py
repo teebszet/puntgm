@@ -36,3 +36,16 @@ def test_bundle_depth_partitions_the_wire(fx):
     wire_size = sum(1 for p, _n, _t in fx.store.player_universe(fx.season, MOVE_DATE)
                     if p not in rostered)
     assert 0 <= sum(wa.bundle_depth.values()) <= wire_size
+
+
+def test_drop_is_the_lowest_valued_roster_player(fx):
+    """The digest prints "every swap drops X" — X must be the roster player with the
+    lowest current-season value, and it must resolve to a display name, not a bare id."""
+    from fantasy_gm.engine.wire import player_values
+    wa = WireAnalyzer().analyze(fx.store, fx.league_id, "T00", MOVE_DATE)
+    roster = fx.store.league_state_asof(fx.league_id, MOVE_DATE).rosters.get("T00", [])
+    values = player_values(fx.store, fx.season)
+    lowest = min(roster, key=lambda p: values.get(p, -999.0))
+    assert wa.drop_id == lowest
+    assert wa.drop_name == next(n for p, n, _t in fx.store.player_universe(fx.season, MOVE_DATE)
+                                if p == lowest)
