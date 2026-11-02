@@ -61,6 +61,16 @@ def test_fresh_out_rostered_player_watches_same_team_candidates(fx):
     assert [c.player_id for c in spike.candidates] == [teammates[0]]
     assert spike.candidates[0].minutes_gap == 20.0
 
+    # Next man up: a rotation player with a SMALLER gap but real minutes outranks the
+    # deep-bench candidate whose theoretical gap is bigger (Tim, 2026-11-02: the watch
+    # led with 4.8-min benchwarmers ahead of the 23-min sixth man).
+    _usage(store, teammates[1], 20.0)  # was 25.0 (gap 5, no room); now gap 10, 20 min
+
+    watch = injury_usage_spikes(store, fx.league_id, AS_OF)
+    spike = next(s for s in watch.spikes if s.injured_player_id == victim)
+    assert [c.player_id for c in spike.candidates] == [teammates[1], teammates[0]]
+    assert [c.minutes_per_game for c in spike.candidates] == [20.0, 10.0]
+
 
 def test_names_resolve_across_seasons_when_a_newer_season_has_fewer_players(fx):
     """A player whose only box rows are last season must still show his name: the

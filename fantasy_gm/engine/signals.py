@@ -198,8 +198,9 @@ def injury_usage_spikes(store, league_id: str, as_of: str,
        whose recent-5-games minutes are real (``SPIKE_MIN_INJURED_MIN``);
     2. his NBA-team teammates listed at the same position (overlap on any shared slot,
        so "G-F" matches "F" or "G") who are not OUT themselves;
-    3. ranked by minutes gap (the injured player's minutes − the candidate's) — the
-       bench player with the most room to gain — capped at ``max_candidates``.
+    3. ranked by CURRENT minutes — the next man up: the most-established teammate who
+       still has real room (the ≥ ``SPIKE_MIN_GAP`` gap filter stays as the room gate) —
+       capped at ``max_candidates``.
 
     The output names the *watch*, not a projection: the engine does not yet propagate an
     injury's minutes to a teammate's projection (each player is projected from his own
@@ -272,7 +273,13 @@ def injury_usage_spikes(store, league_id: str, as_of: str,
             candidates.append(SpikeCandidate(
                 pid2, names.get(pid2, pid2), pos2.position, round(mins2, 1),
                 hist2[-1].is_starter, round(gap, 1)))
-        candidates.sort(key=lambda c: -c.minutes_gap)
+        # Next man up: rank by CURRENT minutes. Minutes flow up the rotation, not to
+        # the deepest benchwarmer — ranked by minutes_gap until 2026-11-02, which led
+        # with 4-5 min benchwarmers whose theoretical +29 "room" was last-in-rotation
+        # fiction, ahead of the 23-min sixth man who actually inherits the minutes
+        # (Tim, "a bit off on most cases"). The SPIKE_MIN_GAP filter above still
+        # guarantees every candidate has real room to gain.
+        candidates.sort(key=lambda c: -c.minutes_per_game)
         spikes.append(UsageSpike(pid, names.get(pid, pid), team, "OUT",
                                  round(injured_min, 1), tuple(candidates[:max_candidates])))
     return SpikeWatch(as_of, spikes)
