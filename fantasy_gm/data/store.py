@@ -485,10 +485,7 @@ class Store:
 
         Yahoo's own games-remaining counter counts, for each remaining date of the
         matchup week, the players in that date's *starting* slots whose NBA team
-        plays that date — bench and IL never count (verified live 2026-10-26: the
-        per-day sum over Yahoo's own scheduled-lineup reads reproduced Yahoo's
-        40/41 exactly, where the current-lineup-for-the-whole-week model gave
-        30/33 and a bench-inclusive model gave 40/42). A manager who re-slots daily
+        plays that date — bench, IL, and OUT never count. A manager who re-slots daily
         to maximise games must have each player priced on exactly the days he is
         scheduled to be slotted — not the whole window, and not zero.
 
@@ -501,6 +498,13 @@ class Store:
         games). Absence from the covering read is exactly the signal a fold misses.
         The fold is only a fallback for a date whose read covered other teams but not
         this one (a hand-run single-team probe).
+
+        Health basis (live 2026-11-02): a player designated OUT as of ``as_of`` prices
+        zero — Yahoo's own counter nets OUT players' games out (netting current-OUT
+        players' counted games reproduced Yahoo's week-3 counters on 11 of 12 teams
+        exactly; the 12th was Yahoo's own lazy per-team recompute of a day-old OUT).
+        QUESTIONABLE still counts, on both sides. Same rule as the engine's D3: an OUT
+        player contributes nothing to remaining games.
 
         Returns ``{player_id: remaining games}`` over the team's rostered players,
         or ``None`` when any remaining date has no lineup read covering it exactly
@@ -536,6 +540,7 @@ class Store:
             )
         out: dict[str, int] = {}
         team_cache: dict[str, str | None] = {}
+        status_cache: dict[str, str | None] = {}
         for day in dates:
             playing = teams_by_date.get(day, set())
             # Price the covering dated read directly (see docstring): a fold would
@@ -554,8 +559,14 @@ class Store:
                 if pid not in team_cache:
                     team_cache[pid] = self.player_team(pid, as_of)
                 nba_team = team_cache[pid]
-                if nba_team and nba_team in playing:
-                    out[pid] = out.get(pid, 0) + 1
+                if not (nba_team and nba_team in playing):
+                    continue
+                if pid not in status_cache:
+                    av = self.availability_asof(pid, as_of)
+                    status_cache[pid] = av.status if av else None
+                if status_cache[pid] == "OUT":
+                    continue  # an OUT player contributes nothing to remaining (D3)
+                out[pid] = out.get(pid, 0) + 1
         return out
 
     def rosters_asof(self, league_id: str, as_of: str) -> dict[str, list[str]]:

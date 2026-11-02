@@ -280,3 +280,41 @@ def test_ingest_lineups_drafted_rookie_in_both_tables_is_not_ambiguous():
     assert rep["ambiguous"] == []
     assert rep["matched"] == 1 and rep["stored"] == 1
     assert s.lineup_asof("L", "T1", "2025-10-20") == {"P2": "PF"}
+
+
+
+
+def test_scheduled_active_games_nets_out_players():
+    """Yahoo's counter nets OUT players' games out; QUESTIONABLE still counts (live
+    2026-11-02: netting current-OUT players' counted games reproduced Yahoo's week-3
+    counters on 11 of 12 teams exactly). Designations are as-of: the latest row known
+    on or before as_of wins."""
+    from fantasy_gm.models import Availability
+
+    s = Store(":memory:")
+    s.create_league("L", "L", SEASON, "daily-change", ["pts"])
+    s.add_team("L", "T0", "T0")
+    s.add_team("L", "T1", "T1")
+    s.add_matchup(Matchup("L", 0, PERIOD[0], PERIOD[1], "T0", "T1"))
+    # NBA team X plays 10-23 and 10-25 inside the window.
+    s.upsert_games([Game("g1", "2026-27", "2025-10-23", "X", "Y"),
+                    Game("g2", "2026-27", "2025-10-25", "Y", "X")])
+    line = {"pts": 10.0, "reb": 5.0, "ast": 3.0, "stl": 1.0, "blk": 1.0, "fg3m": 1.0,
+            "tov": 2.0, "fgm": 4.0, "fga": 9.0, "ftm": 2.0, "fta": 3.0}
+    s.upsert_player_logs([PlayerGameLog("g0", SEASON, "2025-10-15", "P9", "P9", "X", line)])
+    # P9 starts Util for T1 on every remaining date; dated reads cover the window.
+    s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P9", "Util")], "2025-10-21")
+    for day in ("2025-10-23", "2025-10-24", "2025-10-25", "2025-10-26"):
+        s.upsert_lineups("L", [("T0", "P0", "Util"), ("T1", "P9", "Util")], day)
+
+    s.add_availability([Availability("P9", "OUT", "2025-10-22", "yahoo", 1.0)])
+    counts = s.scheduled_active_games("L", "T1", "2025-10-23", "2025-10-26")
+    assert counts is not None and counts == {}  # OUT netted, though X plays twice
+
+    s.add_availability([Availability("P9", "ACTIVE", "2025-10-24", "yahoo", 1.0)])
+    counts = s.scheduled_active_games("L", "T1", "2025-10-24", "2025-10-26")
+    assert counts is not None and counts == {"P9": 1}  # cleared -> counts again
+
+    s.add_availability([Availability("P9", "QUESTIONABLE", "2025-10-25", "yahoo", 1.0)])
+    counts = s.scheduled_active_games("L", "T1", "2025-10-25", "2025-10-26")
+    assert counts is not None and counts == {"P9": 1}  # QUE counts, like Yahoo

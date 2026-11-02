@@ -119,7 +119,7 @@ def render_games_block(gr, my_name: str, opp_name: str) -> list[str]:
     if gr is None:
         return []
     mine, opp, per_day = gr
-    basis = ("per-day scheduled starters — bench and IL never count"
+    basis = ("per-day scheduled starters — bench, IL, and OUT never count"
              if per_day else
              "current-lineup starters only — per-date lineup reads missing, so a "
              "mid-week re-slot is not priced")
