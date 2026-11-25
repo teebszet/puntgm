@@ -168,6 +168,24 @@ def refresh_box_scores(store: Store, cache: RawCache, season: str) -> tuple[dict
 ESPN_SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 )
+ESPN_TEAM_SCHEDULE_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams"
+    "/{team}/schedule"
+)
+
+# Days past ``today`` the scoreboard payload still carries a *complete* slate. Beyond
+# it ESPN serves a shrinking marquee subset (found live 2026-11-25: Dec 4 carried 2
+# games, Dec 8 one, whole days missing) — trusting it priced weeks on phantom
+# schedules. Past this horizon the schedule comes from the per-team season endpoints,
+# which serve the full 80-game slate for every team.
+SCOREBOARD_HORIZON_DAYS = 7
+
+# ESPN's own abbreviations — the URL slugs its team-schedule endpoint takes
+# (GS/NO/NY/SA, not the NBA.com codes GSW/NOP/NYK/SAS; probed live 2026-11-25).
+ESPN_TEAM_ABBREVS = frozenset(
+    """ATL BOS BKN CHA CHI CLE DAL DEN DET GS HOU IND LAC LAL MEM MIA MIL MIN
+    NO NY OKC ORL PHI PHX POR SAC SA TOR UTAH WAS""".split()
+)
 
 # ESPN abbreviations that differ from the NBA.com codes the store keys teams on
 # (verified against the week-1 load, 2026-10-20). Everything else is already identical.
@@ -200,6 +218,39 @@ def _espn_all_scored(raw: dict) -> bool:
     return True
 
 
+def _espn_event_game(event: dict, season: str) -> Game | None:
+    """Pure mapping: one ESPN event (scoreboard or team schedule) -> a Game."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    try:
+        comps = event["competitions"][0]["competitors"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    home = away = None
+    home_pts = away_pts = None
+    completed = bool(((event.get("status") or {}).get("type") or {}).get("completed"))
+    for comp in comps:
+        abbrev = espn_team_code(str(comp.get("team", {}).get("abbreviation", "")))
+        if comp.get("homeAway") == "home":
+            home = abbrev
+            if completed and comp.get("score") not in (None, ""):
+                home_pts = int(float(comp["score"]))
+        else:
+            away = abbrev
+            if completed and comp.get("score") not in (None, ""):
+                away_pts = int(float(comp["score"]))
+    if not home or not away:
+        return None
+    try:
+        utc = datetime.fromisoformat(str(event["date"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError, TypeError):
+        return None
+    game_date = utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+    return Game(f"esp-{event.get('id', '')}", season, game_date, home, away,
+                home_pts, away_pts)
+
+
 def parse_espn_scoreboard(raw: dict, season: str) -> list[Game]:
     """Pure mapping: one ESPN scoreboard payload -> scheduled games.
 
@@ -210,51 +261,65 @@ def parse_espn_scoreboard(raw: dict, season: str) -> list[Game]:
     ESPN emits ``score: "0"`` on pre-game events, and storing those placeholders as
     final scores made unscored games read as played everywhere the score is consulted.
     """
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
     games: list[Game] = []
     for event in raw.get("events", []):
-        try:
-            comps = event["competitions"][0]["competitors"]
-        except (KeyError, IndexError, TypeError):
-            continue
-        home = away = None
-        home_pts = away_pts = None
-        completed = bool(((event.get("status") or {}).get("type") or {}).get("completed"))
-        for comp in comps:
-            abbrev = espn_team_code(str(comp.get("team", {}).get("abbreviation", "")))
-            if comp.get("homeAway") == "home":
-                home = abbrev
-                if completed and comp.get("score") not in (None, ""):
-                    home_pts = int(float(comp["score"]))
-            else:
-                away = abbrev
-                if completed and comp.get("score") not in (None, ""):
-                    away_pts = int(float(comp["score"]))
-        if not home or not away:
-            continue
-        try:
-            utc = datetime.fromisoformat(str(event["date"]).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        game_date = utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
-        games.append(Game(f"esp-{event.get('id', '')}", season, game_date, home, away,
-                          home_pts, away_pts))
+        game = _espn_event_game(event, season)
+        if game is not None:
+            games.append(game)
     return games
+
+
+def parse_espn_team_schedule(raw: dict, season: str) -> list[Game]:
+    """Pure mapping: one ESPN team-season-schedule payload -> scheduled games."""
+    games: list[Game] = []
+    for event in raw.get("events", []):
+        game = _espn_event_game(event, season)
+        if game is not None:
+            games.append(game)
+    return games
+
+
+def fetch_team_schedule_map(cache: RawCache, season: str,
+                            today: str) -> dict[str, list[Game]]:
+    """Complete per-date schedule for the season from ESPN's per-team endpoints.
+
+    The scoreboard payload goes sparse beyond the scoreboard horizon while the
+    team-schedule endpoint serves every team's full 80-game season. Cached per team
+    per day, so reschedules and traded players re-read daily.
+    """
+    import requests
+
+    by_date: dict[str, list[Game]] = {}
+    for abbr in sorted(ESPN_TEAM_ABBREVS):
+        endpoint, params = "espn.teamsched", {"team": abbr.lower(), "asof": today}
+        raw = cache.get(endpoint, params) if cache.has(endpoint, params) else None
+        if raw is None:
+            resp = requests.get(ESPN_TEAM_SCHEDULE_URL.format(team=abbr.lower()),
+                                timeout=30)
+            resp.raise_for_status()
+            raw = resp.json()
+            cache.set(endpoint, params, raw)
+        for game in parse_espn_team_schedule(raw, season):
+            by_date.setdefault(game.game_date, []).append(game)
+    return by_date
 
 
 def refresh_schedule(
     store: Store, cache: RawCache, season: str, today: str, window_days: int = 21
 ) -> tuple[int, int, str]:
-    """One schedule-refresh pass: fetch ESPN scoreboards for [today, today+window_days].
+    """One schedule-refresh pass: scoreboards for the near window, per-team season
+    schedules for the rest of [today, today+window_days].
 
-    Past/today payloads bypass the disk cache (scores keep arriving); strictly-future
-    dates are cached (the schedule there is fixed). Existing ``esp-*`` rows inside the
-    window are replaced wholesale so a reschedule is corrected, not duplicated. Returns
-    ``(games in window, changed, window end)`` where ``changed`` says whether the stored
-    window rows actually differ from before — the watcher rebuilds only on change. A
-    provenance row is written on any change.
+    The scoreboard payload carries a complete slate only ~a week out (SCOREBOARD_
+    HORIZON_DAYS); past that it degrades to a marquee subset, so days beyond the
+    horizon come from ESPN's per-team season endpoints (full 80-game slate each),
+    merged by date. Past/today payloads bypass the disk cache (scores keep
+    arriving); strictly-future dates are cached (the schedule there is fixed).
+    Existing ``esp-*`` rows inside the window are replaced wholesale so a
+    reschedule is corrected, not duplicated. Returns ``(games in window, changed,
+    window end)`` where ``changed`` says whether the stored window rows actually
+    differ from before — the watcher rebuilds only on change. A provenance row is
+    written on any change.
     """
     import time as _time
     from datetime import date, timedelta
@@ -262,11 +327,20 @@ def refresh_schedule(
     import requests
 
     start = date.fromisoformat(today)
-    days = [(start + timedelta(days=i)).strftime("%Y%m%d") for i in range(window_days)]
+    horizon = start + timedelta(days=SCOREBOARD_HORIZON_DAYS - 1)
+    days = [(start + timedelta(days=i)) for i in range(window_days)]
     games: list[Game] = []
-    for day in days:
+    team_map: dict[str, list[Game]] | None = None
+    for d in days:
+        if d > horizon:
+            # beyond the scoreboard's completeness horizon: the per-team slate
+            if team_map is None:
+                team_map = fetch_team_schedule_map(cache, season, today)
+            games.extend(team_map.get(d.isoformat(), []))
+            continue
+        day = d.strftime("%Y%m%d")
         endpoint, params = "espn.scoreboard", {"dates": day}
-        past = day <= start.strftime("%Y%m%d")
+        past = d <= start
         raw = cache.get(endpoint, params) if cache.has(endpoint, params) else None
         # A played or playing slate keeps receiving final scores, so a cached payload
         # that still has unscored games is refetched — once, until scores land. A
@@ -277,6 +351,12 @@ def refresh_schedule(
             raw = resp.json()
             cache.set(endpoint, params, raw)
         games.extend(parse_espn_scoreboard(raw, season))
+    # a far game can also sit in today's scoreboard cache from an earlier window:
+    # dedupe by game id, scoreboard rows win (they carry scores)
+    dedup: dict[str, Game] = {}
+    for game in games:
+        dedup.setdefault(game.game_id, game)
+    games = list(dedup.values())
     window_end = (start + timedelta(days=window_days - 1)).isoformat()
 
     # Replace only the refreshable window: dates >= today. Already-played rows before
@@ -299,8 +379,9 @@ def refresh_schedule(
     if changed:
         store.record_provenance(
             f"games:season={season}",
-            f"ESPN scoreboard refresh: window {today}..{window_end}, {in_window} games "
-            "(esp-* ids; ESPN abbrevs mapped via nba_source.ESPN_ABBREV_TO_CODE)",
+            f"ESPN schedule refresh: scoreboard {today}..{horizon.isoformat()}, "
+            "per-team season slates beyond; esp-* ids; ESPN abbrevs mapped via "
+            "nba_source.ESPN_ABBREV_TO_CODE",
             _time.strftime("%Y-%m-%d"),
         )
     return in_window, changed, window_end

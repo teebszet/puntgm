@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from fantasy_gm.data.nba_source import (
     _parse_matchup,
     _to_minutes,
     parse_espn_scoreboard,
+    parse_espn_team_schedule,
     parse_league_game_log,
     refresh_schedule,
 )
@@ -188,6 +191,94 @@ def test_refresh_schedule_replaces_window_and_reports_change(tmp_path):
     assert {r["home_team"] for r in store.conn.execute(
         "SELECT home_team FROM games WHERE game_id='esp-e2'").fetchall()} == {"MIA"}
     assert store.conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
+
+
+def test_parse_espn_team_schedule_maps_events():
+    """The per-team season payload parses through the same event mapper: esp-* id,
+    ESPN-only abbrevs mapped, unplayed games carry no score."""
+    raw = {"events": [
+        {"id": "401", "date": "2026-12-02T00:00Z",
+         "status": {"type": {"completed": False}},
+         "competitions": [{"competitors": [
+             {"homeAway": "home", "team": {"abbreviation": "UTAH"}},
+             {"homeAway": "away", "team": {"abbreviation": "POR"}}]}]},
+        {"id": "402", "date": "2026-12-02T02:00Z", "competitions": []},
+    ]}
+    games = parse_espn_team_schedule(raw, "2026-27")
+    assert len(games) == 1
+    g = games[0]
+    assert g.game_id == "esp-401" and g.season == "2026-27"
+    assert g.home_team == "UTA" and g.away_team == "POR"
+    assert g.game_date == "2026-12-01"  # 00:00Z tip is Dec 1 19:00 ET — prior US date
+    assert g.home_pts is None and g.away_pts is None
+
+
+def test_refresh_schedule_sources_far_days_from_team_slates(tmp_path, monkeypatch):
+    """Days beyond the scoreboard completeness horizon come from the per-team season
+    slates, not the sparse scoreboard payload (found live 2026-11-25: ESPN scoreboards
+    carry 2 games on Dec 4 and one on Dec 8 while the team endpoints carry the full
+    schedule)."""
+    import fantasy_gm.data.nba_source as ns
+    from fantasy_gm.data.cache import RawCache
+    from fantasy_gm.data.store import SCHEMA
+
+    day1 = {"events": [{"id": "e1", "date": "2026-10-30T23:00Z",
+                        "status": {"type": {"completed": True}},
+                        "competitions": [{"competitors": [
+                            {"homeAway": "home", "score": "108",
+                             "team": {"abbreviation": "BOS"}},
+                            {"homeAway": "away", "score": "101",
+                             "team": {"abbreviation": "NY"}}]}]}]}
+    far = {"events": [{"id": "f1", "date": "2026-11-06T23:00Z",
+                       "status": {"type": {"completed": False}},
+                       "competitions": [{"competitors": [
+                           {"homeAway": "home", "team": {"abbreviation": "LAL"}},
+                           {"homeAway": "away", "team": {"abbreviation": "GS"}}]}]}]}
+    cache = RawCache(tmp_path / "cache")
+    cache.set("espn.scoreboard", {"dates": "20261030"}, day1)
+    for i in range(1, 7):  # horizon days 2..7: cached, so no scoreboard GET fires
+        d = (date(2026, 10, 30) + timedelta(days=i)).strftime("%Y%m%d")
+        cache.set("espn.scoreboard", {"dates": d}, {"events": []})
+    class _NoScoreboard:
+        """Any scoreboard GET is a horizon violation — fail loud."""
+
+        def get(self, *a, **k):
+            raise AssertionError("scoreboard fetched for a far day")
+
+    monkeypatch.setitem(sys.modules, "requests", _NoScoreboard())
+    monkeypatch.setattr(
+        ns, "fetch_team_schedule_map",
+        lambda cache, season, today: {"2026-11-06": ns.parse_espn_team_schedule(far, season)})
+
+    class _Stub:
+        def __init__(self):
+            self.conn = sqlite3.connect(":memory:")
+            self.conn.row_factory = sqlite3.Row
+            self.conn.executescript(SCHEMA)
+            self.prov: list[str] = []
+
+        def upsert_games(self, games):
+            self.conn.executemany(
+                """INSERT INTO games(game_id, season, game_date, home_team, away_team,
+                                     home_pts, away_pts)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(game_id) DO UPDATE SET
+                     home_pts=excluded.home_pts, away_pts=excluded.away_pts""",
+                [(g.game_id, g.season, g.game_date, g.home_team, g.away_team,
+                  g.home_pts, g.away_pts) for g in games])
+            self.conn.commit()
+
+        def record_provenance(self, subject, note, recorded_at):
+            self.prov.append(note)
+
+    store = _Stub()
+    in_window, changed, end = refresh_schedule(
+        store, cache, "2026-27", "2026-10-30", window_days=8)
+    assert in_window == 2 and changed and end == "2026-11-06"
+    rows = {r["game_id"]: r for r in store.conn.execute("SELECT * FROM games")}
+    assert rows["esp-e1"]["game_date"] == "2026-10-30" and rows["esp-e1"]["home_pts"] == 108
+    assert rows["esp-f1"]["game_date"] == "2026-11-06"
+    assert rows["esp-f1"]["home_pts"] is None
 
 
 def test_dual_wire_game_rows_dedupe():
