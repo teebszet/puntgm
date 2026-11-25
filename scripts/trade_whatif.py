@@ -12,10 +12,12 @@ Same model as ros_whatif.py, generalized to multiple ins/outs:
   his new fantasy team flips that team's roster in the weeks it faces us (the
   counterfactual "we traded him strength").
 
-Approximations, stated: no mid-week re-slotting inside future weeks; per-week
-health is today's statuses (patch with --patch pid:STATUS:from to timeline a
-return, e.g. an injured keep who comes back, or a traded player helping his new
-team); participation rescale off for scheduled lineups (projector convention).
+Approximations, stated: future weeks price a per-day optimal lineup (a real
+manager re-slots daily around the schedule — start the playing players, bench
+the idle ones; participation q=1 under this convention, as for scheduled
+lineups); per-week health is today's statuses (patch with --patch
+pid:STATUS:from to timeline a return); percentage cats pool makes/attempts
+through the projector.
 """
 
 from __future__ import annotations
@@ -41,29 +43,54 @@ from ros_whatif import (  # noqa: E402
 )
 
 
-def best_active_set(store: Store, roster: list[str], pid_z: dict[str, float],
-                    as_of: str) -> list[str]:
-    candidates: list[tuple[float, str]] = []
-    for pid in roster:
-        av = store.availability_asof(pid, as_of)
-        if av is not None and av.status == "OUT":
-            continue
-        candidates.append((pid_z[pid], pid))
-    candidates.sort(reverse=True)
-    assigned: list[str] = []
-    remaining = list(ACTIVE_SLOTS)
-    for slot in [s for s in ACTIVE_SLOTS if s != "Util"] + [
-            s for s in ACTIVE_SLOTS if s == "Util"]:
+def fill_slots(store: Store, candidates: list[tuple[float, str]], exclude: list[str],
+               slots: list[str]) -> tuple[list[str], list[str]]:
+    """Greedy slot fill in slot order over z-ranked candidates; returns the ids
+    slotted and the slots left over (candidates who don't fit stay benched)."""
+    out: list[str] = []
+    used = list(exclude)
+    remaining = list(slots)
+    for slot in [s for s in slots if s != "Util"] + [s for s in slots if s == "Util"]:
         if slot not in remaining:
             continue
         for z, pid in candidates:
-            if pid in assigned:
+            if pid in used:
                 continue
             if slot in _COARSE_SLOTS.get(coarse_position(store, pid), set()):
-                assigned.append(pid)
+                out.append(pid)
+                used.append(pid)
                 remaining.remove(slot)
                 break
-    return assigned
+    return out, remaining
+
+
+def daily_games_map(store: Store, roster: list[str], pid_z: dict[str, float],
+                    ps: str, pe: str) -> dict[str, int]:
+    """Per-player games over [ps, pe] under daily re-slotting (the projector's
+    per_day_games convention). Games accrue only on days the player's team plays
+    AND he is slotted that day — the Yahoo counter semantics the digest prices
+    from real scheduled reads: an idle player in a starting slot accrues zero.
+    The daily decision that matters is which *playing* player benches when the
+    slot squeeze oversubscribes (best z keeps the slot)."""
+    rg = {pid: 0 for pid in roster}
+    day = date.fromisoformat(ps)
+    end = date.fromisoformat(pe)
+    while day <= end:
+        d = day.isoformat()
+        playing: list[tuple[float, str]] = []
+        for pid in roster:
+            av = store.availability_asof(pid, d)
+            if av is not None and av.status == "OUT":
+                continue
+            nba = store.player_team(pid, d)
+            if nba and store.remaining_games_for_team(nba, d, d) > 0:
+                playing.append((pid_z[pid], pid))
+        playing.sort(reverse=True)
+        started, _ = fill_slots(store, playing, [], ACTIVE_SLOTS)
+        for pid in started:
+            rg[pid] += 1
+        day += timedelta(days=1)
+    return rg
 
 
 def patch_availability(store: Store, pid: str,
@@ -156,27 +183,28 @@ def main() -> int:
             if trade:
                 mine = proj.team_projection(
                     store, state.category_tally.get(team, {}), mine, tdate, tdate, pe,
-                    cats, season, active_ids=best_active_set(store, mine, pool, tdate),
+                    cats, season,
+                    per_day_games=daily_games_map(store, mine, pool, tdate, pe),
                     league_id=args.league, team_id=team)
             else:
                 mine = proj.team_projection(
                     store, state.category_tally.get(team, {}), mine, as_of, ps, pe,
                     cats, season,
-                    per_day_games=store.scheduled_active_games(
-                        args.league, team, as_of, pe),
+                    per_day_games=daily_games_map(store, mine, pool, as_of, pe),
                     league_id=args.league, team_id=team)
             opp_proj = proj.team_projection(
                 store, state.category_tally.get(opp, {}), opp_roster, as_of, ps, pe,
-                cats, season, active_ids=best_active_set(store, opp_roster, pool, as_of),
+                cats, season, per_day_games=daily_games_map(store, opp_roster, pool,
+                                                            as_of, pe),
                 league_id=args.league, team_id=opp)
         else:
             mine = proj.team_projection(
                 store, {}, mine, ps, ps, pe, cats, season,
-                active_ids=best_active_set(store, mine, pool, ps),
+                per_day_games=daily_games_map(store, mine, pool, ps, pe),
                 league_id=args.league, team_id=team)
             opp_proj = proj.team_projection(
                 store, {}, opp_roster, ps, ps, pe, cats, season,
-                active_ids=best_active_set(store, opp_roster, pool, ps),
+                per_day_games=daily_games_map(store, opp_roster, pool, ps, pe),
                 league_id=args.league, team_id=opp)
         out = {}
         for c in cats:
