@@ -23,7 +23,9 @@ through the projector.
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import statistics
 import sys
 import types
 from datetime import date, timedelta
@@ -111,6 +113,31 @@ def patch_availability(store: Store, pid: str,
     store.availability_asof = patched  # type: ignore[method-assign]
 
 
+def patch_distribution_season(store: Store, pid: str, season: str) -> None:
+    """Price a patched-return player's healthy line on a chosen season's full
+    averages. A comeback from a tiny current-season sample otherwise mixes that
+    sample into the trailing window (a 6-minute injury game dragged Kon Knueppel's
+    modeled line to 12 pts on 33 fg%) and prices a phantom healthy line."""
+    real = store.player_distribution_with_n
+    rows = store.conn.execute(
+        "SELECT stats_json FROM player_logs WHERE player_id=? AND season=? "
+        "ORDER BY game_date", (pid, season)).fetchall()
+    logs = [json.loads(r["stats_json"]) for r in rows]
+    if not logs:
+        return
+
+    def patched(player_id, as_of, categories, window=None):
+        if player_id == pid:
+            out = {}
+            for c in categories:
+                vals = [g.get(c, 0.0) for g in logs]
+                out[c] = (statistics.fmean(vals), statistics.pstdev(vals))
+            return out, len(logs)
+        return real(player_id, as_of, categories, window)
+
+    store.player_distribution_with_n = patched  # type: ignore[method-assign]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--league", default="yahoo-478.l.25733")
@@ -121,8 +148,10 @@ def main() -> int:
     ap.add_argument("--add", required=True, action="append")
     ap.add_argument("--drop", required=True, action="append")
     ap.add_argument("--patch", action="append", default=[],
-                    help="pid:STATUS:from — model a return timeline on the real "
-                         "statuses (applies to every scenario)")
+                    help="pid:STATUS:from[:season] — model a return timeline on the real "
+                         "statuses; an optional 4th segment prices the player's healthy "
+                         "line on that season's full averages (e.g. a comeback from a "
+                         "6-minute injury game reading last season)")
     ap.add_argument("--window", type=int, default=10)
     args = ap.parse_args()
 
@@ -135,7 +164,8 @@ def main() -> int:
     as_of, tdate = args.as_of, args.trade_date
 
     for pid_status_from in args.patch:
-        pid, status, frm = pid_status_from.split(":")
+        parts = pid_status_from.split(":")
+        pid, status, frm = parts[0], parts[1], parts[2]
         last = max(w["period_end"] for w in store.conn.execute(
             "SELECT period_end FROM matchups WHERE league_id=? ORDER BY period_end",
             (args.league,)).fetchall())
@@ -143,6 +173,8 @@ def main() -> int:
                            [(as_of, (date.fromisoformat(frm)
                                      - timedelta(days=1)).isoformat(), "OUT"),
                             (frm, last, status)])
+        if len(parts) > 3:
+            patch_distribution_season(store, pid, parts[3])
 
     rosters = store.rosters_asof(args.league, as_of)
     roster = list(rosters[team])
