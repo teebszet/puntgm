@@ -208,6 +208,20 @@ def test_guid_reads_the_id_token_sub_without_userinfo(monkeypatch):
     assert api.yahoo_guid(token, object()) == "GUID-TIM"
 
 
+def test_guid_prefers_a_guid_claim_over_sub(monkeypatch):
+    import base64 as b64
+    import json as jsonlib
+
+    def seg(obj: dict) -> str:
+        return b64.urlsafe_b64encode(jsonlib.dumps(obj).encode()).decode().rstrip("=")
+
+    body = seg({"xoauth_yahoo_guid": "REAL-GUID", "sub": "APP-SCOPED"})
+    token = {"access_token": "t", "id_token": f"hdr.{body}.sig"}
+    monkeypatch.setattr("requests.get", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("userinfo must not be called")))
+    assert api.yahoo_guid(token, object()) == "REAL-GUID"
+
+
 def test_guid_id_token_without_sub_falls_through_to_userinfo(monkeypatch):
     token = {"access_token": "t", "id_token": _id_token(None)}
     assert api._guid_from_id_token({"id_token": "junk"}) is None

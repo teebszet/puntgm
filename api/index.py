@@ -207,7 +207,7 @@ def _guid_from_id_token(token: dict) -> str | None:
         payload = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
     except Exception:
         return None
-    sub = payload.get("sub")
+    sub = payload.get("xoauth_yahoo_guid") or payload.get("guid") or payload.get("sub")
     return str(sub) if sub else None
 
 
@@ -279,7 +279,10 @@ def auth_callback(request: Request, code: str = "", state: str = "") -> Redirect
     except Exception as exc:  # noqa: BLE001 — any handshake failure is a 502 to the browser
         return JSONResponse({"error": f"yahoo exchange failed: {exc}"}, 502)
     if not guid or guid != settings.allowed_guid:
+        print(f"[auth] guid gate tripped: arrived={guid!r} "
+              f"allowed_len={len(settings.allowed_guid or '')}")
         return JSONResponse({"error": "this Yahoo account is not authorized for the tools"}, 403)
+    print(f"[auth] session minted: guid={guid!r}")
     response = RedirectResponse("/tools/", 303)
     response.set_cookie(SESSION_COOKIE, make_session(settings.session_secret, guid),
                         max_age=SESSION_DAYS * 86400, httponly=True, secure=True,
