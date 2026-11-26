@@ -5,10 +5,20 @@
   "buildCommand": null,
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "**"
+    }
+  },
   "headers": [
     {
       "source": "/data/boards.json",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600" }]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "private, no-store" }]
     }
   ]
 }

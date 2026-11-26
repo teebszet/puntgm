@@ -478,6 +478,29 @@ class Store:
         ).fetchall()
         return {r["player_id"]: r["slot"] for r in rows}
 
+    def lineup_covering(self, league_id: str, team_id: str, as_of: str) -> dict[str, str] | None:
+        """{player_id: slot} from the latest dated read for this team on/before ``as_of``.
+
+        Dated reads are FULL per-team snapshots, so the covering read priced directly
+        is the settled rule (live 2026-10-27): a per-player fold across reads
+        resurrects traded-away players from their last rows for this team. Returns
+        ``None`` when this team has no dated read at or before ``as_of`` — callers
+        choose the fallback (``lineup_asof`` is the legacy fold behaviour).
+        """
+        row = self.conn.execute(
+            """SELECT MAX(known_from) AS d FROM lineup_slots
+               WHERE league_id = ? AND team_id = ? AND known_from <= ?""",
+            (league_id, team_id, as_of),
+        ).fetchone()
+        if not row or not row["d"]:
+            return None
+        rows = self.conn.execute(
+            """SELECT player_id, slot FROM lineup_slots
+               WHERE league_id = ? AND team_id = ? AND known_from = ?""",
+            (league_id, team_id, row["d"]),
+        ).fetchall()
+        return {r["player_id"]: r["slot"] for r in rows}
+
     def scheduled_active_games(
         self, league_id: str, team_id: str, as_of: str, period_end: str
     ) -> dict[str, int] | None:

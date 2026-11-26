@@ -1,0 +1,1505 @@
+"""Command-line entry point: ``backfill``, ``simulate``, and ``recommend``.
+
+The ``recommend`` path is perspective-scoped (``--league`` + ``--team``) and writes every
+call to the append-only recommendation log, exercising the full data -> engine -> log path.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from fantasy_gm.config import ALL_SEASONS, FORWARD_SEASON, PRIMARY_SEASON, Config
+from fantasy_gm.data.cache import RawCache
+from fantasy_gm.data.simulate import simulate_league
+from fantasy_gm.data.store import Store
+from fantasy_gm.data.synthetic import seed_synthetic_season
+from fantasy_gm.draft.board import PUNT_BUILDS, AvailabilityMode, RateBasis
+from fantasy_gm.engine.engine import DecisionEngine
+from fantasy_gm.log.reclog import RecommendationLog
+
+
+def _store(config: Config) -> Store:
+    config.ensure_dirs()
+    return Store(config.db_path)
+
+
+def _resolve_team(store: Store, league: str, team: str) -> str:
+    """Accept the short suffix (``t.8``) as well as the stored full id (found live
+    2026-10-26: a raw short id read as 'no active matchup' instead of an id mismatch)."""
+    resolved = store.resolve_team_id(league, team)
+    if resolved is None:
+        print(f"unknown team {team!r} in league {league!r}", file=sys.stderr)
+        raise SystemExit(1)
+    return resolved
+
+
+def cmd_backfill(args: argparse.Namespace) -> int:
+    config = Config()
+    store = _store(config)
+    if args.synthetic:
+        counts = seed_synthetic_season(store, season=args.season, seed=args.seed)
+        print(
+            f"[synthetic] season {args.season}: "
+            f"{counts['players']} players, {counts['games']} games, {counts['logs']} logs"
+        )
+        return 0
+    from fantasy_gm.data.nba_source import backfill_season
+
+    cache = RawCache(config.cache_dir)
+    counts = backfill_season(store, args.season, cache, dry_run=args.dry_run)
+    tag = "dry-run" if args.dry_run else "stored"
+    print(
+        f"[nba_api] season {args.season} ({tag}): "
+        f"{counts['rows']} rows -> {counts['games']} games, {counts['logs']} logs, "
+        f"{counts['usage']} usage snapshots"
+    )
+    return 0
+
+
+def cmd_simulate(args: argparse.Namespace) -> int:
+    config = Config()
+    store = _store(config)
+    league_id = simulate_league(
+        store,
+        season=args.season,
+        seed=args.seed,
+        n_teams=args.teams,
+        roster_size=args.roster,
+        cadence=args.cadence,
+    )
+    teams = store.team_ids(league_id)
+    print(f"created simulated league {league_id} ({len(teams)} teams, cadence={args.cadence})")
+    return 0
+
+
+def cmd_recommend(args: argparse.Namespace) -> int:
+    config = Config()
+    store = _store(config)
+    team = _resolve_team(store, args.league, args.team)
+    engine = DecisionEngine(config)
+    recs = engine.recommend(store, args.league, team, args.as_of, top_n=args.top)
+    if not recs:
+        print("no candidates (is the league backfilled and simulated?)", file=sys.stderr)
+        return 1
+    log = RecommendationLog(store)
+    written = log.append(recs)
+    p = recs[0].perspective
+    print(
+        f"perspective: league={p.league_id} team={p.team_id} "
+        f"period={p.period_index} opp={p.opponent_team_id or '-'} as_of={args.as_of}"
+    )
+    for r in recs:
+        print(
+            f"  #{r.rank:<2} {r.candidate_name:<18} score={r.score:<9} "
+            f"conf={r.confidence:<5} — {r.reasoning}"
+        )
+    print(f"logged {written} recommendation(s); log now holds {log.count()} row(s)")
+    return 0
+
+
+def cmd_project(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.projection import Projector
+
+    config = Config()
+    store = _store(config)
+    team = _resolve_team(store, args.league, args.team)
+    proj = Projector(config, method=args.method).project(store, args.league, team, args.as_of)
+    if not proj.opponent_id:
+        print("no active matchup for that team/date", file=sys.stderr)
+        return 1
+    print(
+        f"projection: league={proj.league_id} team={proj.team_id} "
+        f"period={proj.period_index} opp={proj.opponent_id} as_of={args.as_of}"
+    )
+    for c, p in proj.categories.items():
+        print(
+            f"  {c:7} mine={p.mine_total:8.1f} opp={p.opp_total:8.1f} "
+            f"win={p.win_prob:.2f}  {p.label}"
+        )
+    print(f"contested: {', '.join(proj.contested()) or '-'}")
+    return 0
+
+
+def cmd_feed(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.reconcile import Reconciler
+    from fantasy_gm.engine.signals import SignalEngine
+    from fantasy_gm.log.reclog import FeedLog
+    from fantasy_gm.models import Perspective
+
+    config = Config()
+    store = _store(config)
+    team = _resolve_team(store, args.league, args.team)
+    signals = SignalEngine(config).detect(store, args.league, team, args.as_of)
+    moves = Reconciler(config).reconcile(store, args.league, team, args.as_of)
+
+    strong = [s for s in signals if s.band == "strong"]
+    shown = strong if (strong and not args.all) else signals
+    print(f"live signals (as_of {args.as_of}) — {len(strong)} strong / {len(signals)} total")
+    for s in shown[: args.top]:
+        print(
+            f"  [{s.band:6}] {s.signal_type:15} {s.subject_name:16} "
+            f"str={s.strength:<5} — {s.evidence}"
+        )
+
+    print(f"\nend-of-day reconciliation — {len(moves)} candidate move(s)")
+    for m in moves:
+        flag = " (drops unplayed!)" if m.drops_unplayed else ""
+        deltas = ", ".join(f"{c} {b:.2f}->{a:.2f}" for c, (b, a) in m.projected_impact.items())
+        print(
+            f"  {m.line_of_play}: drop {m.drop_name} -> add {m.add_name}  conf={m.confidence}{flag}"
+        )
+        print(f"      projected: {deltas}")
+
+    if moves or signals:
+        log = FeedLog(store)
+        m = store.matchup_for_team(args.league, team, args.as_of)
+        opp = (m.team_b if m.team_a == team else m.team_a) if m else ""
+        persp = Perspective(args.league, team, m.period_index if m else -1, opp)
+        ns = log.append_signals(signals, persp)
+        nm = log.append_moves(moves)
+        print(
+            f"\nlogged {ns} signal(s) + {nm} move(s); "
+            f"feed log holds {log.signal_count()} / {log.move_count()}"
+        )
+    return 0
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    from fantasy_gm.validation import measure_autocorrelation, measure_category_cv
+
+    config = Config()
+    store = _store(config)
+    cv = measure_category_cv(store, args.season)
+    if not cv:
+        print("no data to measure (backfill a season first)", file=sys.stderr)
+        return 1
+    ac = measure_autocorrelation(store, args.season)
+    print(f"measured category variance (season {args.season})")
+    print(
+        "  NOTE: only meaningful on REAL data — synthetic is generated from the "
+        "assumptions it would 'validate'."
+    )
+    print(f"  {'category':8} {'CV (σ/μ)':>10} {'lag1-autocorr':>14}")
+    for c in sorted(cv, key=cv.get, reverse=True):
+        print(f"  {c:8} {cv[c]:>10.3f} {ac.get(c, float('nan')):>14.3f}")
+    print(f"highest variance: {max(cv, key=cv.get)}   lowest: {min(cv, key=cv.get)}")
+    print("  autocorr ≈ 0  -> games independent; measured σ suffices, no multiplier needed.")
+    print(
+        "  (fg_pct/ft_pct omitted: they use a volume-weighted binomial model, not CV — "
+        "their variance model is a separate, not-yet-validated check.)"
+    )
+    return 0
+
+
+def cmd_wire(args: argparse.Namespace) -> int:
+    from fantasy_gm.engine.wire import WireAnalyzer
+
+    config = Config()
+    store = _store(config)
+    team = _resolve_team(store, args.league, args.team)
+    wa = WireAnalyzer(config).analyze(store, args.league, team, args.as_of)
+    if not wa.perspective.opponent_team_id:
+        print("no active matchup for that team/date", file=sys.stderr)
+        return 1
+    p = wa.perspective
+    print(
+        f"wire analysis: league={p.league_id} team={p.team_id} "
+        f"opp={p.opponent_team_id} as_of={args.as_of}"
+    )
+    print("bundle depth on wire: " + ", ".join(f"{b}={n}" for b, n in wa.bundle_depth.items()))
+    if wa.drop_name:
+        print(f"every swap drops: {wa.drop_name} (lowest-valued roster player)")
+    if not wa.options:
+        print("  no contested categories")
+    for o in wa.options:
+        if o.verdict == "infeasible":
+            print(f"  {o.category:6} INFEASIBLE — no available add improves it")
+        else:
+            conc = ", ".join(f"{c} {d:+.2f}" for c, d in o.concedes.items()) or "nothing"
+            print(
+                f"  {o.category:6} {o.verdict:9} add {o.add_name} (+{o.gain:.2f}); "
+                f"concedes: {conc}; net cats {o.net_categories:+d}"
+            )
+    return 0
+
+
+def cmd_values(args: argparse.Namespace) -> int:
+    from fantasy_gm.valuation import player_values
+
+    config = Config()
+    store = _store(config)
+    vals = player_values(store, args.season)
+    if not vals:
+        print("no data to value (backfill a season first)", file=sys.stderr)
+        return 1
+    top = sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))[: args.top]
+    print(f"top {len(top)} players by 9-cat z-value (season {args.season})")
+    for pid, z in top:
+        row = store.conn.execute(
+            "SELECT player_name FROM player_logs WHERE player_id = ? LIMIT 1", (pid,)
+        ).fetchone()
+        print(f"  {z:>6.2f}  {row['player_name'] if row else pid}")
+    return 0
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    from fantasy_gm.data.simulate import simulate_league
+    from fantasy_gm.engine.scoring import replay_season
+
+    config = Config()
+    store = _store(config)
+    tot = {"moves": 0, "hit": 0, "helped": 0, "flips": 0, "unflips": 0, "delta_sum": 0.0}
+    cal = {"safe": [0, 0], "contested": [0, 0], "gone": [0, 0]}
+    for seed in range(1, args.leagues + 1):
+        lg = simulate_league(store, season=args.season, seed=seed, n_teams=12, roster_size=13)
+        r = replay_season(store, lg, config)
+        for k in tot:
+            tot[k] += r.get(k, 0)
+        for lab, (w, t) in r.get("calibration", {}).items():
+            cal[lab][0] += w
+            cal[lab][1] += t
+    n = tot["moves"]
+    if n == 0:
+        print("no moves to grade (backfill a season first)", file=sys.stderr)
+        return 1
+    cats_n = sum(t for _w, t in cal.values())
+    print(f"track record — season {args.season}, {args.leagues} simulated league(s)")
+    print(f"\nProjection calibration ({cats_n} category calls):")
+    for lab in ("safe", "contested", "gone"):
+        w, t = cal[lab]
+        if t:
+            print(f"  called {lab:9}: won {w / t:.0%}  (n={t})")
+    print(f"\nWaiver calls ({n} graded):")
+    print(f"  add out-produced the drop in the TARGET category:  {tot['hit'] / n:.0%}")
+    print(f"  avg realized target-category gain per call:        {tot['delta_sum'] / n:+.2f}")
+    print(f"  categories flipped to you / away* :                {tot['flips']} / {tot['unflips']}")
+    print("  * opponent-dependent — static opponents this pass (see deferred baseline).")
+    return 0
+
+
+def cmd_player_index(args: argparse.Namespace) -> int:
+    from fantasy_gm.data.player_index import ingest_player_index
+
+    config = Config()
+    store = _store(config)
+    cache = RawCache(config.cache_dir)
+    counts = ingest_player_index(
+        store, args.season, cache, args.known_from, dry_run=args.dry_run, as_of=args.as_of
+    )
+    tag = "dry-run" if args.dry_run else "stored"
+    print(f"[playerindex] season {args.season} ({tag}), known_from {args.known_from}")
+    print(
+        f"  {counts['rows']} player rows, {counts['rostered']} on an NBA roster "
+        f"across {counts['teams']} teams"
+    )
+    print(
+        f"  -> {counts['positions']} position(s), "
+        f"{counts['forward_roster']} forward-roster row(s), "
+        f"{counts['incoming']} incoming player(s) with no game logs"
+    )
+    if not args.dry_run:
+        print(
+            "  depth chart is DERIVED by ranking each new roster on its players' own "
+            "minutes history (A-DRAFT-12) — override by hand for names you disagree with"
+        )
+    return 0
+
+
+def cmd_reconstruct_rosters(args: argparse.Namespace) -> int:
+    """Backtest-only: opening-night rosters for a past season, from its own first box scores.
+
+    Prints what the reconstruction could not see as loudly as what it wrote — a roster set
+    that misses everyone who never played is exactly the kind of thing that quietly turns a
+    backtest into a flattering one.
+    """
+    from fantasy_gm.data.reconstruct import ReconstructionError, reconstruct_forward_roster
+
+    config = Config()
+    store = _store(config)
+    try:
+        c = reconstruct_forward_roster(
+            store, args.season, args.as_of, window_days=args.window_days, dry_run=args.dry_run
+        )
+    except ReconstructionError as e:
+        print(f"cannot reconstruct: {e}", file=sys.stderr)
+        return 1
+    tag = "dry-run" if args.dry_run else "stored"
+    print(f"[reconstruct] season {args.season} ({tag}), known_from {args.as_of}")
+    print(
+        f"  {c['forward_roster']} forward-roster row(s) across {c['teams']} teams; "
+        f"{c['movers']} player(s) on a different team than they last played for"
+    )
+    print(
+        f"  opening window {c['season_start']}..{c['cutoff']} ({c['window_days']}d): "
+        f"{c['opening_window']} of {c['players_with_logs']} players with logs; "
+        f"{c['late_debut_excluded']} later debut(s) excluded as midseason arrivals"
+    )
+    print(
+        "  LOOKAHEAD COMPROMISE — backtest instrument, never a live source: team identity is "
+        "read from rows dated after the cut, and anyone who missed the whole season is "
+        "invisible here, so this pool is biased toward players who stayed healthy"
+    )
+    return 0
+
+
+def cmd_projections(args: argparse.Namespace) -> int:
+    from fantasy_gm.projections.derived import DerivedProjectionSource
+
+    config = Config()
+    store = _store(config)
+    src = DerivedProjectionSource(store)
+    projections = src.project(args.season, args.as_of)
+    if not projections:
+        print("nothing to project (is a season backfilled?)", file=sys.stderr)
+        return 1
+    fit = src.fit(args.season, args.as_of)
+    print(
+        f"derived projections — season {args.season}, as_of {args.as_of} "
+        f"({len(projections)} players)"
+    )
+    print(
+        f"  minutes fit: {fit.minutes.n_players} players, "
+        f"shrinkage {fit.minutes.shrinkage_games:.1f} games, "
+        f"drift σ {fit.minutes.drift_var**0.5:.2f} min, "
+        f"team-change drift ×{fit.minutes.team_change_drift_mult:.2f} "
+        f"({fit.minutes.n_movers} movers)"
+    )
+    print(
+        f"  availability fit: prior {fit.games.prior_games:.1f} games, "
+        f"pool rate {fit.games.pool_rate:.3f} [{fit.games.basis}]"
+    )
+    fallbacks = sorted(k for k, v in fit.minutes.basis.items() if v == "fallback")
+    if fallbacks:
+        print(f"  UNMEASURED (fallback): {', '.join(fallbacks)}")
+
+    ranked = sorted(
+        projections.items(),
+        key=lambda kv: -(kv[1].expected_games * kv[1].estimate("pts").per_game_mean),
+    )[: args.top]
+    print(
+        f"\n  {'player':<24} {'min':>5} {'gp':>5} {'pts':>5} {'reb':>5} {'ast':>5} "
+        f"{'fg%':>5} {'±μ':>5}  basis"
+    )
+    for pid, p in ranked:
+        row = store.conn.execute(
+            "SELECT player_name FROM player_logs WHERE player_id = ? LIMIT 1", (pid,)
+        ).fetchone()
+        name = row["player_name"] if row else pid
+        fg = p.percentage("fg_pct")
+        print(
+            f"  {name[:24]:<24} {p.notes.get('minutes', '-'):>5} {p.expected_games:>5.1f} "
+            f"{p.estimate('pts').per_game_mean:>5.1f} {p.estimate('reb').per_game_mean:>5.1f} "
+            f"{p.estimate('ast').per_game_mean:>5.1f} "
+            f"{(f'{fg:.3f}' if fg is not None else '-'):>5} "
+            f"{p.estimate('pts').mean_stderr:>5.2f}  {p.basis}"
+        )
+    return 0
+
+
+def cmd_projection_backtest(args: argparse.Namespace) -> int:
+    from fantasy_gm.projections.availability import measure_games_production_correlation
+    from fantasy_gm.projections.backtest import backtest_projection
+
+    config = Config()
+    store = _store(config)
+    report = backtest_projection(store, args.season, as_of=args.as_of, mode=args.mode)
+    if report is None:
+        print(f"season {args.season} is not in the store", file=sys.stderr)
+        return 1
+    print(f"projection backtest — season {args.season} [{report.mode}]")
+    print(
+        f"  fit through {report.as_of}; scored on {report.eval_start}..{report.eval_end} "
+        f"({report.n_players} players)"
+    )
+    if "blocked" in report.notes:
+        print(f"  BLOCKED: {report.notes['blocked']}", file=sys.stderr)
+        return 1
+    if "proxy" in report.notes:
+        print(f"  NOTE: {report.notes['proxy']}")
+    print(f"\n  {report.model.line()}")
+    print(f"  {report.naive.line()}")
+    print(f"\n  {'category':<8} {'model':>8} {'naive':>8} {'better?':>8}")
+    for c in sorted(report.model.category_mae):
+        m, n = report.model.category_mae[c], report.naive.category_mae.get(c, float("nan"))
+        print(f"  {c:<8} {m:>8.3f} {n:>8.3f} {'yes' if m < n else 'no':>8}")
+    beaten = report.categories_beaten()
+    print(
+        f"\n  categories beaten: {len(beaten)}/{len(report.model.category_mae)} "
+        f"({', '.join(beaten) or 'none'})"
+    )
+    print(f"  {report.verdict()}")
+    passed = report.beats_naive_minutes and report.minutes_edge_sigmas >= 2.0
+
+    corr = measure_games_production_correlation(store, args.season)
+    if corr:
+        print(
+            f"\n  A-DRAFT-7 (is E[games] separable from E[per-game]?), n={corr['n_players']:.0f}:"
+        )
+        print(f"    corr(games played, minutes/g) = {corr['corr_games_minutes']:+.3f}")
+        print(f"    corr(games played, pts/g)     = {corr['corr_games_scoring']:+.3f}")
+        if "post_absence_minutes_ratio" in corr:
+            print(
+                f"    minutes on return from an absence = "
+                f"{corr['post_absence_minutes_ratio']:.3f}× own average "
+                f"(n={corr['n_returns']:.0f} returns)"
+            )
+    return 0 if passed else 2
+
+
+def cmd_adp(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from fantasy_gm.projections.adp import adp_for_pool, ingest_adp_file
+
+    if args.live:
+        from fantasy_gm.projections.adp import fetch_draft_analysis
+
+        token = Path("data/yahoo_access_token.txt").read_text().strip()
+        capture = f"data/raw_cache/yahoo_draftanalysis_{args.live.replace('.', '_')}.json"
+        print(f"Fetching live draft_analysis for {args.live} (limit {args.limit}) ...")
+        rows = fetch_draft_analysis(args.live, token, limit=args.limit, save_path=capture)
+        print(f"  captured {len(rows)} rows to {capture}")
+    else:
+        capture = args.file
+
+    config = Config()
+    store = _store(config)
+    result = ingest_adp_file(store, capture, args.season, args.known_from, source=args.source)
+    print(f"ADP ingest — season {args.season}, known_from {args.known_from}, source {args.source}")
+    print(
+        f"  {result.rows} row(s) -> {result.stored} stored; "
+        f"{len(result.unresolved)} unresolved name(s); "
+        f"{len(result.missing_adp)} row(s) with no average pick"
+    )
+    for name in result.unresolved[:10]:
+        print(f"    unresolved: {name}")
+    pool = store.draft_pool_asof(args.season, args.known_from)
+    priced = adp_for_pool(store, args.season, args.known_from, pool, source=args.source)
+    unpriced = [p for p, a in priced.items() if a is None]
+    print(
+        f"  draft pool {len(pool)}: {len(pool) - len(unpriced)} priced, "
+        f"{len(unpriced)} with no ADP (represented as absent, not as a default)"
+    )
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Ingest Yahoo per-player status as effective-dated availability (dds 2.1), then print
+    per-player coverage so a silent gap cannot hide."""
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from fantasy_gm.projections.status import (
+        OUT as STATUS_OUT,
+    )
+    from fantasy_gm.projections.status import (
+        QUESTIONABLE,
+        ingest_status,
+        load_status_file,
+        status_for_pool,
+    )
+
+    if args.live:
+        from fantasy_gm.projections.status import fetch_league_player_metadata
+
+        token = Path("data/yahoo_access_token.txt").read_text().strip()
+        capture = f"data/raw_cache/yahoo_status_{args.live.replace('.', '_')}.json"
+        print(f"Fetching live player metadata for {args.live} (limit {args.limit}) ...")
+        rows = fetch_league_player_metadata(args.live, token, limit=args.limit, save_path=capture)
+        print(f"  captured {len(rows)} player rows to {capture}")
+    else:
+        if not args.file:
+            print("--file or --live is required", file=sys.stderr)
+            return 1
+        capture = args.file
+        rows = load_status_file(capture)
+
+    # Shape check on the raw capture, before parsing can quietly degrade: if the payload
+    # never mentions status_full, Yahoo stopped carrying it (or out=metadata was dropped) —
+    # that must be loud, because "no designation" would then silently read as healthy.
+    if '"status_full"' not in Path(capture).read_text():
+        print(
+            f"WARNING: {capture} carries no status_full fields — the metadata payload "
+            "shape changed or out=metadata returned nothing. Nothing was ingested.",
+            file=sys.stderr,
+        )
+        return 1
+
+    config = Config()
+    store = _store(config)
+    known_from = args.known_from or datetime.now(UTC).date().isoformat()
+    result = ingest_status(store, rows, known_from, source=args.source)
+    print(f"status ingest — effective from {known_from}, source {args.source}")
+    print(
+        f"  {result.rows} row(s) parsed -> {result.stored} designation(s) stored; "
+        f"{len(result.unresolved)} unresolved name(s); "
+        f"{len(result.unmapped)} unmapped status value(s); "
+        f"{len(result.noted)} noted-but-undesignated; "
+        f"{len(result.ignored)} ignored roster state(s)"
+    )
+    for name, raw in result.unmapped:
+        print(f"    unmapped: {name} — {raw!r}")
+    for name in result.unresolved[:10]:
+        print(f"    unresolved: {name}")
+    for name in result.noted[:10]:
+        print(f"    noted, no status: {name}")
+    if result.ignored:
+        print(
+            "    ignored (roster state, not health): "
+            + ", ".join(result.ignored[:10])
+            + (f" … (+{len(result.ignored) - 10} more)" if len(result.ignored) > 10 else "")
+        )
+    if result.stored == 0:
+        print(
+            "  no designation stored (a fully healthy league is a valid outcome — "
+            "the board's measured rates stand)"
+        )
+        return 0
+
+    # --- per-player coverage over the draftable universe -----------------------
+    names: dict[str, str] = {}
+    for r in store.conn.execute(
+        "SELECT player_id, player_name, MAX(game_date) FROM player_logs "  # noqa: S608
+        "WHERE game_date <= ? GROUP BY player_id",
+        (known_from,),
+    ):
+        names[r["player_id"]] = r["player_name"]
+    for p in store.incoming_players_asof(args.season, known_from):
+        names[p.player_id] = p.player_name
+    pool = store.draft_pool_asof(args.season, known_from)
+    statuses = status_for_pool(store, pool, known_from)
+    counts: dict[str, int] = {}
+    flagged: list[tuple[str, object]] = []
+    for pid in pool:
+        s = statuses.get(pid)
+        if s is None:
+            counts["none"] = counts.get("none", 0) + 1
+            continue
+        counts[s.status] = counts.get(s.status, 0) + 1
+        if s.status in (QUESTIONABLE, STATUS_OUT):
+            flagged.append((names.get(pid, pid), s))
+    covered = len(pool) - counts.get("none", 0)
+    print(
+        f"  draft pool {len(pool)} (as of {known_from}): {covered} carry a designation — "
+        + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+    )
+    if flagged:
+        print("  QUESTIONABLE/OUT:")
+        for name, s in sorted(flagged, key=lambda t: t[0]):
+            note = f" — {s.note}" if s.note else ""
+            print(f"    {name} — {s.status} [from {s.known_from}]{note}")
+    return 0
+
+
+def cmd_news(args: argparse.Namespace) -> int:
+    """Multi-source news ingest + stored view (dds 9.2-9.5, 9.9).
+
+    The wires (Yahoo injuries page, Yahoo NBA news RSS) need no token; the pricing
+    authority (Yahoo fantasy API metadata) refreshes through ``fantasy-gm status
+    --live``. Everything lands in the store as effective-dated rows, so the stored
+    view below is exactly what the board and the rec-card flags will read at ``as_of``.
+    """
+    from datetime import UTC, datetime
+
+    from fantasy_gm.projections import news as news_mod
+
+    config = Config()
+    store = _store(config)
+    today = args.known_from or datetime.now(UTC).date().isoformat()
+    did = False
+
+    if args.fetch or args.injuries_file:
+        if args.fetch:
+            print("Fetching the Yahoo injuries page (no token) ...")
+            rows = news_mod.fetch_yahoo_injuries_page(
+                save_path="data/raw_cache/yahoo_injuries_page.html"
+            )
+        else:
+            rows = news_mod.load_injuries_file(args.injuries_file)
+        r = news_mod.ingest_yahoo_injuries(store, rows, today, today=today)
+        print(
+            f"yahoo-web injuries: {r.rows} row(s) -> {r.stored_designations} "
+            f"designation(s), {r.stored_events} new event(s); "
+            f"{len(r.unresolved)} unresolved, {len(r.unmapped)} unmapped"
+        )
+        for name, raw in r.unmapped:
+            print(f"    unmapped: {name} — {raw!r}")
+        for name in r.unresolved[:10]:
+            print(f"    unresolved: {name}")
+        did = True
+
+    if args.fetch or args.rss_file:
+        if args.fetch:
+            print("Fetching the Yahoo NBA news RSS (no token) ...")
+            items = news_mod.fetch_yahoo_rss(save_path="data/raw_cache/yahoo_news_rss.xml")
+        else:
+            items = news_mod.load_rss_file(args.rss_file)
+        r = news_mod.ingest_yahoo_news(store, items, today)
+        print(
+            f"yahoo news RSS: {r.rows} item(s) -> {r.stored_events} new event(s); "
+            f"{len(r.unresolved)} naming no pool player, {len(r.ambiguous)} ambiguous"
+        )
+        for a in r.ambiguous[:5]:
+            print(f"    ambiguous: {a}")
+        did = True
+
+    if args.playerindex:
+        from fantasy_gm.data.player_index import (
+            _fetch_rows,
+            fold_forward_roster,
+            parse_player_index,
+        )
+
+        entries = parse_player_index(
+            _fetch_rows(args.playerindex, RawCache(config.cache_dir), refresh=True)
+        )
+        before = store.forward_roster_map_asof(args.season, args.before or today)
+        events = news_mod.roster_move_events(before, entries, today)
+        n_new = store.add_news_events(events) if events else 0
+        fold = fold_forward_roster(
+            store, entries, args.season, today, as_of=args.before or today
+        )
+        print(
+            f"playerindex roster diff (vs roster known {args.before or today}): "
+            f"{len(events)} move(s) -> {n_new} new event(s)"
+        )
+        for e in events[:10]:
+            print(f"    {e.headline}")
+        # The fold is the pricing half (9.11): moved players re-ranked on their new
+        # team's depth, dated today — the diff above only reported them.
+        if fold["changed_players"]:
+            print(
+                f"roster fold: {fold['changed_players']} player(s) re-priced "
+                f"({fold['moved']} moved in, {fold['departed']} off rosters) -> "
+                f"{fold['forward_roster']} roster row(s), {fold['incoming']} incoming, "
+                f"{fold['positions']} position row(s) (known_from {today})"
+            )
+        else:
+            print("roster fold: league unchanged since the stored roster; nothing rewritten")
+        did = True
+
+    if args.x:
+        try:
+            news_mod.fetch_x_events(args.x)
+        except RuntimeError as exc:
+            print(f"X adapter: {exc}", file=sys.stderr)
+            return 1
+
+    if did and not args.show:
+        return 0
+
+    # --- stored view: what the board and rec-card flags will read at as_of --------
+    as_of = args.as_of or today
+    pool = store.draft_pool_asof(args.season, as_of)
+    ages = news_mod.source_age(store, as_of)
+    if ages:
+        print(
+            f"sources (as of {as_of}): "
+            + ", ".join(f"{a['source']} {a['events']} event(s), latest {a['latest']}" for a in ages)
+        )
+    else:
+        print(f"no news events stored as of {as_of} — run with --fetch to pull the wires")
+    flags = news_mod.flags_for_pool(store, pool, as_of, season=args.season)
+    names: dict[str, str] = {}
+    for r in store.conn.execute("SELECT DISTINCT player_id, player_name FROM player_logs"):
+        names[r["player_id"]] = r["player_name"]
+    for p in store.incoming_players_asof(args.season, as_of):
+        names[p.player_id] = p.player_name
+
+    def _flag_order(item):
+        f, name = item[1], names.get(item[0], item[0])
+        return (0 if f.startswith("OUT") else 1 if f.startswith("QUE") else 2, name)
+
+    flagged = sorted(((pid, f) for pid, f in flags.items() if f), key=_flag_order)
+    print(f"flagged pool players: {len(flagged)} of {len(pool)} (as of {as_of})")
+    for pid, f in flagged[: args.limit]:
+        events = store.news_asof([pid], as_of).get(pid, [])
+        latest = events[0].headline if events else ""
+        print(f"    {names.get(pid, pid)} — {f}" + (f" · {latest}" if latest else ""))
+    if not flagged:
+        print("    (a fully healthy league with no wire items is a valid state)")
+    return 0
+
+
+def cmd_manage(args: argparse.Namespace) -> int:
+    """Give every team in a simulated league a baseline manager, so the wire drains."""
+    from fantasy_gm.data.manage import apply_baseline_management
+
+    config = Config()
+    store = _store(config)
+    try:
+        report = apply_baseline_management(
+            store, args.league, config, moves_per_period=args.moves, force=args.force
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(
+        f"{args.league}: {report.moves} moves over {report.periods} periods "
+        f"({report.teams} teams, {report.skipped_no_candidate} periods with no useful move)"
+    )
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Strategy comparison: the engine's calls against naive baselines on identical slots."""
+    from fantasy_gm.validation.replay import (
+        STRATEGIES,
+        by_category,
+        extract_slots,
+        run_strategies,
+        summarize,
+    )
+
+    config = Config()
+    store = _store(config)
+    slots = []
+    for lg in args.leagues:
+        s = extract_slots(store, lg, config)
+        print(f"{lg}: {len(s)} decision slots", file=sys.stderr)
+        slots += s
+    if not slots:
+        print("no decision slots (simulate a league first)", file=sys.stderr)
+        return 1
+
+    results = run_strategies(store, slots, args.season, config)
+    print(f"\nstrategy comparison — {len(slots)} decision slots, season {args.season}")
+    print("(same target category and drop for every strategy; only the ADD varies)\n")
+    print(
+        f"{'strategy':<12}{'n':>6}{'hit':>6}{'tie':>6}{'miss':>6}"
+        f"{'hit%':>8}{'decided%':>10}{'±se':>8}{'avg delta':>11}{'add DNP':>9}"
+    )
+    for name in STRATEGIES:
+        s = summarize(results[name])
+        if not s["n"]:
+            continue
+        print(
+            f"{name:<12}{s['n']:>6}{s['hit']:>6}{s['tie']:>6}{s['miss']:>6}"
+            f"{s['hit_rate']:>8.3f}{s['hit_rate_decided']:>10.3f}{s['se']:>8.4f}"
+            f"{s['avg_delta']:>11.2f}{s['add_dnp']:>9}"
+        )
+
+    if args.by_category:
+        for name in args.by_category:
+            print(f"\n--- {name}, by target category ---")
+            for c, s in by_category(results[name]).items():
+                print(f"  {c:<8}{s['n']:>5}{s['hit_rate']:>8.3f}{s['avg_delta']:>10.2f}")
+    return 0
+
+
+def cmd_yahoo_check(args: argparse.Namespace) -> int:
+    """Verify a token can actually reach the Fantasy API (a valid token is not enough)."""
+    from pathlib import Path
+
+    from fantasy_gm.data.yahoo_fetch import check_access
+
+    token = Path(args.token).read_text().strip()
+    ok, message = check_access(token)
+    print(("OK  " if ok else "FAIL ") + message)
+    return 0 if ok else 1
+
+
+def cmd_yahoo_import(args: argparse.Namespace) -> int:
+    """Load a fetched Yahoo snapshot as a real league (read-only, point-in-time)."""
+    import json
+
+    from fantasy_gm.data.yahoo_import import ImportRefused, import_snapshot
+
+    config = Config()
+    store = _store(config)
+    with open(args.snapshot) as fh:
+        snapshot = json.load(fh)
+    overrides = {}
+    if args.overrides:
+        with open(args.overrides) as fh:
+            overrides = json.load(fh)
+    try:
+        report = import_snapshot(store, snapshot, overrides=overrides, force=args.force)
+    except ImportRefused as exc:
+        print(f"import refused: {exc}", file=sys.stderr)
+        return 1
+    for k, v in report.items():
+        print(f"  {k}: {v}")
+    return 0
+
+
+def cmd_draft(args: argparse.Namespace) -> int:
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    """Interactive draft night: live poll + manual entry + on-the-clock recommendations.
+
+    Commands inside the session:
+      n            next recommendation (on-the-clock output)
+      p <name>     record a pick by typed name (manual entry / type-ahead)
+      sync         pull platform picks now (live ingest; reports discrepancies)
+      auto         sync + recommend in one step
+      board        show recent picks
+      context      category differential vs the field (display only, R6)
+      punt [x]     punt panel: summary, a build name for its table, or a cat set
+                   to explore (e.g. punt ft%,pts) (R7/R8)
+      q            save and quit
+    """
+    from fantasy_gm.draft.board import PUNT_BUILDS
+    from fantasy_gm.draft.live import (
+        DraftState,
+        apply_manual_pick,
+        build_gm,
+        load_state,
+        parse_columns,
+        poll_draft_results,
+        recommend,
+        reconcile,
+        render_recommendation,
+        save_state,
+    )
+    from fantasy_gm.draft.panels import (
+        PuntPanelCache,
+        compute_differential,
+        parse_punt,
+        render_differential,
+        render_punt_panel,
+    )
+
+    config = Config()
+    store = _store(config)
+    try:
+        columns = parse_columns(args.columns)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    state_path = Path(f"data/draft_{args.league.replace('.', '_')}.json")
+    if state_path.exists() and not args.fresh:
+        state = load_state(state_path)
+        print(f"resumed {state_path} ({len(state.picks)} picks already recorded)")
+    else:
+        state = DraftState(
+            league_key=args.league, n_teams=args.teams, n_rounds=args.rounds, my_seat=args.seat
+        )
+
+    print("Building board + market order (once) ...")
+    as_of = args.as_of or datetime.now(UTC).date().isoformat()
+    gm = build_gm(store, args.season, as_of)
+    pool, names, directory = gm["pool"], gm["names"], gm["directory"]
+    basis = gm["basis"]  # the panels read its per-category standardisation (D5/D6)
+    punt_cache = PuntPanelCache()
+    print(f"  board ready: {len(pool)} players; market order: {len(gm['adp_order'])} priced")
+
+    while True:
+        try:
+            raw = input(f"\n[pick {state.pick_number}] draft> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raw = "q"
+        if not raw:
+            continue
+        cmd, _, arg = raw.partition(" ")
+        if cmd in ("q", "quit", "exit"):
+            save_state(state, state_path)
+            print(f"saved -> {state_path}")
+            return 0
+        if cmd == "n":
+            rec = recommend(
+                store,
+                args.season,
+                state,
+                pool,
+                board=gm["board"],
+                adp_order=gm["adp_order"],
+                names=names,
+                budget_s=args.budget,
+            )
+            print(render_recommendation(rec, columns))
+            print(render_differential(compute_differential(state, basis)))
+            continue
+        if cmd == "p":
+            if not arg:
+                print("usage: p <player name>")
+                continue
+            pid, cands, err = apply_manual_pick(state, arg, directory)
+            if err:
+                print(f"error: {err}")
+            elif pid:
+                print(f"picked: {names.get(pid, pid)} (#{state.pick_number - 1})")
+            else:
+                print("ambiguous or unknown -- candidates:")
+                for c in cands:
+                    print(f"  {names.get(c, c)}")
+            save_state(state, state_path)
+            continue
+        if cmd == "sync":
+            try:
+                picks = poll_draft_results(state.league_key)
+                issues = reconcile(state, picks, names)
+            except RuntimeError as exc:
+                print(f"poll failed: {exc}")
+                continue
+            print(f"synced {len(picks)} platform picks; {len(issues)} discrepancy(ies)")
+            for i in issues:
+                print(f"  ! {i}")
+            save_state(state, state_path)
+            continue
+        if cmd == "auto":
+            try:
+                picks = poll_draft_results(state.league_key)
+                issues = reconcile(state, picks, names)
+                if issues:
+                    for i in issues:
+                        print(f"  ! {i}")
+            except RuntimeError as exc:
+                print(f"poll failed ({exc}); recommending from manual state")
+            rec = recommend(
+                store,
+                args.season,
+                state,
+                pool,
+                board=gm["board"],
+                adp_order=gm["adp_order"],
+                names=names,
+                budget_s=args.budget,
+            )
+            print(render_recommendation(rec, columns))
+            print(render_differential(compute_differential(state, basis)))
+            save_state(state, state_path)
+            continue
+        if cmd == "context":
+            print(render_differential(compute_differential(state, basis)))
+            continue
+        if cmd == "punt":
+            detail = None
+            custom: tuple[str, ...] = ()
+            if arg:
+                if arg in PUNT_BUILDS or arg == "custom":
+                    detail = arg
+                else:
+                    try:
+                        custom = parse_punt(arg)
+                    except ValueError as exc:
+                        print(f"error: {exc}")
+                        continue
+            panel = punt_cache.get(
+                state, basis, gm["adp_order"], names, custom=custom, budget_s=args.punt_budget
+            )
+            print(render_punt_panel(panel, detail=detail))
+            continue
+        if cmd == "board":
+            for p in state.picks[-10:]:
+                who = "you" if p.team_seat == state.my_seat else f"seat {p.team_seat}"
+                print(f"  {p.number:>3} {who:<8} {p.name or p.player_id} ({p.source})")
+            continue
+        print("commands: n | p <name> | sync | auto | board | context | punt [spec] | q")
+
+
+def cmd_board(args: argparse.Namespace) -> int:
+    from fantasy_gm.draft.board import (
+        all_builds,
+        biggest_movers,
+        build_board,
+        export,
+        render_table,
+    )
+
+    config = Config()
+    store = _store(config)
+    availability = AvailabilityMode(args.availability)
+    rate_basis = RateBasis(args.basis)
+    as_of = args.as_of
+    if availability is AvailabilityMode.PROJECTED and not as_of:
+        print(
+            "--availability projected needs --as-of (a date before the season starts, so "
+            "the availability fit sees no part of the season being ranked)",
+            file=sys.stderr,
+        )
+        return 1
+    if rate_basis is RateBasis.PROJECTED and not as_of:
+        print(
+            "--basis projected needs --as-of (the date the projection is made from, before "
+            "the forward season starts so the model sees none of it)",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        forward_season = args.forward_season or None
+        if args.punt:
+            punt = tuple(c.strip() for c in args.punt.split(",") if c.strip())
+            boards = [
+                build_board(
+                    store,
+                    args.season,
+                    punt,
+                    availability=availability,
+                    as_of=as_of,
+                    forward_season=forward_season,
+                    rate_basis=rate_basis,
+                )
+            ]
+        elif args.build == "all":
+            boards = all_builds(
+                store,
+                args.season,
+                availability=availability,
+                as_of=as_of,
+                forward_season=forward_season,
+                rate_basis=rate_basis,
+            )
+        else:
+            if args.build not in PUNT_BUILDS:
+                print(
+                    f"unknown build {args.build!r}; known: {', '.join(PUNT_BUILDS)}",
+                    file=sys.stderr,
+                )
+                return 1
+            boards = [
+                build_board(
+                    store,
+                    args.season,
+                    PUNT_BUILDS[args.build],
+                    build=args.build,
+                    availability=availability,
+                    as_of=as_of,
+                    forward_season=forward_season,
+                    rate_basis=rate_basis,
+                )
+            ]
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if not boards or not boards[0].rows:
+        print(f"no data to rank for {args.season} (backfill it first)", file=sys.stderr)
+        return 1
+
+    for board in boards:
+        print(render_table(board, top=args.top))
+        if args.movers:
+            under, over = biggest_movers(board)
+            print("\n  z-score underrates (this board rates them higher):")
+            for r in under:
+                print(f"    +{r.z_delta:<3} {r.player_name:<26} G#{r.rank} vs z#{r.z_rank}")
+            print("  z-score overrates:")
+            for r in over:
+                print(f"    {r.z_delta:<4} {r.player_name:<26} G#{r.rank} vs z#{r.z_rank}")
+        print()
+
+    if args.out:
+        written = export(boards, args.out, top=args.top if args.top > 0 else None)
+        print(f"wrote {len(written)} files to {args.out}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="fantasy-gm", description="Fantasy NBA GM CLI")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    b = sub.add_parser("backfill", help="backfill an NBA season into the local store")
+    b.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    b.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="generate a deterministic synthetic season (offline)",
+    )
+    b.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="real backfill: fetch + parse but don't store (sanity check)",
+    )
+    b.add_argument("--seed", type=int, default=7)
+    b.set_defaults(func=cmd_backfill)
+
+    s = sub.add_parser("simulate", help="generate a simulated league over a backfilled season")
+    s.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    s.add_argument("--seed", type=int, default=1)
+    s.add_argument("--teams", type=int, default=8)
+    s.add_argument("--roster", type=int, default=10)
+    s.add_argument("--cadence", default="weekly-lock", choices=["weekly-lock", "daily-change"])
+    s.set_defaults(func=cmd_simulate)
+
+    r = sub.add_parser("recommend", help="rank waiver candidates for a team's upcoming window")
+    r.add_argument("--as-of", dest="as_of", required=True, help="decision date YYYY-MM-DD")
+    r.add_argument("--league", required=True)
+    r.add_argument("--team", required=True)
+    r.add_argument("--top", type=int, default=10)
+    r.set_defaults(func=cmd_recommend)
+
+    pr = sub.add_parser("project", help="project category outcomes for a team's matchup")
+    pr.add_argument("--as-of", dest="as_of", required=True)
+    pr.add_argument("--league", required=True)
+    pr.add_argument("--team", required=True)
+    pr.add_argument(
+        "--method",
+        default="normal",
+        choices=["normal", "bootstrap"],
+        help="win-prob method: normal (fast Φ) or bootstrap (more accurate, A3)",
+    )
+    pr.set_defaults(func=cmd_project)
+
+    fd = sub.add_parser("feed", help="live signals + end-of-day reconciliation for a team")
+    fd.add_argument("--as-of", dest="as_of", required=True)
+    fd.add_argument("--league", required=True)
+    fd.add_argument("--team", required=True)
+    fd.add_argument("--top", type=int, default=10)
+    fd.add_argument("--all", action="store_true", help="show soft signals too")
+    fd.set_defaults(func=cmd_feed)
+
+    v = sub.add_parser("validate", help="measure category variance from backfilled data (A1)")
+    v.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    v.set_defaults(func=cmd_validate)
+
+    vv = sub.add_parser("values", help="rank players by data-derived 9-cat z-value (A6)")
+    vv.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    vv.add_argument("--top", type=int, default=20)
+    vv.set_defaults(func=cmd_values)
+
+    w = sub.add_parser("wire", help="wire availability by bundle + marginal trade-off per cat (A9)")
+    w.add_argument("--as-of", dest="as_of", required=True)
+    w.add_argument("--league", required=True)
+    w.add_argument("--team", required=True)
+    w.set_defaults(func=cmd_wire)
+
+    rp = sub.add_parser("replay", help="grade every recommended call over a season (track record)")
+    rp.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    rp.add_argument(
+        "--leagues",
+        type=int,
+        default=1,
+        help="simulated leagues to average over (more = robuster but slower)",
+    )
+    rp.set_defaults(func=cmd_replay)
+
+    pi = sub.add_parser(
+        "player-index", help="forward-season teams, positions, and rookies from NBA playerindex"
+    )
+    pi.add_argument("--season", required=True, help="season being entered, e.g. 2026-27")
+    pi.add_argument(
+        "--known-from",
+        dest="known_from",
+        required=True,
+        help="date this snapshot was taken; reads before it will not see it",
+    )
+    pi.add_argument(
+        "--as-of",
+        dest="as_of",
+        default=None,
+        help="history cut for the derived depth chart (defaults to --known-from)",
+    )
+    pi.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="fetch + parse but don't write (this writes three tables)",
+    )
+    pi.set_defaults(func=cmd_player_index)
+
+    rr = sub.add_parser(
+        "reconstruct-rosters",
+        help="BACKTEST ONLY: opening-night rosters for a past season, "
+        "rebuilt from its own first box scores (lookahead compromise)",
+    )
+    rr.add_argument("--season", required=True, help="completed season, e.g. 2025-26")
+    rr.add_argument(
+        "--as-of",
+        dest="as_of",
+        required=True,
+        help="cut before the season starts; stamped as known_from and used as "
+        "the history cut for the derived depth chart",
+    )
+    rr.add_argument(
+        "--window-days",
+        dest="window_days",
+        type=int,
+        default=14,
+        help="days from tip-off a debut still counts as opening-night (default 14)",
+    )
+    rr.add_argument("--dry-run", action="store_true")
+    rr.set_defaults(func=cmd_reconstruct_rosters)
+
+    pj = sub.add_parser(
+        "projections", help="forward-season projections from the minutes/role model (2.5-2.9)"
+    )
+    pj.add_argument("--season", required=True, help="season being projected, e.g. 2026-27")
+    pj.add_argument(
+        "--as-of",
+        dest="as_of",
+        required=True,
+        help="what was known on this date; nothing after it is read",
+    )
+    pj.add_argument("--top", type=int, default=25)
+    pj.set_defaults(func=cmd_projections)
+
+    pb = sub.add_parser(
+        "projection-backtest",
+        help="score the projection method against realized production (A-DRAFT-5)",
+    )
+    pb.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    pb.add_argument(
+        "--as-of",
+        dest="as_of",
+        default=None,
+        help="cut date; defaults to the day before the season (cross) or mid-season",
+    )
+    pb.add_argument(
+        "--mode",
+        default=None,
+        choices=["cross-season", "split-season"],
+        help="defaults to cross-season when a prior season is backfilled",
+    )
+    pb.set_defaults(func=cmd_projection_backtest)
+
+    ad = sub.add_parser("adp", help="ingest a saved Yahoo draft_analysis payload as ADP (2.4)")
+    ad.add_argument(
+        "--file",
+        required=False,
+        default=None,
+        help="saved draft_analysis JSON (not required with --live)",
+    )
+    ad.add_argument("--season", required=True)
+    ad.add_argument(
+        "--known-from", dest="known_from", required=True, help="date the market snapshot was taken"
+    )
+    ad.add_argument("--source", default="yahoo")
+    ad.add_argument(
+        "--live",
+        default=None,
+        metavar="LEAGUE_KEY",
+        help="fetch draft_analysis live from Yahoo instead of reading --file; "
+        "the fetched capture is saved and then ingested from it",
+    )
+    ad.add_argument(
+        "--limit", type=int, default=500, help="player cap for --live pagination (default 500)"
+    )
+    ad.set_defaults(func=cmd_adp)
+    st = sub.add_parser(
+        "status",
+        help="ingest Yahoo per-player status as effective-dated "
+        "availability designations (dds 2.1)",
+    )
+    st.add_argument(
+        "--file", default=None, help="saved players;out=metadata JSON (not required with --live)"
+    )
+    st.add_argument(
+        "--live",
+        default=None,
+        metavar="LEAGUE_KEY",
+        help="fetch player metadata live from Yahoo instead of reading --file; "
+        "the fetched capture is saved and then ingested from it",
+    )
+    st.add_argument(
+        "--season",
+        default=PRIMARY_SEASON,
+        help="season the coverage print's draftable universe is drawn from",
+    )
+    st.add_argument(
+        "--known-from",
+        dest="known_from",
+        default=None,
+        help="fallback effective date for designations without a note "
+        "timestamp (default: today, UTC)",
+    )
+    st.add_argument("--source", default="yahoo")
+    st.add_argument(
+        "--limit", type=int, default=500, help="player cap for --live pagination (default 500)"
+    )
+    st.set_defaults(func=cmd_status)
+    nw = sub.add_parser("news", help="multi-source news ingest + stored view (dds 9.2-9.5, 9.9)")
+    nw.add_argument(
+        "--fetch",
+        action="store_true",
+        help="fetch + ingest the no-token wires now: the Yahoo public "
+        "injuries page and the Yahoo NBA news RSS (captures saved)",
+    )
+    nw.add_argument(
+        "--injuries-file",
+        default=None,
+        help="ingest a saved injuries-page HTML capture instead of fetching",
+    )
+    nw.add_argument(
+        "--rss-file", default=None, help="ingest a saved RSS XML capture instead of fetching"
+    )
+    nw.add_argument(
+        "--playerindex",
+        default=None,
+        metavar="SEASON",
+        help="diff a fresh playerindex fetch (cache bypassed; each capture kept on "
+        "disk for audit) against the stored forward roster -> roster-move events, "
+        "plus the roster fold (9.11): moved players re-ranked on their new team's "
+        "depth so the minutes model prices the newest lineups",
+    )
+    nw.add_argument(
+        "--before",
+        default=None,
+        help="as-of date for the stored roster side of the --playerindex "
+        "diff (default: the ingest date)",
+    )
+    nw.add_argument(
+        "--x",
+        default=None,
+        metavar="HANDLE",
+        help="attempt the X adapter (a loud stub: it raises, task 9.5)",
+    )
+    nw.add_argument(
+        "--season",
+        default=FORWARD_SEASON,
+        help="season the draft pool and the depth-promotion read use",
+    )
+    nw.add_argument(
+        "--known-from",
+        dest="known_from",
+        default=None,
+        help="ingest date for new rows (default: today, UTC)",
+    )
+    nw.add_argument(
+        "--as-of",
+        dest="as_of",
+        default=None,
+        help="date the stored view reads at (default: the ingest date)",
+    )
+    nw.add_argument(
+        "--show", action="store_true", help="print the stored view even when an ingest flag ran"
+    )
+    nw.add_argument(
+        "--limit", type=int, default=40, help="max flagged players printed (default 40)"
+    )
+    nw.set_defaults(func=cmd_news)
+    df = sub.add_parser(
+        "draft", help="interactive draft night: live poll + manual entry + recommendations"
+    )
+    df.add_argument("league", help="Yahoo league key, e.g. 478.l.25733")
+    df.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    df.add_argument(
+        "--as-of",
+        dest="as_of",
+        default=None,
+        help="availability projection date (default: today — the build "
+        "date; the old hard-coded 2025-10-20 made 2026-dated "
+        "designations invisible, task 9.7)",
+    )
+    df.add_argument("--seat", type=int, default=1, help="your 1-indexed draft seat")
+    df.add_argument("--teams", type=int, default=12)
+    df.add_argument("--rounds", type=int, default=13)
+    df.add_argument(
+        "--budget",
+        type=float,
+        default=8.0,
+        help="seconds the on-the-clock evaluation may take (4.5)",
+    )
+    df.add_argument(
+        "--punt-budget",
+        type=float,
+        default=8.0,
+        help="seconds all punt builds may take per computation (R8)",
+    )
+    df.add_argument(
+        "--columns",
+        default=None,
+        help="comma-separated recommendation columns "
+        "(default: rk,player,value,vs_safe,surv,adp,top_cats,neg_cats)",
+    )
+    df.add_argument("--fresh", action="store_true", help="ignore any saved draft state")
+    df.set_defaults(func=cmd_draft)
+
+    mg = sub.add_parser("manage", help="give simulated teams a baseline manager so the wire drains")
+    mg.add_argument("league", help="league id to manage")
+    mg.add_argument("--moves", type=int, default=1, help="moves per team per scoring period")
+    mg.add_argument(
+        "--force", action="store_true", help="run a second pass (management is not idempotent)"
+    )
+    mg.set_defaults(func=cmd_manage)
+
+    cp = sub.add_parser("compare", help="engine vs naive baselines on identical decision slots")
+    cp.add_argument("leagues", nargs="+", help="league ids to pool slots from")
+    cp.add_argument("--season", default=PRIMARY_SEASON, choices=ALL_SEASONS)
+    cp.add_argument(
+        "--by-category",
+        nargs="*",
+        default=None,
+        metavar="STRATEGY",
+        help="also break these strategies down per category",
+    )
+    cp.set_defaults(func=cmd_compare)
+
+    yc = sub.add_parser(
+        "yahoo-check", help="verify an access token can actually reach the Fantasy API"
+    )
+    yc.add_argument(
+        "--token", default="data/yahoo_access_token.txt", help="file containing the bearer token"
+    )
+    yc.set_defaults(func=cmd_yahoo_check)
+
+    yi = sub.add_parser(
+        "yahoo-import", help="load a fetched Yahoo snapshot as a real league (read-only)"
+    )
+    yi.add_argument("snapshot", help="path to the JSON snapshot from yahoo_fetch")
+    yi.add_argument("--overrides", help="JSON map of yahoo_player_id -> nba_player_id")
+    yi.add_argument(
+        "--force", action="store_true", help="load despite unresolved players / unverified history"
+    )
+    yi.set_defaults(func=cmd_yahoo_import)
+
+    bd = sub.add_parser(
+        "board", help="static G-score draft board, with punt builds (the free surface)"
+    )
+    bd.add_argument(
+        "--season",
+        default=PRIMARY_SEASON,
+        choices=ALL_SEASONS,
+        help="season whose per-week production the board is measured from",
+    )
+    bd.add_argument(
+        "--build", default="balanced", help=f"named punt build, or 'all' ({', '.join(PUNT_BUILDS)})"
+    )
+    bd.add_argument(
+        "--punt", default=None, help="comma-separated categories to punt; overrides --build"
+    )
+    bd.add_argument(
+        "--availability",
+        default=AvailabilityMode.PROJECTED,
+        choices=[m.value for m in AvailabilityMode],
+        help="how availability enters the rank (see fantasy_gm.draft.board)",
+    )
+    bd.add_argument(
+        "--as-of",
+        dest="as_of",
+        default=None,
+        help="date the availability projection is made from; required for "
+        "--availability projected, and must precede the season to avoid "
+        "lookahead",
+    )
+    bd.add_argument(
+        "--forward-season",
+        dest="forward_season",
+        default=FORWARD_SEASON,
+        help="season unplaceable players are placed by roster depth on and "
+        "baseline-priced for (R2/R3, default: config FORWARD_SEASON); "
+        "pass an empty string to rank the ranked season's pool only",
+    )
+    bd.add_argument(
+        "--basis",
+        default=RateBasis.MEASURED,
+        choices=[b.value for b in RateBasis],
+        help="where per-game rates come from: measured — the ranked season's "
+        "game logs (default); projected — the derived minutes/role model "
+        "carries usage onto the forward-season roster (edge unproven, "
+        "labeled on every render)",
+    )
+    bd.add_argument("--top", type=int, default=30)
+    bd.add_argument(
+        "--movers",
+        action="store_true",
+        help="also show where this board most disagrees with z-score",
+    )
+    bd.add_argument(
+        "--out",
+        default=None,
+        help="directory to export <build>.json / <build>.md and index.json into",
+    )
+    bd.set_defaults(func=cmd_board)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

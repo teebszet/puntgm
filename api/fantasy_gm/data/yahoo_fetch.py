@@ -1,0 +1,504 @@
+"""The one credentialed step: pull a Yahoo league into a normalised offline snapshot.
+
+Everything downstream (``yahoo_reconstruct``, ``player_crosswalk``, ``yahoo_import``) is
+pure logic over the snapshot this produces, so the OAuth-dependent surface stays this
+single module and the rest stays testable with no network and no secrets.
+
+Cost is ``teams + 3`` requests, not ``teams × dates``: fetch each team's final roster once,
+plus the transaction log, draft results, and the matchup schedule, then reconstruct the
+point-in-time history offline. The snapshot is written to disk so a league is fetched once
+and replayed against forever — which also keeps the replay harness reproducible.
+
+Requires ``pip install -e '.[yahoo]'``. Authenticate with either a ``yahoo_oauth`` token file
+(confidential client, has a secret) or a bare ``access_token`` — the latter covers apps
+registered as a **SPA**, which are OAuth public clients and have no secret at all. Read-only:
+this module issues no writes against the user's league.
+
+**Unverified against the live API.** Yahoo's payloads are deeply nested and its shapes are
+poorly documented, so the response-parsing here (``normalize_transactions``,
+``_matchup_pairs``) is written from the published schema and has never been run against a
+real token. Expect to correct it on first contact — dump a raw response and compare. The
+parsing is isolated into small pure functions for exactly that reason: fixing them should
+not disturb anything downstream, and ``normalize_transactions`` is unit-tested against a
+recorded-shape fixture.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from fantasy_gm.data.yahoo_reconstruct import Movement, Transaction
+
+AUTH_URL = "https://api.login.yahoo.com/oauth2/request_auth"
+TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
+
+
+def _require_deps():
+    try:
+        import yahoo_fantasy_api as yfa  # noqa: F401
+        from yahoo_oauth import OAuth2  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - depends on optional extra
+        raise RuntimeError(
+            "Yahoo fetch needs the optional extra: pip install -e '.[yahoo]', then create a "
+            "token file with your Yahoo app's client id/secret (see docs/yahoo.md)."
+        ) from exc
+    import yahoo_fantasy_api as yfa
+    from yahoo_oauth import OAuth2
+    return yfa, OAuth2
+
+
+class TokenAuth:
+    """Minimal stand-in for ``yahoo_oauth.OAuth2`` that carries a bearer token directly.
+
+    An app registered as a **SPA** is an OAuth *public client*: it has a client id and no
+    client secret by design (it uses PKCE instead). ``yahoo_oauth`` only implements the
+    confidential-client flow and requires a secret, which locks that app out for no good
+    reason — the Fantasy API itself only ever sees ``Authorization: Bearer <token>``.
+
+    So accept a token from wherever it came: PKCE, implicit grant, a secret-based flow, or
+    pasted by hand. A one-off league fetch is ~``teams + 3`` requests, so even a short-lived
+    token with no refresh is enough — which is exactly what public clients tend to get.
+    """
+
+    def __init__(self, access_token: str):
+        import requests
+
+        self.access_token = access_token
+        self.session = requests.Session()
+        self.session.headers.update({"Authorization": f"Bearer {access_token}"})
+
+    # yahoo_fantasy_api pokes at these; a hand-supplied token is simply always "valid".
+    def token_is_valid(self) -> bool:
+        return True
+
+    def refresh_access_token(self) -> None:
+        raise RuntimeError(
+            "This token cannot be refreshed (public/SPA client). Re-authorize and pass a "
+            "fresh access token; a full league fetch takes well under a token lifetime."
+        )
+
+
+def authorize_url(client_id: str, redirect_uri: str = "oob",
+                  response_type: str = "code") -> tuple[str, str]:
+    """Build a Yahoo authorization URL and the PKCE verifier that goes with it.
+
+    ``response_type='code'`` is the PKCE authorization-code flow (public client, no secret).
+    ``response_type='token'`` requests an implicit-grant token straight back in the redirect
+    fragment — fewer steps, but Yahoo's support for it is not something this repo can verify
+    without credentials, so try ``code`` first and fall back.
+    """
+    import base64
+    import hashlib
+    import secrets
+    from urllib.parse import urlencode
+
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": response_type,
+        "scope": "fspt-r",  # Fantasy Sports, read-only
+    }
+    if response_type == "code":
+        params |= {"code_challenge": challenge, "code_challenge_method": "S256"}
+    return f"{AUTH_URL}?{urlencode(params)}", verifier
+
+
+def exchange_code(client_id: str, code: str, verifier: str,
+                  redirect_uri: str = "oob", client_secret: str | None = None) -> dict:
+    """Trade an authorization code for an access token. No secret needed with PKCE."""
+    import requests
+
+    data = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code": code,
+        "grant_type": "authorization_code",
+        "code_verifier": verifier,
+    }
+    if client_secret:
+        data["client_secret"] = client_secret
+    resp = requests.post(TOKEN_URL, data=data, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def check_access(access_token: str) -> tuple[bool, str]:
+    """Is this token actually allowed to call the Fantasy API? Returns (ok, explanation).
+
+    Worth its own function because the failure is invisible earlier in the flow. Yahoo will
+    accept ``scope=fspt-r`` at the authorization endpoint, run the user through consent, and
+    mint a perfectly valid access token **for an app that has no Fantasy API access** — the
+    rejection only appears at the API gateway, as a 403 on every endpoint including public
+    game metadata. Reaching a login page or holding a token proves nothing; this does.
+    """
+    import requests
+
+    r = requests.get(
+        "https://fantasysports.yahooapis.com/fantasy/v2/game/nba?format=json",
+        headers={"Authorization": f"Bearer {access_token}"}, timeout=30,
+    )
+    if r.status_code == 200:
+        return True, "Fantasy API access confirmed"
+    if r.status_code == 403:
+        return False, (
+            "403 — the app is not authorized for the Fantasy Sports API. The token is fine; "
+            "the *app* lacks access. No OAuth flow can grant it: apply at "
+            "https://sports.yahoo.com/developer/access/"
+        )
+    if r.status_code == 401:
+        return False, "401 — token expired or invalid; re-run scripts/yahoo_authorize.py"
+    return False, f"unexpected HTTP {r.status_code}: {r.text[:200]}"
+
+
+def refresh_token_from_files(
+    token_path: str | Path = "data/yahoo_access_token.txt",
+    pkce_path: str | Path = "data/yahoo_pkce.json",
+    secret_path: str | Path = "data/yahoo_token.json",
+) -> str:
+    """Refresh an expired SPA token from the files the authorize script leaves behind.
+
+    Yahoo's token endpoint requires the client secret on ``refresh_token`` grants even for
+    the PKCE flow whose *exchange* needed none, so the secret is read from the legacy
+    ``yahoo_token.json`` when present (verified live 2026-10-05: without it Yahoo answers
+    400 INVALID_INPUT "client secret cannot be empty"). Both the fresh access token and the
+    rotated refresh token are persisted, so the next refresh keeps working.
+    """
+    import requests
+
+    pkce = json.loads(Path(pkce_path).read_text())
+    data = {
+        "client_id": pkce["client_id"],
+        "grant_type": "refresh_token",
+        "redirect_uri": pkce.get("redirect_uri", "oob"),
+        "refresh_token": pkce["refresh_token"],
+    }
+    if Path(secret_path).exists():
+        secret = json.loads(Path(secret_path).read_text()).get("consumer_secret")
+        if secret:
+            data["client_secret"] = secret
+    resp = requests.post(TOKEN_URL, data=data, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"token refresh failed: HTTP {resp.status_code} {resp.text[:200]} — "
+            "re-run scripts/yahoo_authorize.py (the refresh token may have been revoked)"
+        )
+    payload = resp.json()
+    if "access_token" not in payload:
+        raise RuntimeError(f"token refresh returned no access_token: {payload}")
+    Path(token_path).write_text(payload["access_token"])
+    if payload.get("refresh_token"):
+        pkce["refresh_token"] = payload["refresh_token"]
+        Path(pkce_path).write_text(json.dumps(pkce))
+    return payload["access_token"]
+
+
+def _transaction_player_fields(entry: Any) -> tuple[str, dict[str, Any]]:
+    """Extract (yahoo_player_id, transaction_data) from one player entry.
+
+    Two live shapes, both seen on the real league (verified 2026-10-20):
+
+    * the recorded fixture shape — the entry IS the player:
+      ``{"player_id": "6018", "transaction_data": {...}}``
+    * the live API shape — the entry wraps a nested ``player`` list whose first element
+      is a list of field dicts and whose last element holds ``transaction_data``:
+      ``{"player": [[{"player_id": "6745"}, ..., {"name": {...}}],
+      {"transaction_data": [...]}]}``
+    """
+    if not isinstance(entry, dict):
+        return "", {}
+    data = entry.get("transaction_data") or {}
+    if isinstance(data, list):           # Yahoo sometimes wraps it in a list
+        data = data[0] if data else {}
+    pid = str(entry.get("player_id", ""))
+    if pid or data:
+        return pid, data
+    player = entry.get("player")
+    if not player:
+        return "", {}
+    for item in player:
+        if isinstance(item, list):
+            for field in item:
+                if isinstance(field, dict) and field.get("player_id"):
+                    pid = str(field["player_id"])
+        elif isinstance(item, dict):
+            if item.get("player_id"):
+                pid = str(item["player_id"])
+            td = item.get("transaction_data")
+            if td:
+                data = td[0] if isinstance(td, list) and td else td
+    return pid, data or {}
+
+
+def normalize_transactions(raw: list[dict[str, Any]]) -> list[Transaction]:
+    """Convert Yahoo's transaction payload into provider-agnostic movements.
+
+    Yahoo represents each transaction as player entries carrying a
+    ``transaction_data`` block with ``type`` (add/drop) and source/destination team keys.
+    A single add/drop transaction contains two such entries; a trade contains one per
+    player moved. The ``players`` field arrives either as a list of player dicts or as a
+    dict keyed by index (with a trailing ``count``) — see ``_transaction_player_fields``.
+    Timestamps are epoch seconds and are reduced to the local ISO date,
+    which is the granularity the store's as-of layer keys on.
+    """
+    from datetime import UTC, datetime
+
+    out: list[Transaction] = []
+    for tx in raw:
+        ts = tx.get("timestamp")
+        when = (datetime.fromtimestamp(int(ts), UTC).date().isoformat() if ts else
+                tx.get("date", ""))
+        movements: list[Movement] = []
+        raw_players = tx.get("players") or []
+        entries = raw_players.values() if isinstance(raw_players, dict) else raw_players
+        for entry in entries:
+            pid, data = _transaction_player_fields(entry)
+            if not pid:
+                continue
+            kind = data.get("type")
+            src = data.get("source_team_key")
+            dst = data.get("destination_team_key")
+            if kind == "add":
+                movements.append(Movement(pid, from_team=None, to_team=dst))
+            elif kind == "drop":
+                movements.append(Movement(pid, from_team=src, to_team=None))
+            else:                                 # trade / commish move
+                movements.append(Movement(pid, from_team=src, to_team=dst))
+        if movements:
+            out.append(Transaction(when, tx.get("type", "unknown"), movements))
+    return out
+
+
+def fetch_league_snapshot(
+    league_key: str, token_path: str | None = None, season: str = "",
+    out_path: str | None = None, transaction_count: int = 2000,
+    access_token: str | None = None,
+) -> dict[str, Any]:
+    """Fetch one league into a snapshot dict (and optionally write it to ``out_path``).
+
+    Authenticate either way:
+
+    * ``token_path`` — a ``yahoo_oauth`` token file (confidential client, has a secret).
+    * ``access_token`` — a bearer token obtained however you like, including from a SPA /
+      public client that has no secret at all. See ``TokenAuth``.
+
+    ``transaction_count`` is set high deliberately: Yahoo paginates transactions and a
+    truncated log silently corrupts the reconstructed roster history (see
+    ``yahoo_reconstruct``), so we ask for far more than a season can contain and let the
+    draft-results check confirm we got them all.
+    """
+    yfa, OAuth2 = _require_deps()
+    if access_token:
+        oauth = TokenAuth(access_token)
+    elif token_path:
+        oauth = OAuth2(None, None, from_file=token_path)
+        if not oauth.token_is_valid():
+            oauth.refresh_access_token()
+    else:
+        raise ValueError("pass either token_path= or access_token=")
+
+    lg = yfa.League(oauth, league_key)
+    settings = lg.settings()
+    teams = lg.teams()
+
+    team_ids = list(teams.keys())
+    final_rosters: dict[str, list[str]] = {}
+    for tid in team_ids:
+        roster = yfa.Team(oauth, tid).roster()
+        final_rosters[tid] = [str(p["player_id"]) for p in roster]
+
+    draft: dict[str, list[str]] = {}
+    player_names: dict[str, str] = {}
+    for pick in lg.draft_results():
+        draft.setdefault(str(pick["team_key"]), []).append(str(pick["player_id"]))
+
+    # names for every player that appears anywhere in the league's history
+    all_ids = {p for r in final_rosters.values() for p in r}
+    all_ids |= {p for r in draft.values() for p in r}
+    raw_txns = lg.transactions("add,drop,trade", transaction_count)
+    transactions = normalize_transactions(raw_txns)
+    all_ids |= {m.player_id for t in transactions for m in t.movements}
+    for chunk in _chunks(sorted(all_ids), 25):
+        for det in lg.player_details([int(p) for p in chunk]):
+            player_names[str(det["player_id"])] = det.get("name", {}).get("full", "")
+
+    matchups = []
+    good_week, good_start = 0, None
+    for week in range(1, int(lg.end_week()) + 1):
+        try:
+            start, end = lg.week_date_range(week)
+        except RuntimeError:
+            # Yahoo refuses date ranges more than one week past the current week. Weeks are
+            # always 7 days, so extrapolate from the last fetched week instead of failing
+            # the whole snapshot (verified live 2026-10-20 on 478.l.25733).
+            if good_start is None:
+                raise
+            from datetime import date, timedelta
+
+            base = date.fromisoformat(str(good_start))
+            start = base + timedelta(days=7 * (week - good_week))
+            end = start + timedelta(days=6)
+        else:
+            good_week, good_start = week, str(start)
+        seen: set[frozenset] = set()
+        for m in _matchup_pairs(lg, week):
+            if frozenset(m) in seen:
+                continue
+            seen.add(frozenset(m))
+            matchups.append({"period": week, "start": str(start), "end": str(end),
+                             "team_a": m[0], "team_b": m[1]})
+
+    snapshot = {
+        "league_id": f"yahoo-{league_key}",
+        "league_key": league_key,
+        "name": settings.get("name", league_key),
+        "season": season,
+        "cadence": "daily-change",
+        "teams": [{"team_id": tid, "name": t.get("name", tid)} for tid, t in teams.items()],
+        "player_names": player_names,
+        "final_rosters": final_rosters,
+        "draft_results": draft,
+        "transactions": [asdict(t) for t in transactions],
+        "matchups": matchups,
+    }
+    if out_path:
+        with open(out_path, "w") as fh:
+            json.dump(snapshot, fh, indent=2)
+    return snapshot
+
+
+def parse_lineup_payload(payload: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    """Pure mapping: a ``league/.../teams/roster/players`` payload -> slot rows.
+
+    Returns one ``(team_key, player_id, slot, name)`` per rostered player, ``slot``
+    being Yahoo's ``selected_position.position`` for the payload's covered date
+    (``PG``.. ``Util``, ``BN``, ``IL``). The name rides along because Yahoo ids are not
+    the store's NBA.com ids — the caller joins on names (see ``yahoo_import``).
+    Shapes handled from the live league (verified 2026-10-23 on 478.l.25733): the
+    player entry is a list of field dicts followed by a trailing dict whose
+    ``selected_position`` is itself either a dict or a list of dicts
+    (``[{coverage_type...}, {position}, {is_flex}]``).
+    """
+    try:
+        teams = payload["fantasy_content"]["league"][1]["teams"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    rows: list[tuple[str, str, str, str]] = []
+    for key, entry in teams.items():
+        if not str(key).isdigit():
+            continue
+        try:
+            team_block = entry["team"]
+            team_key = next(
+                d["team_key"] for d in team_block[0] if isinstance(d, dict) and "team_key" in d
+            )
+            roster = team_block[1]["roster"]
+            players = roster["0"]["players"]
+        except (KeyError, IndexError, TypeError, StopIteration):
+            continue
+        for pkey, pentry in players.items():
+            if not str(pkey).isdigit():
+                continue
+            try:
+                fields = pentry["player"]
+                pid = next(
+                    d["player_id"] for d in fields[0] if isinstance(d, dict) and "player_id" in d
+                )
+                name = next(
+                    d["name"]["full"] for d in fields[0]
+                    if isinstance(d, dict) and "name" in d
+                )
+                sel_raw = next(
+                    d["selected_position"]
+                    for d in fields
+                    if isinstance(d, dict) and "selected_position" in d
+                )
+            except (KeyError, IndexError, TypeError, StopIteration):
+                continue
+            if isinstance(sel_raw, dict):
+                slot = sel_raw.get("position", "")
+            elif isinstance(sel_raw, list):
+                slot = next(
+                    (d.get("position", "") for d in sel_raw
+                     if isinstance(d, dict) and "position" in d),
+                    "",
+                )
+            else:
+                slot = ""
+            if pid and slot:
+                rows.append((str(team_key), str(pid), str(slot), str(name)))
+    return rows
+
+
+def fetch_league_lineups(
+    league_key: str, access_token: str, save_path: str | Path | None = None,
+    date: str | None = None,
+) -> list[tuple[str, str, str, str]]:
+    """Live fetch of every team's scheduled lineup in one request.
+
+    ``league/{key}/teams/roster/players`` carries every team's roster with each
+    player's ``selected_position`` for the covered date — the platform's scheduled
+    lineup. Rows are ``(team_key, player_id, slot, name)``; the raw payload is written
+    to ``save_path`` when given so any stored row is auditable offline.
+
+    ``date`` scopes the read to that date's scheduled lineup via Yahoo's
+    ``roster;date=YYYY-MM-DD`` filter (verified live 2026-10-26 at league scope):
+    the payload then reflects every scheduled lineup change the manager has set
+    for that date, which is what per-day games-remaining pricing needs. Without
+    it Yahoo serves the lineup for its covered date (today).
+    """
+    import requests
+
+    roster = f"teams/roster;date={date}/players" if date else "teams/roster/players"
+    url = (
+        f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/{roster}"
+    )
+    resp = requests.get(url, params={"format": "json"},
+                        headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
+    if resp.status_code == 401:
+        raise RuntimeError(
+            "401 from Yahoo — token expired. Refresh (refresh_token_from_files) or "
+            "re-run scripts/yahoo_authorize.py and retry."
+        )
+    resp.raise_for_status()
+    payload = resp.json()
+    if save_path is not None:
+        Path(save_path).write_text(json.dumps(payload, indent=1))
+    return parse_lineup_payload(payload)
+
+
+def _chunks(seq, n):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
+def _matchup_pairs(lg, week) -> list[tuple[str, str]]:
+    """Extract (team_a, team_b) pairs from Yahoo's nested matchup payload."""
+    pairs: list[tuple[str, str]] = []
+    raw = lg.matchups(week)
+    try:
+        scoreboard = raw["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]
+    except (KeyError, IndexError, TypeError):
+        return pairs
+    for key, m in scoreboard.items():
+        if not key.isdigit():
+            continue
+        try:
+            teams = m["matchup"]["0"]["teams"]
+            a = teams["0"]["team"][0][0]["team_key"]
+            b = teams["1"]["team"][0][0]["team_key"]
+            pairs.append((a, b))
+        except (KeyError, IndexError, TypeError):
+            continue
+    return pairs
+
+
+def load_snapshot(path: str) -> dict[str, Any]:
+    with open(path) as fh:
+        return json.load(fh)
