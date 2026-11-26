@@ -35,6 +35,30 @@ Distribution principle unchanged: **"the product's track record is the content."
 Replay-harness results live with the archived OpenSpec changes under
 `openspec/changes/archive/`.
 
+## Web tools: multi-user — next step (notes, 2026-11-26)
+
+What's deployed today is **single-user by construction**: every deploy bundles one
+snapshot of Tim's league (478.l.25733, team pinned), boards read that snapshot with
+zero per-request Yahoo calls, and the OAuth gate allowlists Tim's guid only. Any other
+Yahoo account would land on *his* boards — the guid gate is the honest guardrail in
+front of that, not the product's access model.
+
+Target: **any Yahoo account signs in and sees their own league's data.** Three pieces:
+
+1. **League resolution** — after sign-in, ask Yahoo which NBA league(s) the account
+   plays in; one league = auto-select, several = a picker. Today's OAuth is
+   identity-only by design; this is the piece that makes sign-in data-scoped.
+2. **Per-league boards** — matchup bands, games-remaining, wire lines and the
+   roster-favorability part of the fixture grid need *that league's* rosters + season
+   box scores: a per-league snapshot built on first visit (a few minutes of Yahoo
+   calls), then cached and refreshed daily like Tim's. The raw NBA team-defense layer
+   is league-independent and serves anyone immediately.
+3. **Hosting** — per-league snapshots can't ride the deploy bundle the way the single
+   snapshot does; on-demand build + cache on Vercel is the fiddliest piece.
+
+Decisions made (2026-11-26): build multi-user next; audience = any Yahoo account —
+sign-in itself is the moat, tighten later if needed.
+
 ## Quickstart
 
 ```bash
