@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>puntgm — tools</title>
 <style>
-  :root { --ink:#111; --mut:#667; --line:#e3e6ea; --bg:#f7f8fa; --card:#fff;
-          --good:#0a7d33; --bad:#b3261e; --warn:#9a6700; --acc:#0b57d0; }
+  :root { --bg:#0d1117; --card:#151b23; --line:#232c38; --ink:#e6edf3;
+          --mut:#8b98a8; --good:#4cc38a; --bad:#e06c75; --warn:#e0a458;
+          --acc:#4cc38a; --link:#6cb6ff; }
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
          color:var(--ink); background:var(--bg); }
@@ -16,36 +17,38 @@
   header h1 { font-size:16px; margin:0 auto 0 0; }
   header .who { color:var(--mut); font-size:12px; }
   button { font:inherit; padding:5px 12px; border-radius:6px; border:1px solid var(--line);
-           background:var(--card); cursor:pointer; }
-  button.acc { background:var(--acc); border-color:var(--acc); color:#fff; }
+           background:var(--card); color:var(--ink); cursor:pointer; }
+  button.acc { background:var(--acc); border-color:var(--acc); color:#0a1016;
+               font-weight:600; }
   main { max-width:1200px; margin:0 auto; padding:14px 16px 60px; }
   nav.tabs { display:flex; gap:6px; margin:4px 0 14px; }
   nav.tabs button { border-radius:999px; }
-  nav.tabs button[aria-selected="true"] { background:var(--ink); color:#fff;
+  nav.tabs button[aria-selected="true"] { background:var(--ink); color:var(--bg);
                                           border-color:var(--ink); }
   .meta { color:var(--mut); font-size:12.5px; margin:0 0 8px; }
-  table { border-collapse:collapse; width:100%; background:var(--card);
-          border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .tscroll { overflow:auto; border:1px solid var(--line); border-radius:8px;
+             background:var(--card); }
+  table { border-collapse:collapse; width:100%; background:var(--card); }
   th,td { padding:6px 9px; border-bottom:1px solid var(--line); text-align:right;
-          white-space:nowrap; }
+          white-space:nowrap; font-variant-numeric:tabular-nums; }
   th { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut);
-       background:#fbfcfd; position:sticky; top:44px; }
+       background:#121a23; position:sticky; top:0; z-index:1; }
   th.l,td.l { text-align:left; }
-  tbody tr:hover td { background:#f2f6ff; }
+  tbody tr:hover td { background:#131a22; }
   b.win { color:var(--ink); text-decoration:underline 2px var(--acc); }
   .chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11.5px;
           font-weight:600; }
-  .chip.safe { background:#e7f3ea; color:var(--good); }
-  .chip.live { background:#eaf0fb; color:var(--acc); }
-  .chip.gone { background:#f8eae9; color:var(--bad); }
-  .chip.out { background:#f8eae9; color:var(--bad); }
-  .chip.il  { background:#fdf1df; color:var(--warn); }
-  .chip.q   { background:#fdf8df; color:var(--warn); }
-  .bar { position:relative; height:8px; background:#edf0f3; border-radius:4px;
+  .chip.safe { background:#12281d; color:var(--good); }
+  .chip.live { background:#12233a; color:var(--link); }
+  .chip.gone { background:#2d1518; color:var(--bad); }
+  .chip.out { background:#2d1518; color:var(--bad); }
+  .chip.il  { background:#2a2113; color:var(--warn); }
+  .chip.q   { background:#2a2113; color:var(--warn); }
+  .bar { position:relative; height:8px; background:#232c38; border-radius:4px;
          min-width:90px; }
-  .bar i { position:absolute; inset:0 auto 0 0; border-radius:4px; background:var(--acc); }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:4px; background:var(--link); }
   .cellcats { display:grid; grid-template-columns:repeat(9,12px); gap:1px; margin-top:2px; }
-  .cellcats span { height:10px; border-radius:2px; background:#e6e9ed; }
+  .cellcats span { height:10px; border-radius:2px; background:#26303c; }
   .favor { cursor:default; }
   section[hidden] { display:none; }
   .err { color:var(--bad); }
@@ -131,14 +134,14 @@ async function loadWire() {
         everyone else · thresholds strictly more than: &gt;20 pts, &gt;5 ast, &gt;9 reb,
         &gt;2 stl, &gt;2 blk · gm left = his NBA team's scheduled games this week
         (week ${esc(d.week ? d.week.start + ' → ' + d.week.end : 'n/a')})</p>
-      <table><thead><tr><th class="l">Player</th><th>NBA</th><th>gm left</th><th>min</th>
+      <div class="tscroll"><table><thead><tr><th class="l">Player</th><th>NBA</th><th>gm left</th><th>min</th>
         <th>pts</th><th>reb</th><th>ast</th><th>stl</th><th>blk</th><th>3pm</th>
-        <th>tov</th><th>fg%</th><th>ft%</th></tr></thead><tbody>${rows}</tbody></table>
+        <th>tov</th><th>fg%</th><th>ft%</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="foot">ft% “—” = no free-throw attempts · underlined = beat the threshold</p>
       ${near ? `<p class="meta">Near misses — exactly at a threshold, none beaten:</p>
-      <table><thead><tr><th class="l">Player</th><th>NBA</th><th class="l">at</th><th>min</th>
+      <div class="tscroll"><table><thead><tr><th class="l">Player</th><th>NBA</th><th class="l">at</th><th>min</th>
         <th>pts</th><th>reb</th><th>ast</th><th>stl</th><th>blk</th></tr></thead>
-        <tbody>${near}</tbody></table>` : ''}`;
+        <tbody>${near}</tbody></table></div>` : ''}`;
   } catch (err) { deny(el, err); }
 }
 
@@ -162,8 +165,8 @@ async function loadMatchup() {
         ${esc(d.period_start)} → ${esc(d.period_end)} · games remaining:
         ${dash(d.games_remaining.mine)} vs ${dash(d.games_remaining.opp)}
         (Yahoo-comparable: per-day scheduled starters, bench/IL/OUT never count)</p>
-      <table><thead><tr><th class="l">Cat</th><th>Yours</th><th>Theirs</th>
-        <th></th><th>Win%</th><th>Read</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="tscroll"><table><thead><tr><th class="l">Cat</th><th>Yours</th><th>Theirs</th>
+        <th></th><th>Win%</th><th>Read</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="foot">25th–75th percentile bands from actual per-game σ. A band that
         spans the opponent's number is a coin flip, not a projection — the label
         says which categories are decided.</p>`;
@@ -176,9 +179,9 @@ async function loadGrid() {
   try {
     const d = await api('/api/tools/fixture-grid');
     const cats = d.cats;
-    const color = f => f == null ? '#e6e9ed'
-      : f > 1.10 ? '#0a7d33' : f > 1.03 ? '#7fbf8f'
-      : f < 0.90 ? '#b3261e' : f < 0.97 ? '#e2938e' : '#d9dde2';
+    const color = f => f == null ? '#26303c'
+      : f > 1.10 ? '#2f9e5b' : f > 1.03 ? '#1d5c38'
+      : f < 0.90 ? '#d05a63' : f < 0.97 ? '#6e2a30' : '#313b47';
     const head = `<tr><th class="l">Player</th><th></th><th class="l">Slot</th>` +
       d.dates.map(dt => `<th>${esc(dt.slice(5))}</th>`).join('') + '</tr>';
     const rows = d.players.map(p => `<tr>
@@ -197,13 +200,13 @@ async function loadGrid() {
           <div class="cellcats">${chips}</div></td>`;
       }).join('')}
     </tr>`).join('');
-    const legend = `<span style="display:inline-block;width:10px;height:10px;background:#0a7d33;border-radius:2px"></span> good
-      &nbsp;<span style="display:inline-block;width:10px;height:10px;background:#b3261e;border-radius:2px"></span> bad —
+    const legend = `<span style="display:inline-block;width:10px;height:10px;background:#2f9e5b;border-radius:2px"></span> good
+      &nbsp;<span style="display:inline-block;width:10px;height:10px;background:#d05a63;border-radius:2px"></span> bad —
       favorability ×league average allowed at that player's position (hover a cell for the number)`;
     el.innerHTML = `
       <p class="meta">Your roster × next ${d.days} days, per-game opponent favorability per
         category. ${legend}</p>
-      <div style="overflow:auto; max-height:70vh">
+      <div class="tscroll" style="max-height:70vh">
       <table><thead>${head}</thead><tbody>${rows}</tbody></table></div>
       <p class="foot">Basis: ${d.team_games} team-games of 2026-27 box scores
         (${esc(JSON.stringify(d.team_basis || {})).slice(0, 0)}rate cats volume-weighted;
