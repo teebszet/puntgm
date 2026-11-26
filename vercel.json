@@ -8,7 +8,7 @@
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }],
   "functions": {
     "api/index.py": {
-      "includeFiles": ["api/store/snapshot.sqlite", "api/fantasy_gm/**"]
+      "includeFiles": "**"
     }
   },
   "headers": [
