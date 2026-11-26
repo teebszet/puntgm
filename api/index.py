@@ -281,7 +281,13 @@ def auth_callback(request: Request, code: str = "", state: str = "") -> Redirect
     if not guid or guid != settings.allowed_guid:
         print(f"[auth] guid gate tripped: arrived={guid!r} "
               f"allowed_len={len(settings.allowed_guid or '')}")
-        return JSONResponse({"error": "this Yahoo account is not authorized for the tools"}, 403)
+        return JSONResponse({
+            "error": "this Yahoo account is not authorized for the tools",
+            # The visitor's own account id, shown only to the browser that just
+            # completed this Yahoo login (state-cookie checked) — so the gate's
+            # allowlist can be set to exactly this value without server log access.
+            "presented_id": guid,
+        }, 403)
     print(f"[auth] session minted: guid={guid!r}")
     response = RedirectResponse("/tools/", 303)
     response.set_cookie(SESSION_COOKIE, make_session(settings.session_secret, guid),
