@@ -77,12 +77,17 @@
       record the four players' pricing before/after the status+baseline pipeline in runs/
 - [x] 8.2 **HUMAN GATE — spec direction.** Tim reviews this change (Obsidian) before
       implementation starts. Waits on: Tim — cleared 2026-10-08 ("ok build it", after round 1)
-- [ ] 8.3 **HUMAN GATE — default basis for draft night.** Measured (recommended) vs
-      projected; one flag, but it is a product call. Waits on: Tim
+- [x] 8.3 **HUMAN GATE — default basis for draft night.** Measured (recommended) vs
+      projected; one flag, but it is a product call. Waits on: Tim — **settled
+      2026-11-02 (Tim): measured with OUT-netting ships as default (9d0cd24)**
 - [ ] 8.4 **HUMAN GATE — dashboard sign-off.** Tim approves the layout after the screenshot
-      pass. Waits on: Tim
-- [ ] 8.5 Dry-run the full live path against a real Yahoo mock (h-score-draft-engine 4.8)
+      pass. Waits on: Tim — **gate retired 2026-11-26: no sign-off of record; the
+      dashboard surface was retired by the puntgm.com tools pivot (2026-11-23).
+      Archived open.**
+- [x] 8.5 Dry-run the full live path against a real Yahoo mock (h-score-draft-engine 4.8)
       with the new surface once gates 8.2-8.4 clear and the draft date is known
+      — **done 2026-10-08: full live path rehearsed (dry_run_watch + mock harness;
+      id-space fix found and fixed); league live from week 1 (2026-10-20)**
 
 ## 9. Event-driven re-pricing + multi-source news (R10 — Tim, 2026-10-14/15)
 
@@ -127,3 +132,22 @@ cost decision is Tim's.
       before its date. A bare departure (no tombstone row exists) is counted, recorded
       as a dated news event, and does not retrigger the rewrite — found live on the
       first same-day re-run
+
+## 10. Built beyond the original spec (post-spec work, recorded 2026-11-26)
+
+- [x] 10.1 In-season live wires: ESPN schedule refresh (rolling 21-day window), Yahoo
+      scheduled-lineup projector (BN/IL accrue zero), daily box-score backfill —
+      projections read real banked totals
+- [x] 10.2 Live-drift pricing fixes: rosters derive from full-league lineup snapshots
+      (74db664), dated reads price each day, never a per-player fold (58fd3a0),
+      Yahoo-style games remaining (ff4d4f; rule settled e9af20f, verified 40/41)
+- [x] 10.3 Daily digest runs (a786749) — launchd daily run posting recs to
+      #fantasy-nba-gm; retired 2026-11-24 (Tim: digests read as overconfident
+      noise) in favor of the web-decision-tools surface
+- [x] 10.4 Trade what-if evaluator (1f5b959, 0c169fe, e8491ed): N-for-N ROS
+      pricing with per-day re-slotting and patched-return averaging
+
+Known open drift (recorded, not a task here): the transaction-ingest gap —
+roster-moves wire fetched but never stored, daily lineup reads mis-attribute
+wire moves by up to a day of games. Repair is owned in the fantasy-nba-gm
+channel; Yahoo's scoreboard is the ground-truth check.
