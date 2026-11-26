@@ -14,18 +14,26 @@ Distribution is the real bet, and its principle is **"the product's track record
 
 See the full validation memo (kept outside this repo) for market, competitors, feasibility, and the full roadmap.
 
-## Current milestone — Weeks 1–2
+## Current state
 
-Stand up the foundation the replay harness will need:
+Live on Tim's Yahoo H2H 9-cat league (12-team, 2026-27 season in progress):
 
-1. **Historical data pipeline** — backfill the full 2025-26 NBA season, stored **point-in-time** (no lookahead).
-2. **Point-in-time league state** — rosters, weekly matchups, and per-category tallies, because H2H waiver play is opponent- and category-relative. Sourced **simulate-first** (reproducible generated leagues), plus an optional read-only import of your own past leagues as a validation set.
-3. **Skeleton decision engine** — deterministic, explainable, **perspective-scoped** (whose team + which weekly opponent) streaming/waiver ranking for a cadence-aware scoring window.
-4. **Recommendation log** — append-only record of every call (as-of date, inputs, perspective, output, reasoning, confidence) — the shared source of truth for evals and content.
+- **Data layer** — point-in-time store fed by a daily wire refresh (statuses, news,
+  roster moves, dated lineup snapshots, ESPN schedule, box-score backfill). Real
+  banked totals; the store is the boards' basis of record, Yahoo's scoreboard the
+  ground-truth check.
+- **Decision engine** — all-9-cat win projections with per-category σ and 25–75%
+  bands, differential views, punt panels, news-driven re-pricing, and a
+  schedule-aware games-remaining counter verified against Yahoo.
+- **Web tools** — puntgm.com/tools: fixture grid, wire-lines waiver board, and
+  matchup table behind Yahoo OAuth. Manual: `docs/webtools.md`. The daily digest
+  posts are retired (2026-11-24); this web surface replaced them.
+- **Draft stack** — the h-score draft engine that ran the 2026-26 draft night
+  (G-score board, survival-aware reach), validated in the replay harness.
 
-No UI, no live OAuth sync, no LLM calls yet. The skeleton engine *accepts* matchup/category context but does not yet optimize on it — full opponent-relative reasoning is the next engine's job.
-
-Tracked as an OpenSpec change: `openspec/changes/bootstrap-historical-data-and-engine/`.
+Distribution principle unchanged: **"the product's track record is the content."**
+Replay-harness results live with the archived OpenSpec changes under
+`openspec/changes/archive/`.
 
 ## Quickstart
 
@@ -57,16 +65,15 @@ This repo uses [OpenSpec](https://github.com/Fission-AI/OpenSpec). Proposals liv
 
 ```bash
 npx @fission-ai/openspec list                 # active changes
-npx @fission-ai/openspec show bootstrap-historical-data-and-engine
-npx @fission-ai/openspec validate bootstrap-historical-data-and-engine --strict
+npx @fission-ai/openspec validate <change-name> --strict
 ```
 
 When the milestone is implemented and merged, archive it:
 
 ```bash
-npx @fission-ai/openspec archive bootstrap-historical-data-and-engine
+npx @fission-ai/openspec archive <change-name>
 ```
 
 ## Stack
 
-Python 3.11+, `nba_api` (free NBA.com endpoints) for backfill, SQLite for point-in-time storage. `balldontlie` (paid, licensed-enough) is deferred to the live-data change.
+Python 3.11+, `nba_api` (free NBA.com endpoints) for backfill, SQLite for point-in-time storage. `balldontlie` (paid, licensed-enough) is still deferred; live league sync runs through Yahoo OAuth.
