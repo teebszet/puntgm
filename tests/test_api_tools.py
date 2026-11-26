@@ -187,6 +187,39 @@ def test_callback_falls_back_to_userinfo_for_the_guid(snapshot, monkeypatch):
                       params={"code": "c", "state": state}).status_code == 303
 
 
+def _id_token(sub: str | None) -> str:
+    import base64 as b64
+    import json as jsonlib
+
+    def seg(obj: dict) -> str:
+        return b64.urlsafe_b64encode(jsonlib.dumps(obj).encode()).decode().rstrip("=")
+
+    payload = {} if sub is None else {"sub": sub}
+    return f"{seg({'alg': 'HS256'})}.{seg(payload)}.sig"
+
+
+def test_guid_reads_the_id_token_sub_without_userinfo(monkeypatch):
+    token = {"access_token": "t", "id_token": _id_token("GUID-TIM")}
+
+    def no_network(*a, **k):
+        raise AssertionError("userinfo must not be called when id_token carries sub")
+
+    monkeypatch.setattr("requests.get", no_network)
+    assert api.yahoo_guid(token, object()) == "GUID-TIM"
+
+
+def test_guid_id_token_without_sub_falls_through_to_userinfo(monkeypatch):
+    token = {"access_token": "t", "id_token": _id_token(None)}
+    assert api._guid_from_id_token({"id_token": "junk"}) is None
+
+    def userinfo_reached(*a, **k):
+        raise RuntimeError("userinfo reached")
+
+    monkeypatch.setattr("requests.get", userinfo_reached)
+    with pytest.raises(RuntimeError, match="userinfo reached"):
+        api.yahoo_guid(token, object())
+
+
 def test_session_cookie_resists_tamper_and_expiry():
     token = api.make_session("k", "g")
     assert api.read_session("k", token) == "g"

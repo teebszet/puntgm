@@ -2,7 +2,7 @@
 
 Serves the webtools payloads (``fantasy_gm.webtools``) over a read-only snapshot of
 the Mac watcher's store, behind a Yahoo sign-in gated to Tim's account. The visitor
-grant is used ONLY for identity (token responses carry ``xoauth_yahoo_guid``);
+grant is used ONLY for identity (the guid rides the token response or the id_token ``sub``);
 no Fantasy API calls are made per request — every number comes from the snapshot,
 which the daily watcher pushes after its 14:30 HKT run.
 
@@ -192,16 +192,40 @@ def yahoo_exchange(code: str, settings: Settings) -> dict:
     return r.json()
 
 
+def _guid_from_id_token(token: dict) -> str | None:
+    """The OIDC id_token's ``sub`` — Yahoo maps it to the account guid.
+
+    Read without signature verification: this JWT arrives directly from
+    Yahoo's token endpoint over TLS in a server-to-server exchange, so the
+    signature protects nothing here, and the guid gates identity only.
+    """
+    id_token = token.get("id_token")
+    if not id_token or id_token.count(".") < 2:
+        return None
+    try:
+        part = id_token.split(".")[1]
+        payload = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+    except Exception:
+        return None
+    sub = payload.get("sub")
+    return str(sub) if sub else None
+
+
 def yahoo_guid(token: dict, settings: Settings) -> str | None:
-    """The guid straight from the token response; userinfo as the fallback."""
+    """Guid: token-response field, then the id_token ``sub``, then userinfo."""
     guid = token.get("xoauth_yahoo_guid")
     if guid:
         return str(guid)
+    guid = _guid_from_id_token(token)
+    if guid:
+        return guid
     import requests
 
     r = requests.get(USERINFO_URL, headers={
         "Authorization": f"Bearer {token.get('access_token', '')}"}, timeout=15)
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(
+            f"userinfo lookup failed: HTTP {r.status_code} {r.text[:200]}")
     return r.json().get("sub")
 
 
