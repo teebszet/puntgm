@@ -129,3 +129,56 @@ def teams_payload(store, league_id: str) -> list[dict]:
         {"team_id": tid, "name": name}
         for tid, name in sorted(team_names(store, league_id).items())
     ]
+
+
+def scoreboard_payload(store, config: Config, league_id: str, as_of: str, *,
+                       projector: Projector | None = None) -> dict:
+    """The scoreboard tab: every active matchup in the league, side by side.
+
+    Elvin-Feng-style weekly matchup comparisons: one row per matchup, both teams'
+    projected end-of-week category totals (the same ``Projector`` numbers the
+    matchup tab shows for Tim's own matchup, now league-wide), each with σ and a
+    25th–75th band, a per-category win probability, and a projected score that
+    counts categories (>0.5 team A, <0.5 team B, exactly 0.5 a tie).
+
+    One ``Projector.project`` call per matchup (six in a 12-team league), never
+    one per team — each call prices both sides. Teams without an active matchup
+    are left out; the league's matchups are discovered by walking the teams once.
+    """
+    proj = projector or Projector(config=config)
+    names = team_names(store, league_id)
+    seen: set[str] = set()
+    matchups: list[dict] = []
+    for team_id in sorted(names):
+        if team_id in seen:
+            continue
+        matchup = store.matchup_for_team(league_id, team_id, as_of)
+        if matchup is None:
+            continue
+        seen.update({matchup.team_a, matchup.team_b})
+        p = proj.project(store, league_id, matchup.team_a, as_of)
+        if not p.opponent_id:
+            continue
+        rows = _cat_rows(p)
+        a_wins = sum(1 for r in rows if r["win_prob"] > 0.5)
+        b_wins = sum(1 for r in rows if r["win_prob"] < 0.5)
+        ties = len(rows) - a_wins - b_wins
+        matchups.append({
+            "period_index": p.period_index,
+            "period_start": matchup.period_start,
+            "period_end": matchup.period_end,
+            "team_a": {
+                "team_id": p.team_id,
+                "name": names.get(p.team_id, p.team_id),
+                "games_remaining": games_remaining(store, league_id, p.team_id, as_of),
+            },
+            "team_b": {
+                "team_id": p.opponent_id,
+                "name": names.get(p.opponent_id, p.opponent_id),
+                "games_remaining": games_remaining(store, league_id, p.opponent_id, as_of),
+            },
+            "categories": rows,
+            "projected_score": f"{a_wins}-{b_wins}" + (f"-{ties}" if ties else ""),
+        })
+    matchups.sort(key=lambda m: (m["period_start"], m["team_a"]["team_id"]))
+    return {"as_of": as_of, "league_id": league_id, "matchups": matchups}
