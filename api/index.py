@@ -1,7 +1,7 @@
 """puntgm.com tools backend — FastAPI, deployed as a Vercel Python function.
 
 Serves the webtools payloads (``fantasy_gm.webtools``) over a read-only snapshot of
-the Mac watcher's store, behind a Yahoo sign-in gated to Tim's account. The visitor
+the Mac watcher's store, behind a Yahoo sign-in gated to a guid allowlist. The visitor
 grant is used ONLY for identity (the guid rides the token response or the id_token ``sub``);
 no Fantasy API calls are made per request — every number comes from the snapshot,
 which the daily watcher pushes after its 14:30 HKT run.
@@ -15,8 +15,8 @@ Deployment shape (scripts/deploy_webtools.py prepares, then verifies):
   ``vercel.json`` includeFiles — Vercel's filesystem is read-only, which is exactly
   the write-guarantee the store contract wants;
 - secrets come from the Vercel project environment: ``SESSION_SECRET``,
-  ``YAHOO_CLIENT_ID``, ``YAHOO_CLIENT_SECRET``, ``YAHOO_ALLOWED_GUID`` (Tim's
-  guid), and ``YAHOO_REDIRECT_URI`` (https://www.puntgm.com/api/auth/callback).
+  ``YAHOO_CLIENT_ID``, ``YAHOO_CLIENT_SECRET``, ``YAHOO_ALLOWED_GUID`` (comma-separated
+  guid allowlist), and ``YAHOO_REDIRECT_URI`` (https://www.puntgm.com/api/auth/callback).
   Unset locally, auth endpoints degrade to 503 and tool endpoints to 401 — a
   local run against the real store still serves every payload.
 
@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -98,6 +99,10 @@ class Settings:
     def auth_ready(self) -> bool:
         return all((self.session_secret, self.yahoo_client_id, self.yahoo_client_secret,
                     self.yahoo_redirect_uri, self.allowed_guid))
+
+    def allowed_guids(self) -> frozenset[str]:
+        """Guids allowed to sign in — YAHOO_ALLOWED_GUID may list several, comma/space separated."""
+        return frozenset(g for g in re.split(r"[,\s]+", self.allowed_guid or "") if g)
 
 
 # --- snapshot ----------------------------------------------------------------
@@ -281,14 +286,15 @@ def auth_callback(request: Request, code: str = "", state: str = "") -> Redirect
         guid = yahoo_guid(token, settings)
     except Exception as exc:  # noqa: BLE001 — any handshake failure is a 502 to the browser
         return JSONResponse({"error": f"yahoo exchange failed: {exc}"}, 502)
-    if not guid or guid != settings.allowed_guid:
+    if not guid or guid not in settings.allowed_guids():
         print(f"[auth] guid gate tripped: arrived={guid!r} "
-              f"allowed_len={len(settings.allowed_guid or '')}")
+              f"allowed_count={len(settings.allowed_guids())}")
         return JSONResponse({
             "error": "this Yahoo account is not authorized for the tools",
             # The visitor's own account id, shown only to the browser that just
-            # completed this Yahoo login (state-cookie checked) — so the gate's
-            # allowlist can be set to exactly this value without server log access.
+            # completed this Yahoo login (state-cookie checked) — so each new
+            # account can be added to the comma-separated allowlist with its
+            # presented_id, no server log access needed.
             "presented_id": guid,
         }, 403)
     print(f"[auth] session minted: guid={guid!r}")

@@ -175,6 +175,29 @@ def test_callback_refuses_a_foreign_account(snapshot, monkeypatch):
     assert not r.cookies.get(api.SESSION_COOKIE)
 
 
+def test_callback_allows_a_second_listed_guid(snapshot, monkeypatch):
+    client, _, _ = snapshot
+    _login_env(monkeypatch, guid="GUID-TIM, GUID-MATE")
+    state = client.get("/api/auth/login").cookies[api.STATE_COOKIE]
+    client.cookies.set(api.STATE_COOKIE, state)
+    monkeypatch.setattr(api, "yahoo_exchange",
+                        lambda code, settings: {"xoauth_yahoo_guid": "GUID-MATE"})
+    r = client.get("/api/auth/callback", params={"code": "c", "state": state})
+    assert r.status_code == 303 and r.headers["location"] == "/tools/"
+    client.cookies.set(api.SESSION_COOKIE, r.cookies.get(api.SESSION_COOKIE))
+    assert client.get("/api/auth/me").json() == {"signed_in": True, "guid": "GUID-MATE"}
+
+
+def test_callback_still_refuses_an_unlisted_guid_in_a_multi_guid_env(snapshot, monkeypatch):
+    client, _, _ = snapshot
+    _login_env(monkeypatch, guid="GUID-TIM,GUID-MATE")
+    state = client.get("/api/auth/login").cookies[api.STATE_COOKIE]
+    client.cookies.set(api.STATE_COOKIE, state)
+    monkeypatch.setattr(api, "yahoo_exchange",
+                        lambda code, settings: {"xoauth_yahoo_guid": "GUID-STRANGER"})
+    assert client.get("/api/auth/callback", params={"code": "c", "state": state}).status_code == 403
+
+
 def test_callback_maps_a_handshake_failure_to_502(snapshot, monkeypatch):
     client, _, _ = snapshot
     _login_env(monkeypatch)
