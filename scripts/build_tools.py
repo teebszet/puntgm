@@ -64,6 +64,11 @@ PAGE = r"""<!doctype html>
   .cellcats { display:grid; grid-template-columns:repeat(9,12px); gap:1px; margin-top:2px; }
   .cellcats span { height:10px; border-radius:2px; background:#26303c; }
   .favor { cursor:default; }
+  .stick { position:sticky; left:0; background:var(--card); }
+  th.stick { z-index:2; background:#121a23; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px;
+          padding:10px 12px; margin-bottom:14px; }
+  .card .tscroll { border:0; background:transparent; }
   section[hidden] { display:none; }
   .err { color:var(--bad); }
   .foot { color:var(--mut); font-size:12px; margin-top:8px; }
@@ -80,10 +85,14 @@ PAGE = r"""<!doctype html>
     <button data-tab="wire" aria-selected="true">Wire lines</button>
     <button data-tab="matchup" aria-selected="false">Matchup</button>
     <button data-tab="grid" aria-selected="false">Fixture grid</button>
+    <button data-tab="schedule" aria-selected="false">Schedule grid</button>
+    <button data-tab="scoreboard" aria-selected="false">Scoreboard</button>
   </nav>
   <section id="wire"></section>
   <section id="matchup" hidden></section>
   <section id="grid" hidden></section>
+  <section id="schedule" hidden></section>
+  <section id="scoreboard" hidden></section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -228,8 +237,90 @@ async function loadGrid() {
   } catch (err) { deny(el, err); }
 }
 
+/* ---- schedule grid (NBA teams × days, Hashtag-style) ----------------- */
+async function loadSchedule() {
+  const el = $('schedule');
+  try {
+    const d = await api('/api/tools/schedule-grid');
+    const wdOf = dt => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][
+      new Date(dt + 'T12:00:00Z').getUTCDay()];
+    const color = f => f == null ? 'transparent'
+      : f > 1.06 ? '#1f6f45' : f > 1.02 ? '#1d5c38'
+      : f < 0.94 ? '#a83a44' : f < 0.98 ? '#6e2a30' : '#313b47';
+    const head = `<tr><th class="l stick">Team</th><th class="stick">G</th>` +
+      d.dates.map(dt => `<th>${esc(dt.slice(5))}<br><span style="opacity:.55">${wdOf(dt)}</span></th>`).join('') + '</tr>';
+    const lg = `<tr><td class="l stick" style="color:var(--mut)"># games</td>` +
+      `<td class="stick" style="color:var(--mut)">${d.league_games_by_date.reduce((a, b) => a + b, 0)}</td>` +
+      d.dates.map((dt, i) => `<td style="color:var(--mut)">${d.league_games_by_date[i]}</td>`).join('') + '</tr>';
+    const rows = d.teams.map(t => `<tr>
+      <td class="l stick">${esc(t.team)}</td><td class="stick"><b>${t.games}</b></td>
+      ${d.dates.map(dt => {
+        const c = t.cells[dt];
+        if (!c) return '<td style="color:var(--mut)">·</td>';
+        const tip = Object.entries(c.favor_by_cat).map(([k, v]) => k + ' ×' + v).join(' · ');
+        return `<td title="${esc(tip || 'no defense data for this opponent yet')}"
+                     style="background:${color(c.favor)}">${c.is_home ? 'vs ' : '@'}${esc(c.opponent)}</td>`;
+      }).join('')}</tr>`).join('');
+    el.innerHTML = `
+      <p class="meta">NBA teams × next ${d.days} days from ${esc(d.as_of)}. Cell tint =
+        opponent-defense favorability averaged across all cats (hover = per-cat ×);
+        green = soft defense, red = stingy. First row: league slate per day.</p>
+      <div class="tscroll" style="max-height:72vh">
+      <table><thead>${head}</thead><tbody>${lg}${rows}</tbody></table></div>
+      <p class="foot">Defense basis per opponent: 2026-27 team-allowed rates,
+        volume-weighted; teams under 5 games price from last season.</p>`;
+  } catch (err) { deny(el, err); }
+}
+
+/* ---- scoreboard (weekly matchup comparisons, Elvin-Feng style) -------- */
+async function loadScoreboard() {
+  const el = $('scoreboard');
+  try {
+    const d = await api('/api/tools/scoreboard');
+    const cats = d.matchups.length ? d.matchups[0].categories.map(r => r.category) : [];
+    const tint = p => p == null ? 'transparent'
+      : p > 0.60 ? '#1f6f45' : p > 0.55 ? '#1d5c38'
+      : p < 0.40 ? '#a83a44' : p < 0.45 ? '#6e2a30' : '#313b47';
+    const cards = d.matchups.map(m => {
+      const rows = m.categories;
+      const byCat = Object.fromEntries(rows.map(r => [r.category, r]));
+      const aw = rows.filter(r => r.win_prob > 0.5).length;
+      const bw = rows.filter(r => r.win_prob < 0.5).length;
+      const aRow = `<tr><td class="l"><b>${esc(m.team_a.name)}</b></td>` +
+        cats.map(c => { const r = byCat[c];
+          return `<td title="±${esc(r.mine_std)} · 25–75%: ${esc(r.mine_lo)}–${esc(r.mine_hi)}"
+                        style="background:${tint(r.win_prob)}"><b>${dash(r.mine)}</b></td>`;
+        }).join('') + `<td><b>${aw}</b></td></tr>`;
+      const bRow = `<tr><td class="l"><b>${esc(m.team_b.name)}</b></td>` +
+        cats.map(c => { const r = byCat[c]; const p = 1 - r.win_prob;
+          return `<td title="±${esc(r.opp_std)} · 25–75%: ${esc(r.opp_lo)}–${esc(r.opp_hi)}"
+                        style="background:${tint(p)}"><b>${dash(r.opp)}</b></td>`;
+        }).join('') + `<td><b>${bw}</b></td></tr>`;
+      const pRow = `<tr><td class="l" style="color:var(--mut)">win %</td>` +
+        cats.map(c => { const r = byCat[c]; const p = Math.round(r.win_prob * 100);
+          return `<td style="background:hsl(${p * 1.2},55%,${p >= 50 ? 30 : 27}%)">${p}%</td>`;
+        }).join('') + `<td style="color:var(--mut)">${esc(m.projected_score)}</td></tr>`;
+      return `<div class="card">
+        <p class="meta"><b>${esc(m.team_a.name)} vs ${esc(m.team_b.name)}</b> · week
+          ${esc(m.period_start)} → ${esc(m.period_end)} · projected
+          ${esc(m.projected_score)} · games left ${dash(m.team_a.games_remaining)} /
+          ${dash(m.team_b.games_remaining)}</p>
+        <div class="tscroll"><table><thead><tr><th class="l">Team</th>
+          ${cats.map(c => `<th>${esc(c)}</th>`).join('')}<th>W</th></tr></thead>
+          <tbody>${aRow}${bRow}${pRow}</tbody></table></div></div>`;
+    }).join('');
+    el.innerHTML = `
+      <p class="meta">Every matchup's projected end-of-week totals — banked through
+        ${esc(d.as_of)} plus remaining scheduled games — category by category. Cell
+        tint = that side's win probability; "win %" row = left team's per-cat
+        probability; W = categories led (ties uncounted).</p>
+      ${cards}`;
+  } catch (err) { deny(el, err); }
+}
+
 /* ---- tabs ------------------------------------------------------------ */
-const loaders = { wire: loadWire, matchup: loadMatchup, grid: loadGrid };
+const loaders = { wire: loadWire, matchup: loadMatchup, grid: loadGrid,
+                  schedule: loadSchedule, scoreboard: loadScoreboard };
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav.tabs button').forEach(x =>
     x.setAttribute('aria-selected', x === b));

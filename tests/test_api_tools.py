@@ -81,11 +81,28 @@ def test_health_reports_snapshot_basis(snapshot):
 
 def test_tools_deny_unsigned_and_unconfigured(snapshot, monkeypatch):
     client, _, _ = snapshot
-    assert client.get("/api/tools/wire-lines").status_code == 401
+    for path in ("/api/tools/wire-lines", "/api/tools/fixture-grid",
+                 "/api/tools/matchup", "/api/tools/schedule-grid",
+                 "/api/tools/scoreboard"):
+        assert client.get(path).status_code == 401
 
     monkeypatch.delenv("SESSION_SECRET")  # deployment gap, not a login need → 503
     fresh = TestClient(api.app, follow_redirects=False)
     assert fresh.get("/api/tools/wire-lines").status_code == 503
+
+
+def test_schedule_grid_and_scoreboard_serve(snapshot):
+    client, _league, _path = snapshot
+    client.cookies.set(api.SESSION_COOKIE, api.make_session("test-secret", "GUID-TIM"))
+    body = client.get("/api/tools/schedule-grid").json()
+    assert set(body) >= {"as_of", "days", "dates", "league_games_by_date", "teams"}
+    assert body["dates"][0] == body["as_of"]
+    body = client.get("/api/tools/scoreboard").json()
+    assert body["matchups"], "the seeded league has an active week"
+    for m in body["matchups"]:
+        assert set(m) >= {"period_start", "period_end", "team_a", "team_b",
+                          "categories", "projected_score"}
+        assert len(m["categories"]) == 9
 
 
 def test_wire_lines_serves_the_payload(snapshot):

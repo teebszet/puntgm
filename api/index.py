@@ -21,7 +21,8 @@ Deployment shape (scripts/deploy_webtools.py prepares, then verifies):
   local run against the real store still serves every payload.
 
 Routes: /api/health, /api/auth/{login,callback,logout,me}, /api/tools/{wire-lines,
-fixture-grid,matchup}. Everything except health and the auth pair is gated.
+fixture-grid,matchup,schedule-grid,scoreboard}. Everything except health and the
+auth pair is gated.
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ from fantasy_gm.data.store import Store
 from fantasy_gm.webtools import (
     fixture_grid_payload,
     matchup_payload,
+    schedule_grid_payload,
+    scoreboard_payload,
     teams_payload,
     wire_lines_payload,
 )
@@ -356,3 +359,23 @@ def tool_matchup(request: Request) -> JSONResponse:
 def tool_teams(request: Request) -> JSONResponse:
     return _tool_payload(
         request, lambda store, settings: teams_payload(store, settings.league_id))
+
+
+@app.get("/api/tools/schedule-grid")
+def tool_schedule_grid(request: Request) -> JSONResponse:
+    def build(store: Store, settings: Settings):
+        return schedule_grid_payload(store, snapshot_as_of(store))
+
+    return _tool_payload(request, build)
+
+
+@app.get("/api/tools/scoreboard")
+def tool_scoreboard(request: Request) -> JSONResponse:
+    def build(store: Store, settings: Settings):
+        payload = scoreboard_payload(store, Config(), settings.league_id,
+                                     snapshot_as_of(store))
+        if not payload["matchups"]:
+            return {"error": "no active matchups in the snapshot"}
+        return payload
+
+    return _tool_payload(request, build)
