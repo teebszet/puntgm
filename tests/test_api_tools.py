@@ -282,3 +282,26 @@ def test_session_cookie_resists_tamper_and_expiry():
     assert api.read_session("k", "garbage") is None
     expired = api.make_session("k", "g", now=time.time() - 31 * 86400)
     assert api.read_session("k", expired) is None
+
+
+def test_team_for_maps_a_listed_guid_and_falls_back(monkeypatch):
+    monkeypatch.setenv("TOOLS_TEAM_ID", "t.8")
+    monkeypatch.setenv("TOOLS_TEAM_BY_GUID", "GUID-TIM:t.8, GUID-FRIEND:t.3")
+    s = api.Settings.load()
+    assert s.team_for("GUID-FRIEND") == "t.3"
+    assert s.team_for("GUID-TIM") == "t.8"
+    assert s.team_for("GUID-OTHER") == "t.8"
+    monkeypatch.delenv("TOOLS_TEAM_BY_GUID")
+    assert api.Settings.load().team_for("GUID-FRIEND") == "t.8"
+
+
+def test_matchup_scopes_to_the_signed_in_guid(snapshot, monkeypatch):
+    client, _league, _path = snapshot
+    monkeypatch.setenv("TOOLS_TEAM_ID", "T00")
+    monkeypatch.setenv("TOOLS_TEAM_BY_GUID", "GUID-FRIEND:T01")
+    client.cookies.set(api.SESSION_COOKIE, api.make_session("test-secret", "GUID-TIM"))
+    tim = client.get("/api/tools/matchup").json()
+    client.cookies.set(api.SESSION_COOKIE, api.make_session("test-secret", "GUID-FRIEND"))
+    friend = client.get("/api/tools/matchup").json()
+    assert "error" not in tim and "error" not in friend
+    assert tim != friend

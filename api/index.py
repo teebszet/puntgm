@@ -17,6 +17,8 @@ Deployment shape (scripts/deploy_webtools.py prepares, then verifies):
 - secrets come from the Vercel project environment: ``SESSION_SECRET``,
   ``YAHOO_CLIENT_ID``, ``YAHOO_CLIENT_SECRET``, ``YAHOO_ALLOWED_GUID`` (comma-separated
   guid allowlist), and ``YAHOO_REDIRECT_URI`` (https://www.puntgm.com/api/auth/callback).
+  Optional ``TOOLS_TEAM_BY_GUID`` (``guid:team_id`` pairs, comma-separated) scopes the
+  team-specific boards to the signed-in account; unmapped guids get ``TOOLS_TEAM_ID``.
   Unset locally, auth endpoints degrade to 503 and tool endpoints to 401 — a
   local run against the real store still serves every payload.
 
@@ -37,7 +39,7 @@ import re
 import secrets
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 _API_DIR = Path(__file__).resolve().parent
@@ -77,6 +79,7 @@ class Settings:
     store_path: str | None
     league_id: str
     team_id: str
+    team_by_guid: str | None
     session_secret: str | None
     yahoo_client_id: str | None
     yahoo_client_secret: str | None
@@ -89,6 +92,7 @@ class Settings:
             store_path=os.environ.get("FANTASY_GM_STORE", str(_API_DIR / "store/snapshot.sqlite")),
             league_id=os.environ.get("TOOLS_LEAGUE_ID", "yahoo-478.l.25733"),
             team_id=os.environ.get("TOOLS_TEAM_ID", "t.8"),
+            team_by_guid=os.environ.get("TOOLS_TEAM_BY_GUID"),
             session_secret=os.environ.get("SESSION_SECRET"),
             yahoo_client_id=os.environ.get("YAHOO_CLIENT_ID"),
             yahoo_client_secret=os.environ.get("YAHOO_CLIENT_SECRET"),
@@ -103,6 +107,15 @@ class Settings:
     def allowed_guids(self) -> frozenset[str]:
         """Guids allowed to sign in — YAHOO_ALLOWED_GUID may list several, comma/space separated."""
         return frozenset(g for g in re.split(r"[,\s]+", self.allowed_guid or "") if g)
+
+    def team_for(self, guid: str | None) -> str:
+        """The signed-in guid's team: TOOLS_TEAM_BY_GUID (``guid:team_id`` pairs,
+        comma/space separated), else the TOOLS_TEAM_ID default."""
+        for pair in re.split(r"[,\s]+", self.team_by_guid or ""):
+            g, sep, team = pair.partition(":")
+            if sep and g == guid and team:
+                return team
+        return self.team_id
 
 
 # --- snapshot ----------------------------------------------------------------
@@ -322,9 +335,12 @@ def auth_me(request: Request) -> JSONResponse:
 
 def _tool_payload(request: Request, build) -> JSONResponse:
     settings = Settings.load()
-    if current_guid(request, settings) is None:
+    guid = current_guid(request, settings)
+    if guid is None:
         # An unconfigured secret denies with 503 (deployment gap, not a login need).
         return _deny(settings, request, "tools")
+    # Team-scoped boards read settings.team_id — pin it to this visitor's team.
+    settings = replace(settings, team_id=settings.team_for(guid))
     try:
         store = get_store(settings)
         return JSONResponse(build(store, settings))

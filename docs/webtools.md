@@ -53,6 +53,7 @@ is a leak). `/api/health` is public and reports `auth_ready`.
 | `YAHOO_ALLOWED_GUID` | Yahoo guid allowed to sign in |
 | `FANTASY_GM_STORE` | Path to the bundled snapshot (default `api/store/snapshot.sqlite`) |
 | `TOOLS_LEAGUE_ID` / `TOOLS_TEAM_ID` | League/team the boards are scoped to |
+| `TOOLS_TEAM_BY_GUID` | Optional `guid:team_id` pairs (comma-separated): each signed-in account's own team for the matchup/fixture-grid boards; unmapped guids fall back to `TOOLS_TEAM_ID` |
 
 ## Running the API locally
 
