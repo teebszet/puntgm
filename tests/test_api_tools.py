@@ -98,11 +98,20 @@ def test_schedule_grid_and_scoreboard_serve(snapshot):
     assert set(body) >= {"as_of", "days", "dates", "league_games_by_date", "teams"}
     assert body["dates"][0] == body["as_of"]
     body = client.get("/api/tools/scoreboard").json()
-    assert body["matchups"], "the seeded league has an active week"
-    for m in body["matchups"]:
-        assert set(m) >= {"period_start", "period_end", "team_a", "team_b",
-                          "categories", "projected_score"}
-        assert len(m["categories"]) == 9
+    assert body["status"] == "live", "the seeded league has an active week"
+    assert set(body) >= {"as_of", "week", "weeks", "teams", "pairs", "cats"}
+    n = len(body["teams"])
+    assert len(body["pairs"]) == n * (n - 1) // 2
+    for p in body["pairs"]:
+        assert set(p) >= {"a", "b", "record", "real", "cats"}
+        assert len(p["cats"]) == 9
+        w, l, *rest = p["record"].split("-")
+        assert int(w) + int(l) + (int(rest[0]) if rest else 0) == 9
+    # ?week=N selects a historical week; a bogus week is a client error, not a 500.
+    hist = body["weeks"][0]["week"]
+    past = client.get(f"/api/tools/scoreboard?week={hist}").json()
+    assert past["week"] == hist and past["status"] == "completed"
+    assert client.get("/api/tools/scoreboard?week=99").json()["error"]
 
 
 def test_wire_lines_serves_the_payload(snapshot):

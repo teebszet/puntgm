@@ -55,7 +55,7 @@ from fantasy_gm.webtools import (
     fixture_grid_payload,
     matchup_payload,
     schedule_grid_payload,
-    scoreboard_payload,
+    scoreboard_matrix_payload,
     teams_payload,
     wire_lines_payload,
 )
@@ -392,12 +392,18 @@ def tool_schedule_grid(request: Request) -> JSONResponse:
 
 
 @app.get("/api/tools/scoreboard")
-def tool_scoreboard(request: Request) -> JSONResponse:
+def tool_scoreboard(request: Request, week: str = "") -> JSONResponse:
     def build(store: Store, settings: Settings):
-        payload = scoreboard_payload(store, Config(), settings.league_id,
-                                     snapshot_as_of(store))
-        if not payload["matchups"]:
-            return {"error": "no active matchups in the snapshot"}
-        return payload
+        # ?week=N picks a historical week (1-based Yahoo period); absent = the live
+        # week. A bad week is a client error, not a deployment gap.
+        try:
+            wk = int(week) if week else None
+        except ValueError:
+            return {"error": f"week must be an integer, got {week!r}"}
+        try:
+            return scoreboard_matrix_payload(store, Config(), settings.league_id,
+                                             snapshot_as_of(store), week=wk)
+        except ValueError as exc:
+            return {"error": str(exc)}
 
     return _tool_payload(request, build)

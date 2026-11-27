@@ -60,6 +60,39 @@ class Projector:
         # replay harness can A/B it.
         self.shrink_percentages = shrink_percentages
 
+    def project_side(
+        self, store, league_id: str, team_id: str, as_of: str, state, matchup
+    ) -> tuple[dict, list | None, dict | None]:
+        """Unrounded ``{cat: (projected total, σ)}`` for one side of ``matchup``, plus
+        the scheduled-lineup inputs behind it — the per-side half of :meth:`project`,
+        extracted so league-wide surfaces (the all-pairs scoreboard matrix) price
+        every team with the engine's own math instead of re-deriving its plumbing.
+        ``state`` is ``store.league_state_asof(league_id, as_of)``; raises
+        ``KeyError`` on an unknown league."""
+        meta = store.league_meta(league_id)
+        if meta is None:
+            raise KeyError(f"unknown league {league_id!r}")
+        # The platform's scheduled lineup, when the store has one: only slotted players
+        # accrue remaining games — a bench or IL player accumulates nothing until he is
+        # actually slotted (daily-change league; the banked tally still counts everyone
+        # who already played). No lineup knowledge -> fall back to the full roster.
+        # Per-date scheduled-lineup coverage (date-scoped reads stored with
+        # known_from = covered date) prices each player on exactly the days he is
+        # scheduled to be slotted — Yahoo's own games-remaining semantics, and what
+        # a daily re-slotted roster actually earns (verified live 2026-10-26). Any
+        # missing date falls back to the current-lineup-for-the-whole-window model.
+        per_day = store.scheduled_active_games(
+            league_id, team_id, as_of, matchup.period_end)
+        active = (None if per_day is not None
+                  else self._active_ids(store, league_id, team_id, as_of,
+                                        state.rosters.get(team_id, [])))
+        totals = self.team_projection(
+            store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
+            as_of, matchup.period_start, matchup.period_end, self.config.categories,
+            meta["season"], active_ids=active, per_day_games=per_day,
+            league_id=league_id, team_id=team_id)
+        return totals, active, per_day
+
     def project(
         self, store, league_id: str, team_id: str, as_of: str
     ) -> MatchupProjection:
@@ -72,37 +105,13 @@ class Projector:
         if matchup is None:
             return MatchupProjection(as_of, league_id, team_id, "", -1, {})
         opponent = matchup.team_b if matchup.team_a == team_id else matchup.team_a
-        period_end = matchup.period_end
 
         ps = matchup.period_start
-        season = meta["season"]
-        # The platform's scheduled lineup, when the store has one: only slotted players
-        # accrue remaining games — a bench or IL player accumulates nothing until he is
-        # actually slotted (daily-change league; the banked tally still counts everyone
-        # who already played). No lineup knowledge -> fall back to the full roster.
-        # Per-date scheduled-lineup coverage (date-scoped reads stored with
-        # known_from = covered date) prices each player on exactly the days he is
-        # scheduled to be slotted — Yahoo's own games-remaining semantics, and what
-        # a daily re-slotted roster actually earns (verified live 2026-10-26). Any
-        # missing date falls back to the current-lineup-for-the-whole-window model.
-        mine_per_day = store.scheduled_active_games(
-            league_id, team_id, as_of, period_end)
-        opp_per_day = store.scheduled_active_games(
-            league_id, opponent, as_of, period_end)
-        mine_active = (None if mine_per_day is not None
-                       else self._active_ids(store, league_id, team_id, as_of,
-                                             state.rosters.get(team_id, [])))
-        opp_active = (None if opp_per_day is not None
-                      else self._active_ids(store, league_id, opponent, as_of,
-                                            state.rosters.get(opponent, [])))
-        mine = self.team_projection(
-            store, state.category_tally.get(team_id, {}), state.rosters.get(team_id, []),
-            as_of, ps, period_end, categories, season, active_ids=mine_active,
-            per_day_games=mine_per_day, league_id=league_id, team_id=team_id)
-        opp = self.team_projection(
-            store, state.category_tally.get(opponent, {}), state.rosters.get(opponent, []),
-            as_of, ps, period_end, categories, season, active_ids=opp_active,
-            per_day_games=opp_per_day, league_id=league_id, team_id=opponent)
+        period_end = matchup.period_end
+        mine, mine_active, mine_per_day = self.project_side(
+            store, league_id, team_id, as_of, state, matchup)
+        opp, opp_active, opp_per_day = self.project_side(
+            store, league_id, opponent, as_of, state, matchup)
 
         win_probs = None
         if self.method == "bootstrap":

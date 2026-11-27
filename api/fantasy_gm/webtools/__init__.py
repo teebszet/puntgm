@@ -4,6 +4,7 @@ from fantasy_gm.webtools.fixture_grid import fixture_grid_payload, team_defense
 from fantasy_gm.webtools.payloads import (
     games_remaining,
     matchup_payload,
+    scoreboard_matrix_payload,
     scoreboard_payload,
     teams_payload,
     team_names,
@@ -16,6 +17,7 @@ __all__ = [
     "games_remaining",
     "matchup_payload",
     "schedule_grid_payload",
+    "scoreboard_matrix_payload",
     "scoreboard_payload",
     "teams_payload",
     "team_defense",

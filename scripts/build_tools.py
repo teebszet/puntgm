@@ -272,50 +272,104 @@ async function loadSchedule() {
   } catch (err) { deny(el, err); }
 }
 
-/* ---- scoreboard (weekly matchup comparisons, Elvin-Feng style) -------- */
-async function loadScoreboard() {
-  const el = $('scoreboard');
+/* ---- scoreboard (all-pairs weekly matrix + week selector) ------------- */
+const SB = { cache: {} };
+
+function sbRecFor(d, aId, bId) {
+  const p = d.pairs.find(x => (x.a === aId && x.b === bId) || (x.b === aId && x.a === bId));
+  if (!p) return null;
+  const parts = p.record.split('-').map(Number);
+  const w = parts[0], l = parts[1], t = parts[2] || 0;
+  const rowFirst = p.a === aId;
+  return { w: rowFirst ? w : l, l: rowFirst ? l : w, t, real: p.real, pair: p,
+           swapped: !rowFirst };
+}
+
+function sbMark(cat, av, bv, wp) {
+  if (wp !== null) return wp > 50 ? 'W' : wp < 50 ? 'L' : 'T';
+  const m = (cat === 'tov' ? -1 : 1) * (av - bv);
+  return m > 0 ? 'W' : m < 0 ? 'L' : 'T';
+}
+
+function sbShort(s) { return s.length > 18 ? s.slice(0, 17) + '…' : s; }
+
+function sbDetail(d, aId, bId) {
+  const rec = sbRecFor(d, aId, bId);
+  if (!rec) return '';
+  const nameOf = Object.fromEntries(d.teams.map(t => [t.team_id, t.name]));
+  const gr = Object.fromEntries(d.teams.map(t => [t.team_id, t.games_remaining]));
+  const live = d.status === 'live';
+  const A = nameOf[aId], B = nameOf[bId];
+  const rows = rec.pair.cats.map(r => {
+    const av = rec.swapped ? r.b : r.a, bv = rec.swapped ? r.a : r.b;
+    const asd = rec.swapped ? r.b_std : r.a_std, bsd = rec.swapped ? r.a_std : r.b_std;
+    const wp = live ? (rec.swapped ? 100 - Math.round(r.win_prob * 100)
+                                   : Math.round(r.win_prob * 100)) : null;
+    const mark = sbMark(r.category, av, bv, wp);
+    return `<tr>
+      <td class="l">${esc(r.category)}</td>
+      <td><b>${dash(av)}</b>${asd !== undefined ? ' <span style="color:var(--mut)">±' + dash(asd) + '</span>' : ''}</td>
+      <td><b>${dash(bv)}</b>${bsd !== undefined ? ' <span style="color:var(--mut)">±' + dash(bsd) + '</span>' : ''}</td>
+      <td>${wp === null ? '<span style="color:var(--mut)">—</span>' : wp + '%'}</td>
+      <td><b style="color:${mark === 'W' ? 'var(--good)' : mark === 'L' ? 'var(--bad)' : 'var(--mut)'}">${mark}</b></td>
+    </tr>`;
+  }).join('');
+  const grLine = live ? ` · games left: ${dash(gr[aId])} / ${dash(gr[bId])}` : '';
+  return `<div class="card" style="margin-top:12px">
+    <p class="meta"><b>${esc(A)} vs ${esc(B)}</b> · ${esc(rec.pair.record)}${rec.real ? ' · ◆ real matchup' : ''}${grLine}</p>
+    <div class="tscroll"><table><thead><tr><th class="l">Cat</th><th>${esc(sbShort(A))}</th>
+      <th>${esc(sbShort(B))}</th><th>win %</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+}
+
+function sbRender(d, el) {
+  SB.cache[d.week] = d;
+  const live = d.status === 'live';
+  const source = live
+    ? `projected end-of-week totals — banked through ${esc(d.as_of)} + remaining scheduled games · same engine as the Matchup tab`
+    : d.source === 'yahoo'
+      ? `Yahoo's official weekly totals — platform-scored ground truth`
+      : `store banked tallies — Yahoo actuals not stored for this week, roster moves may misattribute`;
+  const tint = m => m > 0 ? '#1d5c38' : m < 0 ? '#6e2a30' : '#313b47';
+  const head = `<tr><th class="l stick">Week ${d.week}</th>` +
+    d.teams.map(t => `<th title="${esc(t.name)}">${esc(sbShort(t.name))}</th>`).join('') + '</tr>';
+  const body = d.teams.map(a => `<tr>
+    <td class="l stick" title="${esc(a.name)}"><b>${esc(sbShort(a.name))}</b></td>
+    ${d.teams.map(b => {
+      if (a.team_id === b.team_id) return '<td style="color:var(--mut)">·</td>';
+      const rec = sbRecFor(d, a.team_id, b.team_id);
+      const m = rec.w - rec.l;
+      const label = rec.t ? `${rec.w}-${rec.l}-${rec.t}` : `${rec.w}-${rec.l}`;
+      return `<td class="sbcell" data-a="${esc(a.team_id)}" data-b="${esc(b.team_id)}"
+        style="background:${tint(m)};cursor:pointer;${rec.real ? 'box-shadow:inset 0 0 0 1px var(--acc);' : ''}"
+        title="${esc(a.name)} vs ${esc(b.name)}: ${label}${rec.real ? ' · real matchup' : ''} — click for detail"><b>${label}</b>${rec.real ? ' ◆' : ''}</td>`;
+    }).join('')}
+  </tr>`).join('');
+  const sel = `<select id="sbweek" style="font:inherit;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 8px">` +
+    d.weeks.map(w => `<option value="${w.week}"${w.week === d.week ? ' selected' : ''}>Week ${w.week}${w.status === 'live' ? ' — current' : ''} · ${esc(w.start.slice(5))}→${esc(w.end.slice(5))}</option>`).join('') +
+    `</select>`;
+  el.innerHTML = `
+    <p class="meta">${sel} &nbsp;·&nbsp; ${source}</p>
+    <div class="tscroll"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div id="sbdetail"></div>
+    <p class="foot">Cell = row team's 9-cat record vs column team${live ? ' (from win probabilities)' : ''};
+      ◆ = this week's real matchup (accent outline). Click a cell for the per-category table.
+      ${live ? 'Live-week cells move with the daily 14:30 snapshot.' : ''}</p>`;
+  $('sbweek').onchange = (e) => sbLoad(parseInt(e.target.value, 10), el);
+  el.querySelectorAll('td.sbcell').forEach(td => td.onclick = () => {
+    $('sbdetail').innerHTML = sbDetail(d, td.dataset.a, td.dataset.b);
+  });
+}
+
+async function sbLoad(week, el) {
   try {
-    const d = await api('/api/tools/scoreboard');
-    const cats = d.matchups.length ? d.matchups[0].categories.map(r => r.category) : [];
-    const tint = p => p == null ? 'transparent'
-      : p > 0.60 ? '#1f6f45' : p > 0.55 ? '#1d5c38'
-      : p < 0.40 ? '#a83a44' : p < 0.45 ? '#6e2a30' : '#313b47';
-    const cards = d.matchups.map(m => {
-      const rows = m.categories;
-      const byCat = Object.fromEntries(rows.map(r => [r.category, r]));
-      const aw = rows.filter(r => r.win_prob > 0.5).length;
-      const bw = rows.filter(r => r.win_prob < 0.5).length;
-      const aRow = `<tr><td class="l"><b>${esc(m.team_a.name)}</b></td>` +
-        cats.map(c => { const r = byCat[c];
-          return `<td title="±${esc(r.mine_std)} · 25–75%: ${esc(r.mine_lo)}–${esc(r.mine_hi)}"
-                        style="background:${tint(r.win_prob)}"><b>${dash(r.mine)}</b></td>`;
-        }).join('') + `<td><b>${aw}</b></td></tr>`;
-      const bRow = `<tr><td class="l"><b>${esc(m.team_b.name)}</b></td>` +
-        cats.map(c => { const r = byCat[c]; const p = 1 - r.win_prob;
-          return `<td title="±${esc(r.opp_std)} · 25–75%: ${esc(r.opp_lo)}–${esc(r.opp_hi)}"
-                        style="background:${tint(p)}"><b>${dash(r.opp)}</b></td>`;
-        }).join('') + `<td><b>${bw}</b></td></tr>`;
-      const pRow = `<tr><td class="l" style="color:var(--mut)">win %</td>` +
-        cats.map(c => { const r = byCat[c]; const p = Math.round(r.win_prob * 100);
-          return `<td style="background:hsl(${p * 1.2},55%,${p >= 50 ? 30 : 27}%)">${p}%</td>`;
-        }).join('') + `<td style="color:var(--mut)">${esc(m.projected_score)}</td></tr>`;
-      return `<div class="card">
-        <p class="meta"><b>${esc(m.team_a.name)} vs ${esc(m.team_b.name)}</b> · week
-          ${esc(m.period_start)} → ${esc(m.period_end)} · projected
-          ${esc(m.projected_score)} · games left ${dash(m.team_a.games_remaining)} /
-          ${dash(m.team_b.games_remaining)}</p>
-        <div class="tscroll"><table><thead><tr><th class="l">Team</th>
-          ${cats.map(c => `<th>${esc(c)}</th>`).join('')}<th>W</th></tr></thead>
-          <tbody>${aRow}${bRow}${pRow}</tbody></table></div></div>`;
-    }).join('');
-    el.innerHTML = `
-      <p class="meta">Every matchup's projected end-of-week totals — banked through
-        ${esc(d.as_of)} plus remaining scheduled games — category by category. Cell
-        tint = that side's win probability; "win %" row = left team's per-cat
-        probability; W = categories led (ties uncounted).</p>
-      ${cards}`;
+    const d = SB.cache[week] || await api('/api/tools/scoreboard' + (week ? '?week=' + week : ''));
+    sbRender(d, el);
   } catch (err) { deny(el, err); }
+}
+
+async function loadScoreboard() {
+  await sbLoad(null, $('scoreboard'));
 }
 
 /* ---- tabs ------------------------------------------------------------ */

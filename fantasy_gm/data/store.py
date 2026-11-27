@@ -122,6 +122,21 @@ CREATE TABLE IF NOT EXISTS matchups (
     PRIMARY KEY (league_id, period_index, team_a)
 );
 
+-- Yahoo's own weekly team totals per matchup period, backfilled from the
+-- scoreboard endpoint's team_stats (scripts/backfill_matchup_stats.py). These are
+-- the platform-scored ground truth for completed weeks — our player-log banked
+-- tallies drift from them when a wire move posts after the morning lineup read
+-- (known 2026-11-23 class), so completed-week reads prefer these and fall back
+-- to the store tally only when a week has no stored actuals.
+CREATE TABLE IF NOT EXISTS matchup_team_stats (
+    league_id    TEXT NOT NULL,
+    period_index INTEGER NOT NULL,
+    team_id      TEXT NOT NULL,
+    stats_json   TEXT NOT NULL,   -- counting cats as totals, rate cats as rates (0-1)
+    known_from   TEXT NOT NULL,
+    PRIMARY KEY (league_id, period_index, team_id)
+);
+
 -- Effective-dated usage/role snapshots (D5): minutes, shot attempts, starter/bench,
 -- and depth-chart position, so a role as of any date is reconstructable.
 CREATE TABLE IF NOT EXISTS usage_role (
@@ -365,6 +380,43 @@ class Store:
             (m.league_id, m.period_index, m.period_start, m.period_end, m.team_a, m.team_b),
         )
         self.conn.commit()
+
+    def add_matchup_team_stats(
+        self, league_id: str, period_index: int, team_id: str,
+        stats: dict[str, float], known_from: str,
+    ) -> None:
+        """Store one team's Yahoo-scored weekly totals for a matchup period."""
+        self.conn.execute(
+            """INSERT OR REPLACE INTO matchup_team_stats(
+                   league_id, period_index, team_id, stats_json, known_from)
+               VALUES (?,?,?,?,?)""",
+            (league_id, period_index, team_id, json.dumps(stats), known_from),
+        )
+        self.conn.commit()
+
+    def matchup_team_stats_for_period(
+        self, league_id: str, period_index: int
+    ) -> dict[str, dict[str, float]]:
+        """team_id -> Yahoo-scored weekly totals for one period; {} when not backfilled."""
+        return {
+            row["team_id"]: json.loads(row["stats_json"])
+            for row in self.conn.execute(
+                """SELECT team_id, stats_json FROM matchup_team_stats
+                   WHERE league_id = ? AND period_index = ?""",
+                (league_id, period_index),
+            )
+        }
+
+    def matchup_periods(self, league_id: str) -> list[dict]:
+        """Distinct matchup periods, ordered: ``[{week, start, end}]``."""
+        return [
+            {"week": r["period_index"], "start": r["period_start"], "end": r["period_end"]}
+            for r in self.conn.execute(
+                """SELECT DISTINCT period_index, period_start, period_end FROM matchups
+                   WHERE league_id = ? ORDER BY period_index""",
+                (league_id,),
+            )
+        ]
 
     # --- as-of reads (outcomes/availability/rosters gated by <= as_of) -------
     def results_asof(self, as_of: str, season: str | None = None) -> list[Game]:

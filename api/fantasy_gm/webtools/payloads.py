@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import math
 
-from fantasy_gm.config import PERCENTAGE_CATEGORIES, Config
-from fantasy_gm.engine.projection import Projector
+from fantasy_gm.config import CATEGORY_DIRECTION, PERCENTAGE_CATEGORIES, Config
+from fantasy_gm.engine.projection import Projector, _label, _phi
 from fantasy_gm.models import MatchupProjection
 
 # 25th/75th percentile of a normal distribution sits at ±0.6745σ.
@@ -182,3 +182,177 @@ def scoreboard_payload(store, config: Config, league_id: str, as_of: str, *,
         })
     matchups.sort(key=lambda m: (m["period_start"], m["team_a"]["team_id"]))
     return {"as_of": as_of, "league_id": league_id, "matchups": matchups}
+
+
+def _team_sort(team_id: str) -> tuple:
+    """Natural order for stored team ids: ``….t.2`` sorts before ``….t.10``."""
+    head, _, tail = team_id.rpartition(".")
+    return (head, int(tail)) if tail.isdigit() else (team_id, 0)
+
+
+def _pairkey(a: str, b: str) -> tuple[str, str]:
+    return (a, b) if a <= b else (b, a)
+
+
+def _completed_week_totals(store, config: Config, league_id: str, period: dict,
+                           names: dict[str, str], actuals: dict[str, dict],
+                           ) -> dict[str, dict[str, float]]:
+    """team_id -> {cat: comparable value} for a completed week.
+
+    Yahoo's own weekly totals when backfilled (exact — no attribution involved);
+    otherwise the store's banked tally over the week's date range, rate cats
+    volume-weighted from their make/attempt components.
+    """
+    out: dict[str, dict[str, float]] = {}
+    rosters: dict[str, list] | None = None
+    for tid in names:
+        if tid in actuals:
+            out[tid] = {c: (float(actuals[tid].get(c, 0.0)), 0.0) for c in config.categories}
+            continue
+        if rosters is None:
+            rosters = store.league_state_asof(league_id, period["end"]).rosters
+        # The projector's own pattern (team_projection._side): request the component
+        # keys alongside the categories — banked totals only carry what you ask for.
+        comp_keys = sorted({k for pair in PERCENTAGE_CATEGORIES.values() for k in pair})
+        totals = store.banked_totals_for_team(
+            league_id, tid, period["start"], period["end"],
+            list(config.categories) + comp_keys,
+            fallback_ids=rosters.get(tid, []),
+        )
+        row = {}
+        for c in config.categories:
+            if c in PERCENTAGE_CATEGORIES:
+                mk, at = PERCENTAGE_CATEGORIES[c]
+                row[c] = ((totals[mk] / totals[at]) if totals[at] else 0.0, 0.0)
+            else:
+                row[c] = (float(totals[c]), 0.0)
+        out[tid] = row
+    return out
+
+
+def _live_week_projections(store, config: Config, league_id: str, as_of: str,
+                           names: dict[str, str],
+                           projector: Projector | None) -> tuple[dict, set]:
+    """team_id -> {cat: (projected end-of-week total, σ)} for the live week, plus the
+    set of real matchup pairs. One engine pass per real matchup (six in a 12-team
+    league) — a team's projection is opponent-independent, so both sides feed the
+    all-pairs matrix. Totals are UNROUNDED (``Projector.project_side``): the pair
+    win probability below must run on the same numbers ``_assemble`` runs on, or a
+    sharp category's cell drifts from the Matchup tab's own figure."""
+    proj = projector or Projector(config=config)
+    state = store.league_state_asof(league_id, as_of)
+    out: dict[str, dict[str, tuple[float, float]]] = {}
+    real: set[tuple[str, str]] = set()
+    for tid in sorted(names, key=_team_sort):
+        if tid in out:
+            continue
+        m = store.matchup_for_team(league_id, tid, as_of)
+        if m is None:
+            continue
+        real.add(_pairkey(m.team_a, m.team_b))
+        for team in (m.team_a, m.team_b):
+            if team not in out:
+                out[team] = proj.project_side(store, league_id, team, as_of,
+                                              state, m)[0]
+    return out, real
+
+
+def scoreboard_matrix_payload(store, config: Config, league_id: str, as_of: str, *,
+                              week: int | None = None,
+                              projector: Projector | None = None) -> dict:
+    """The scoreboard tab: every team against every team for one matchup week.
+
+    Tim's 2026-11-27 correction of the first cut (which showed only the six real
+    matchups): a full round-robin matrix — each cell the 9-cat record between two
+    teams — with a selector over historical weeks including the live one.
+
+    Completed weeks read Yahoo's own weekly team totals where they have been
+    backfilled into ``matchup_team_stats`` (exact, no roster attribution involved)
+    and fall back to the store's banked tally otherwise — the source is stated so a
+    fallback week is never mistaken for ground truth. The live week projects every
+    team with the same ``Projector`` numbers the Matchup tab shows: a real matchup's
+    cell stays number-identical to that tab, and any other pair is priced with the
+    engine's own Φ((a−b)/√(σa²+σb²)) per-category win probability.
+
+    Raises ``ValueError`` for a week that is neither stored nor live-or-earlier.
+    """
+    cats = list(config.categories)
+    periods = store.matchup_periods(league_id)
+    if not periods:
+        raise ValueError(f"no matchup periods stored for {league_id}")
+    live_week = next((p["week"] for p in periods
+                      if p["start"] <= as_of <= p["end"]), None)
+    if live_week is None:
+        started = [p["week"] for p in periods if p["start"] <= as_of]
+        live_week = max(started) if started else periods[0]["week"]
+    if week is None:
+        week = live_week
+    sel = next((p for p in periods if p["week"] == week), None)
+    if sel is None or week > live_week:
+        raise ValueError(f"week {week} is not a completed or live week")
+
+    names = team_names(store, league_id)
+    order = sorted(names, key=_team_sort)
+    weeks = [{"week": p["week"], "start": p["start"], "end": p["end"],
+              "status": "live" if p["week"] == live_week else "completed"}
+             for p in periods if p["week"] <= live_week]
+
+    real_pairs: set[tuple[str, str]] = set()
+    if week == live_week:
+        per_team, real_pairs = _live_week_projections(
+            store, config, league_id, as_of, names, projector)
+        source = "projected"
+    else:
+        actuals = store.matchup_team_stats_for_period(league_id, week)
+        per_team = _completed_week_totals(store, config, league_id, sel, names, actuals)
+        source = "yahoo" if len(actuals) >= len(names) else "store"
+    # A team with no live matchup carries no projection — the matrix renders priced
+    # teams only (the completed-week path prices everyone from the box scores).
+    order = [t for t in order if t in per_team]
+    if not order:
+        raise ValueError("no priced teams for this week")
+
+    pairs = []
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            a_wins = b_wins = ties = 0
+            rows = []
+            for c in cats:
+                at, asd = per_team[a][c]
+                bt, bsd = per_team[b][c]
+                direction = CATEGORY_DIRECTION[c]
+                row: dict = {"category": c, "a": _round_cat(c, at), "b": _round_cat(c, bt)}
+                if source == "projected":
+                    combined = math.hypot(asd, bsd)
+                    diff = direction * (at - bt)
+                    wp = (1.0 if diff > 0 else 0.5 if diff == 0 else 0.0) if combined == 0.0 \
+                        else _phi(diff / combined)
+                    row.update({"a_std": _round_cat(c, asd), "b_std": _round_cat(c, bsd),
+                                "win_prob": round(wp, 2), "label": _label(wp)})
+                    a_won, b_won = wp > 0.5, wp < 0.5
+                else:
+                    margin = direction * (at - bt)
+                    # Completed weeks decide at any nonzero margin — a 0.003 fg% edge
+                    # is a win (the win-prob branch above is the one that uses 0.5).
+                    a_won, b_won = margin > 0, margin < 0
+                if a_won:
+                    a_wins += 1
+                elif b_won:
+                    b_wins += 1
+                else:
+                    ties += 1
+                rows.append(row)
+            record = f"{a_wins}-{b_wins}" + (f"-{ties}" if ties else "")
+            pairs.append({"a": a, "b": b, "record": record,
+                          "real": _pairkey(a, b) in real_pairs, "cats": rows})
+
+    teams = [{"team_id": t, "name": names[t]} for t in order]
+    if source == "projected":
+        for t in teams:
+            t["games_remaining"] = games_remaining(store, league_id, t["team_id"], as_of)
+    return {
+        "as_of": as_of, "league_id": league_id,
+        "week": sel["week"], "start": sel["start"], "end": sel["end"],
+        "status": "live" if sel["week"] == live_week else "completed",
+        "source": source, "weeks": weeks, "cats": cats, "teams": teams, "pairs": pairs,
+    }
